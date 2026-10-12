@@ -31,7 +31,11 @@ async function connect(tasks: AgentTaskService, userId: string) {
   const server = new McpServer({ name: "test", version: "0" });
   registerTaskTools(
     server,
-    { tasks } as unknown as ServerContainer,
+    {
+      tasks,
+      runtime: { getLabels: () => ({ metadata: {}, annotations: {} }) },
+      control: { canAccessSandbox: () => true },
+    } as unknown as ServerContainer,
     { id: userId } as AuthUser,
   );
   const client = new Client({ name: "test-client", version: "0" });
@@ -69,7 +73,11 @@ describe("agent task tools", () => {
     const server = new McpServer({ name: "test", version: "0" });
     registerTaskTools(
       server,
-      { tasks } as unknown as ServerContainer,
+      {
+        tasks,
+        runtime: { getLabels: () => ({ metadata: {}, annotations: {} }) },
+        control: { canAccessSandbox: () => true },
+      } as unknown as ServerContainer,
       { id: "u" } as AuthUser,
     );
     const client = new Client({ name: "c", version: "0" });

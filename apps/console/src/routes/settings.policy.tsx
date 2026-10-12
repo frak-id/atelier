@@ -4,7 +4,6 @@ import { Loader2 } from "lucide-react";
 import { useEffect, useState } from "react";
 import { orgPolicyQuery, useSetOrgPolicy } from "@/api/queries/org-policy";
 import { OrgSelect } from "@/components/org-select";
-import { SteeryNotifyCard } from "@/components/steery-notify-card";
 import { Button } from "@/components/ui/button";
 import {
   Card,
@@ -28,10 +27,7 @@ function PolicyPage() {
         <OrgSelect id="policy-org" value={orgId} onChange={setOrgId} />
       </div>
       {orgId ? (
-        <>
-          <PolicyEditor orgId={orgId} />
-          <SteeryNotifyCard orgId={orgId} />
-        </>
+        <PolicyEditor orgId={orgId} />
       ) : (
         <p className="text-sm text-muted-foreground">
           Select an organization to edit its policy.

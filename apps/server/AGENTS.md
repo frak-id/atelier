@@ -70,6 +70,44 @@ fan-out and drops any client→upstream bytes. This is a pure passthrough —
 `runtime.attach(id, name, mode)` already models both modes; the route just
 exposes the existing capability so the GUI can offer a read-only attach.
 
+## Sandbox access rule
+
+`control/sandbox-access.ts` (`canAccessSandbox`, pure) is the one rule for
+who may address a sandbox id: owner (`atelier.dev/owner-id`) or member of its
+org (`atelier.dev/org-id`); legacy unowned sandboxes and bypassed-auth modes
+are open. `api/sandbox-guard.ts` binds it: ONE `onBeforeHandle` guard per
+router whose `:id` is a sandbox (`/v1` after the jobs sub-router,
+`/sessions/sandboxes/:id/{agent,terminal}`), `requireSandboxAccess` in the WS
+`open` handlers and every MCP tool taking a sandbox id, `accessibleSandboxes`
+for list endpoints. Denied and unknown are the same `NotFoundError`. A new
+`/v1` route with a sandbox `:id` is covered by registering it after the
+guard; the guard only acts on paths under its prefix (`/v1/sandboxes/`,
+`/sessions/sandboxes/`), and a missing user is a 401 except on a WS upgrade
+(the socket's `open` check covers it). A sandbox id arriving in a body or
+query (e.g. `POST /api/toolboxes/:id/versions/capture`) needs an explicit
+`requireSandboxAccess`.
+Not covered: `/v1/jobs` (feed unscoped), secrets routes, Launchpad (own
+ownership).
+
+## Integrations
+
+`integrations/` is a registry of compiled-in links to external agent UIs
+(`catalog.ts` lists them; `integration.ts` is the contract). The operator
+enables each with `ATELIER_INTEGRATION_<ID>=true` (read once at boot by
+`registry.ts`, never over the API); each person connects their own account
+(`/api/integrations`, `control/modules/integration-connection/`). Vendor code
+lives only in `integrations/<id>/`.
+
+- **Boundary** (`check:boundary`): `integrations/` never imports `control/`,
+  `sessions/` or `runtime/`; a vendor dir imports only `../integration.ts`,
+  `shared/` and packages; only `catalog.ts` imports a vendor dir. Everything
+  an integration touches arrives as arguments wired in `api/container.ts`.
+- **Outbound:** `IntegrationHub` (`hub.ts`) is the `PermissionNotifier` of
+  `AgentDispatch`. It routes a prompt to the sandbox OWNER's connections,
+  filtered by risk and delay; the first answer wins and never throws.
+
+See `docs/integrations/README.md`.
+
 ## Known gaps (tracked, not silent)
 
 - **M2 COMPLETE — runtime fully on the v2 agent.** `runtime/agent-config.ts`

@@ -48,6 +48,7 @@ import { isMock } from "../shared/lib/config.ts";
 import {
   buildGitAttributionFiles,
   GIT_CREDENTIALS_PATH,
+  GITCONFIG_PATH,
 } from "../shared/lib/git-attribution.ts";
 import { safeNanoid } from "../shared/lib/id.ts";
 import { createChildLogger } from "../shared/lib/logger.ts";
@@ -97,6 +98,21 @@ export interface RuntimeCreateOptions {
   /** Optional boot-progress sink: coarse phase lines streamed to the caller
    * (e.g. the sandbox-create job log the CLI/console tails during boot). */
   onProgress?: (msg: string) => void;
+}
+
+/** A fresh snapshot identity (content hash + `snap-…` ref) owned by `ownerId`. */
+function newSnapshotName(ownerId: string): { hash: string; ref: string } {
+  const hash = createHash("sha256")
+    .update(`${ownerId}:${Date.now()}`)
+    .digest("hex");
+  return { hash, ref: `snap-${hash.slice(0, 12)}` };
+}
+
+/** What a fork's `derive` step returns: the copy's spec, plus the SSH keys
+ * the caller resolved for it (same role as `RuntimeCreateOptions`'). */
+interface ForkDerivation {
+  spec: SandboxSpec;
+  authorizedKeys?: string[];
 }
 
 export interface RuntimeDeps {
@@ -292,6 +308,14 @@ export class RuntimeService {
   prebuildSurface(ref: string): RuntimeSurface {
     const spec = this.snapshots.get(ref)?.spec;
     return spec ? this.recipeSurface(spec) : {};
+  }
+
+  /** The sandbox a snapshot belongs to (pause/manual/fork snapshots), or
+   * undefined for a shared prebuild snapshot or an unknown ref. Resolves by
+   * ref or hash like `resolveSource`; a synchronous store read. */
+  snapshotOwner(ref: string): string | undefined {
+    return (this.snapshots.get(ref) ?? this.snapshots.getByHash(ref))
+      ?.sandboxId;
   }
 
   /** List stored prebuild snapshots, newest first — the read side of
@@ -678,11 +702,16 @@ export class RuntimeService {
       throw new ConflictError(`Sandbox ${id} already exists`);
     }
     const progress = options.onProgress ?? (() => {});
-    const { image, snapshotName } = await this.resolveSource(spec.source);
-    progress(`source resolved (${snapshotName ?? image})`);
+    const resolved = await this.resolveSource(spec.source);
+    progress(`source resolved (${resolved.snapshotName ?? resolved.image})`);
+    this.registerCreating(id, spec);
+    return this.bootNew(id, spec, resolved, options);
+  }
 
+  /** Insert the `creating` record — the sandbox is visible from here on. */
+  private registerCreating(id: string, spec: SandboxSpec): void {
     const now = new Date().toISOString();
-    const record: SandboxRecord = {
+    this.sandboxes.create({
       id,
       spec,
       status: "creating",
@@ -690,9 +719,18 @@ export class RuntimeService {
       metadata: spec.metadata ?? {},
       createdAt: now,
       updatedAt: now,
-    };
-    this.sandboxes.create(record);
+    });
+  }
 
+  /** Boot a registered `creating` sandbox; any failure parks it in `error`. */
+  private async bootNew(
+    id: string,
+    spec: SandboxSpec,
+    { image, snapshotName }: { image: string; snapshotName?: string },
+    options: RuntimeCreateOptions,
+    keepDisk = false,
+  ): Promise<CreateSandboxResponse> {
+    const progress = options.onProgress ?? (() => {});
     const toolsets = this.resolveSpecToolsets(spec);
     try {
       // bootSandbox pushes config + writes files[]. The fixed phase order
@@ -705,6 +743,7 @@ export class RuntimeService {
           image,
           snapshotName,
           authorizedKeys: options.authorizedKeys,
+          preserveDisk: keepDisk,
           toolsets,
         },
         this.agent,
@@ -750,7 +789,18 @@ export class RuntimeService {
       // otherwise orphan the running pod; tear it down so the boot is atomic
       // (bootSandbox already cleans up failures during its own phase).
       this.agent.invalidatePodIp(id);
-      await this.backend.cleanup(id);
+      try {
+        // `keepDisk` (a fork's boot): like a failed resume, keep the disk and
+        // the snapshot it boots from (both carry the sandbox label) so the
+        // `error` record stays resumable; destroy sweeps them.
+        if (keepDisk) await this.backend.deleteRestartable(id);
+        else await this.backend.cleanup(id);
+      } catch (cleanupError) {
+        log.warn(
+          { id, err: cleanupError },
+          "teardown after failed boot failed",
+        );
+      }
       this.sandboxes.update(id, { status: "error" });
       throw error;
     }
@@ -1036,7 +1086,14 @@ export class RuntimeService {
       try {
         if (record.status === "creating") {
           this.agent.invalidatePodIp(record.id);
-          await this.backend.cleanup(record.id);
+          // A fork copy that already owns its snapshot keeps disk + snapshot
+          // (resumable, like a failed fork boot); else the full sweep.
+          const src = record.spec.source;
+          const ownsSnapshot =
+            "snapshot" in src &&
+            this.snapshots.get(src.snapshot)?.sandboxId === record.id;
+          if (ownsSnapshot) await this.backend.deleteRestartable(record.id);
+          else await this.backend.cleanup(record.id);
           // The sweep just tore down whatever pod/PVC this record had, so it
           // no longer has anything mounted — clear its rows or a toolset
           // deleteToolset thinks is still referenced would be permanently
@@ -1194,70 +1251,152 @@ export class RuntimeService {
 
   /** Promote the current disk → snapshotRef. */
   async snapshot(id: string): Promise<SnapshotRef> {
-    return this.withOpLock(id, async () => {
-      const record = this.require(id);
-      if (record.status !== "running" && record.status !== "paused") {
-        throw new ConflictError(
-          `Sandbox ${id} is ${record.status}; only a running or paused sandbox has a disk to snapshot`,
-        );
-      }
-      return this.executeSnapshot(record);
-    });
+    return this.withOpLock(id, async () =>
+      this.executeSnapshot(this.requireSnapshottable(id)),
+    );
+  }
+
+  private requireSnapshottable(id: string): SandboxRecord {
+    const record = this.require(id);
+    if (record.status !== "running" && record.status !== "paused") {
+      throw new ConflictError(
+        `Sandbox ${id} is ${record.status}; only a running or paused sandbox has a disk to snapshot`,
+      );
+    }
+    return record;
   }
 
   /** Snapshot body, called with the op lock already held (`snapshot` and
-   * `pause` both funnel here — `pause` must not re-acquire its own lock). */
-  private async executeSnapshot(record: SandboxRecord): Promise<SnapshotRef> {
-    const id = record.id;
-    const pvcName = record.pvcName ?? `sandbox-${id}`;
-    const hash = createHash("sha256")
-      .update(`${id}:${Date.now()}`)
-      .digest("hex");
-    const ref = `snap-${hash.slice(0, 12)}`;
+   * `pause` both funnel here — `pause` must not re-acquire its own lock).
+   * `ownerId` is the sandbox that owns the snapshot (default: `record`'s own;
+   * a fork's snapshot belongs to the copy). */
+  private async executeSnapshot(
+    record: SandboxRecord,
+    ownerId = record.id,
+    { hash, ref } = newSnapshotName(ownerId),
+  ): Promise<SnapshotRef> {
+    const pvcName = record.pvcName ?? `sandbox-${record.id}`;
     const { image } = await this.resolveSource(record.spec.source);
 
-    await this.snapshotPvc(pvcName, ref, { "atelier.dev/sandbox": id });
+    await this.snapshotPvc(pvcName, ref, { "atelier.dev/sandbox": ownerId });
 
     this.snapshots.put({
       hash,
       ref,
       image,
-      // Sandbox-scoped: the VolumeSnapshot carries the sandbox label, so
-      // destroy's sweep deletes it — the row must be GC'd with it.
-      sandboxId: id,
+      // Owner-scoped: the VolumeSnapshot carries the owner's label, so the
+      // owner's destroy sweep deletes it — the row must be GC'd with it.
+      sandboxId: ownerId,
       createdAt: new Date().toISOString(),
     });
     return { ref, hash };
   }
 
   /**
-   * Snapshot sandbox `sourceId` and boot a new sandbox from that snapshot
-   * with the source's spec (toolsets, env, files, processes, ports, hooks).
-   * `metadata` replaces the source's; `name` sets the display name (absent:
-   * none, so the copy never poses as its source). The snapshot holds the
-   * source's op lock, the boot the new id's.
+   * Snapshot sandbox `sourceId` and boot a new sandbox from that snapshot.
+   * Mechanism only: `derive` (policy, supplied by the caller) turns the
+   * source's stored spec into the copy's — who owns it, which git identity
+   * it carries — and may return the SSH keys to authorize. `name` sets the
+   * display name (absent: none, so the copy never poses as its source).
+   *
+   * The copy's record is registered `creating` synchronously (visible before
+   * the snapshot starts) and ends `error` if the snapshot or boot fails. The
+   * snapshot is owned by the copy (row + label), so it outlives the source and
+   * is swept with the copy. It holds the source's op lock, the boot the copy's.
    */
   async fork(
     sourceId: string,
-    fork: { metadata: Record<string, string>; name?: string },
-    options: RuntimeCreateOptions = {},
+    fork: {
+      derive: (spec: SandboxSpec) => ForkDerivation;
+      /** Labels the copy carries until `derive` has run (and if it fails):
+       * the caller picks them, so it is never ownerless nor shows the
+       * source owner's. */
+      initial: {
+        metadata: Record<string, string>;
+        annotations: Record<string, string>;
+      };
+      name?: string;
+    },
+    options: Pick<RuntimeCreateOptions, "id" | "onProgress"> = {},
   ): Promise<CreateSandboxResponse> {
-    options.onProgress?.(`snapshotting ${sourceId}…`);
-    const { ref } = await this.snapshot(sourceId);
-    const { spec } = this.require(sourceId);
+    const id = options.id ?? safeNanoid();
+    if (this.sandboxes.get(id)) {
+      throw new ConflictError(`Sandbox ${id} already exists`);
+    }
+    const source = this.requireSnapshottable(sourceId);
+    // The copy's snapshot name is fixed now, so the record points at it from
+    // the start and can never resume as the source's base image.
+    const name = newSnapshotName(id);
     const { [SANDBOX_NAME_ANNOTATION]: _name, ...annotations } =
-      spec.annotations ?? {};
-    return this.create(
-      {
-        ...spec,
-        source: { snapshot: ref },
-        metadata: fork.metadata,
-        annotations: fork.name
-          ? { ...annotations, [SANDBOX_NAME_ANNOTATION]: fork.name }
-          : annotations,
-      },
-      options,
-    );
+      source.spec.annotations ?? {};
+    // The source owner's git attribution never sits on the copy's record,
+    // not even until `derive` runs (or if it fails).
+    const gitPaths = new Set([GITCONFIG_PATH, GIT_CREDENTIALS_PATH]);
+    const files = source.spec.files?.filter((f) => !gitPaths.has(f.path));
+    this.registerCreating(id, {
+      ...source.spec,
+      files,
+      source: { snapshot: name.ref },
+      metadata: fork.initial.metadata,
+      annotations: fork.initial.annotations,
+    });
+
+    return this.withOpLock(id, async () => {
+      let forked: SandboxSpec;
+      let authorizedKeys: string[] | undefined;
+      let resolved: { image: string; snapshotName?: string };
+      try {
+        const derived = fork.derive({ ...source.spec, annotations });
+        forked = {
+          ...derived.spec,
+          source: { snapshot: name.ref },
+          annotations: fork.name
+            ? {
+                ...derived.spec.annotations,
+                [SANDBOX_NAME_ANNOTATION]: fork.name,
+              }
+            : (derived.spec.annotations ?? {}),
+        };
+        authorizedKeys = derived.authorizedKeys;
+        // The stored spec was validated at the source's creation, but derive
+        // is caller policy: re-check what boot would reject.
+        rejectUnresolvedSecrets(forked);
+        rejectDuplicateToolsetRefs(forked);
+        this.sandboxes.update(id, {
+          spec: forked,
+          metadata: forked.metadata ?? {},
+        });
+        options.onProgress?.(`snapshotting ${sourceId}…`);
+        await this.withOpLock(sourceId, async () =>
+          this.executeSnapshot(this.requireSnapshottable(sourceId), id, name),
+        );
+        resolved = await this.resolveSource(forked.source);
+      } catch (error) {
+        // Nothing to keep: sweep a half-made snapshot (labelled with the
+        // copy's id). Resume then fails with "Snapshot … not found".
+        try {
+          await this.backend.cleanup(id);
+        } catch (cleanupError) {
+          log.warn({ id, err: cleanupError }, "fork cleanup failed");
+        }
+        this.snapshots.deleteBySandbox(id);
+        this.sandboxes.update(id, { status: "error" });
+        throw error;
+      }
+      return this.bootNew(
+        id,
+        forked,
+        resolved,
+        { ...options, authorizedKeys },
+        true,
+      );
+    });
+  }
+
+  /** Throws unless `id` is a sandbox with a disk to snapshot (404 / 409) —
+   * the sync pre-check a caller makes before handing out a fork's id. */
+  assertSnapshottable(id: string): void {
+    this.requireSnapshottable(id);
   }
 
   /** Snapshot `pvcName` into `ref` via the volume backend (create + wait,

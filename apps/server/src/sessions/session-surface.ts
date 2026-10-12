@@ -1,6 +1,6 @@
 import type {
   AgentEvent,
-  AgentPermissionReply,
+  AgentPermissionAnswer,
   AgentPermissionRequest,
   AgentQuestionRequest,
   AgentSession,
@@ -47,7 +47,7 @@ export interface HarnessSessionSurface {
   listPermissions(): Promise<AgentPermissionRequest[]>;
   replyPermission(
     requestId: string,
-    reply: AgentPermissionReply,
+    reply: AgentPermissionAnswer,
   ): Promise<InterventionResult>;
   listQuestions(): Promise<AgentQuestionRequest[]>;
   replyQuestion(

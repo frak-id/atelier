@@ -39,12 +39,14 @@ import {
   type SessionNotification,
 } from "@agentclientprotocol/sdk";
 import type {
+  AgentPermissionAnswer,
   AgentPermissionReply,
   AgentPermissionRequest,
   AgentSessionStatus,
   AgentTodo,
 } from "@frak/atelier-shared";
 import type { AgentClient } from "../../runtime/index.ts";
+import { ValidationError } from "../../shared/errors.ts";
 import { safeNanoid } from "../../shared/lib/id.ts";
 import { createChildLogger } from "../../shared/lib/logger.ts";
 import type { PermissionNotifier } from "../permission-notifier.ts";
@@ -412,6 +414,7 @@ class SandboxAcpConnection {
         {
           sandboxId: this.sandboxId,
           sessionId: request.sessionId,
+          requestId: id,
           title:
             request.toolCall.title ?? request.toolCall.kind ?? "permission",
           kind: request.toolCall.kind ?? undefined,
@@ -633,15 +636,33 @@ class SandboxAcpConnection {
       sessionId: p.sessionId,
       permission:
         p.request.toolCall.title ?? p.request.toolCall.kind ?? "permission",
+      toolKind: p.request.toolCall.kind ?? undefined,
+      options: p.request.options.map((o) => ({
+        optionId: o.optionId,
+        name: o.name,
+        kind: o.kind,
+      })),
     }));
   }
 
   replyPermission(
     requestId: string,
-    decision: AgentPermissionReply,
+    decision: AgentPermissionAnswer,
   ): InterventionResult {
     const pending = this.pendingPermissions.get(requestId);
     if (!pending) return { ok: false, status: 404 };
+    if (typeof decision === "object") {
+      const offered = pending.request.options.some(
+        (o) => o.optionId === decision.optionId,
+      );
+      if (!offered) {
+        throw new ValidationError(
+          `Option '${decision.optionId}' was not offered for this request`,
+        );
+      }
+      this.settlePermission(pending, decision.optionId);
+      return { ok: true };
+    }
     this.settlePermission(
       pending,
       selectPermissionOption(pending.request, decision),
@@ -846,7 +867,7 @@ export class AgentDispatch {
   replyPermission(
     sandboxId: string,
     requestId: string,
-    decision: AgentPermissionReply,
+    decision: AgentPermissionAnswer,
   ): InterventionResult {
     const conn = this.live.get(sandboxId);
     if (!conn) return { ok: false, status: 404 };

@@ -11,10 +11,13 @@ import { join } from "node:path";
 import {
   AddPortRequestSchema,
   AddProcessRequestSchema,
+  buildRepoPrebuildSpec,
   type CreateSandboxRequest,
   CreateSandboxRequestSchema,
   ExecRequestSchema,
+  type ForkSandboxRequest,
   ForkSandboxRequestSchema,
+  findRepoBranchPrebuild,
   PatchEnvRequestSchema,
   PatchFilesRequestSchema,
   type PrebuildSpec,
@@ -67,6 +70,12 @@ import {
   resolveToolboxSurface,
   type ServerContainer,
 } from "./container.ts";
+import {
+  accessibleSandboxes,
+  requireSandboxAccess,
+  requireSourceAccess,
+  sandboxAccessGuard,
+} from "./sandbox-guard.ts";
 import { spawnSurface } from "./spawn-surface.ts";
 import { closeUpstream, openUpstreamRelay, relayMessage } from "./ws-relay.ts";
 
@@ -132,6 +141,20 @@ function sandboxLabel(req: CreateSandboxRequest): string {
   );
 }
 
+/** `repo` is sugar over `prebuild` with an image base: both at once, or a
+ * snapshot source, leave no unambiguous recipe (400). */
+function assertRepoRequest(req: CreateSandboxRequest): void {
+  if (!req.repo) return;
+  if (req.prebuild) {
+    throw new ValidationError("`repo` cannot be combined with `prebuild`");
+  }
+  if (!("image" in req.source)) {
+    throw new ValidationError(
+      "`repo` needs an image `source` (the base the repo is baked on)",
+    );
+  }
+}
+
 /** Parse `GET /v1/sandboxes?metadata=`: a JSON object of string → string
  * (already URL-decoded). Absent is no filter; anything else is a 400. */
 export function parseMetadataFilter(raw?: string): Record<string, string> {
@@ -153,6 +176,21 @@ export function parseMetadataFilter(raw?: string): Record<string, string> {
     );
   }
   return parsed as Record<string, string>;
+}
+
+/** A copy of `record` without `key` (undefined stays undefined). */
+function withoutKey(
+  record: Record<string, string> | undefined,
+  key: string,
+): Record<string, string> | undefined {
+  if (!record) return record;
+  const { [key]: _dropped, ...rest } = record;
+  return rest;
+}
+
+/** `GET /v1/sandboxes?owner=`: `me` is the caller. */
+function ownerFilter(owner: string | undefined, userId: string) {
+  return owner === "me" ? userId : owner;
 }
 
 /**
@@ -195,28 +233,70 @@ export async function createSandboxForUser(
   onProgress?: (msg: string) => void,
 ) {
   const { runtime, control } = container;
+  assertRepoRequest(body);
   // The body is a spec plus the high-level references the caller picked
-  // (`toolboxes` selectors, a `prebuild` recipe); strip them so the runtime
-  // only ever sees a resolved spec.
+  // (`toolboxes` selectors, a `prebuild` recipe, a `repo`); strip them so the
+  // runtime only ever sees a resolved spec.
   const {
     toolboxes: selectors = [],
-    prebuild,
+    prebuild: bodyPrebuild,
+    repo,
     orgId: requestedOrgId,
     resources,
+    metadata,
+    annotations,
     ...specFields
   } = body;
+  // A sandbox-scoped snapshot is its sandbox's data (access rule).
+  requireSourceAccess(container, user.id, body.source, body.prebuild?.source);
   // Resolved first: an unauthorized org must fail before any build work.
   const orgId = resolveOrgId(control, user.id, requestedOrgId);
   // `resources` is optional on the request (each field too): fill the gaps
   // from the server's defaults so the runtime always sees a complete spec.
+  // The owner-id metadata and the org annotation are server-owned (access
+  // rule): enrichment sets the owner and the resolved org is applied below,
+  // so a caller-supplied value never survives.
+  const callerMetadata = withoutKey(metadata, OWNER_ID_METADATA);
+  const callerAnnotations = withoutKey(annotations, SANDBOX_ORG_ANNOTATION);
   let spec: SandboxSpec = {
     ...specFields,
+    ...(callerMetadata ? { metadata: callerMetadata } : {}),
+    ...(callerAnnotations ? { annotations: callerAnnotations } : {}),
     resources: {
       ...resources,
       vcpus: resources?.vcpus ?? defaultVcpus(),
       memoryMb: resources?.memoryMb ?? defaultMemoryMb(),
     },
   };
+  // `repo`: boot from an existing bake of it, else bake a quick one-repo
+  // prebuild below (on `source.image`, the base `assertRepoRequest` checked).
+  let prebuild = bodyPrebuild;
+  if (repo && "image" in spec.source) {
+    // Only a bake on the requested base image: another base is another
+    // environment.
+    const baseImage = spec.source.image;
+    const baked = findRepoBranchPrebuild(
+      runtime
+        .listPrebuilds()
+        .filter(
+          (record) =>
+            record.spec?.source !== undefined &&
+            "image" in record.spec.source &&
+            record.spec.source.image === baseImage,
+        ),
+      repo.url,
+      repo.branch,
+    );
+    if (baked) {
+      spec = { ...spec, source: { snapshot: baked.ref } };
+    } else {
+      prebuild = buildRepoPrebuildSpec({
+        repo: repo.url,
+        branch: repo.branch,
+        image: spec.source.image,
+      });
+    }
+  }
   // A template built from a prebuild carries the recipe, not a pinned ref:
   // resolve it to the current snapshot (idempotent — a cache hit when
   // unchanged) so an updated prebuild is picked up here.
@@ -309,6 +389,59 @@ export async function createSandboxForUser(
   // Keys of the people who may reach it (its owner, its org's members).
   const authorizedKeys = control.sandboxSshKeys(withToolboxes);
   return runtime.create(withToolboxes, { authorizedKeys, id, onProgress });
+}
+
+/**
+ * Shared by `POST /v1/sandboxes/:id/fork` and the `sandbox_lifecycle` MCP
+ * tool's `fork` action: snapshot the source and boot a copy owned by the
+ * CALLER. The runtime only does the mechanism; the copy's spec is derived here
+ * through control — the source owner's git identity/credentials and owner
+ * annotations are replaced by the caller's, and `metadata` is the body's with
+ * `atelier.dev/owner-id` forced to the caller (an echoed value is overridden).
+ * The copy keeps the source's org annotation (same org, same org secrets —
+ * values resolved at the source's creation carry over). Authorizing access to
+ * the source is the caller's job (the sandbox-access guard).
+ *
+ * Must reach `runtime.fork` without awaiting: the unpooled job relies on it
+ * to register the copy's `creating` record before the route answers.
+ */
+export function forkSandboxForUser(
+  container: ServerContainer,
+  user: { id: string; username: string; email: string },
+  sourceId: string,
+  body: ForkSandboxRequest,
+  id?: string,
+  onProgress?: (msg: string) => void,
+) {
+  const { runtime, control } = container;
+  const owner = {
+    id: user.id,
+    username: user.username,
+    email: user.email,
+    githubToken: control.userService.resolveGitHubToken(user.id),
+  };
+  const name = body.name?.trim() || undefined;
+  // The copy's labels until `derive` runs (or if it fails): the caller as
+  // owner, the source's org only, never the source owner's.
+  const org = runtime.getLabels(sourceId)?.annotations[SANDBOX_ORG_ANNOTATION];
+  return runtime.fork(
+    sourceId,
+    {
+      name,
+      initial: {
+        metadata: { [OWNER_ID_METADATA]: user.id },
+        annotations: {
+          ...(org ? { [SANDBOX_ORG_ANNOTATION]: org } : {}),
+          ...(name ? { [SANDBOX_NAME_ANNOTATION]: name } : {}),
+        },
+      },
+      derive: (sourceSpec) => {
+        const spec = control.reattributeSpec(sourceSpec, owner, body.metadata);
+        return { spec, authorizedKeys: control.sandboxSshKeys(spec) };
+      },
+    },
+    { id, onProgress },
+  );
 }
 
 /**
@@ -410,6 +543,11 @@ export function createV1Routes(container: ServerContainer) {
     new Elysia({ prefix: "/v1" })
       .use(authPlugin)
       .use(jobRoutes)
+      // The access rule (control/sandbox-access.ts) on every
+      // `/v1/sandboxes/:id/*` path: one guard for all sandbox routes,
+      // fork source and toolsets capture included. The attach socket
+      // re-checks in `open`, where the upgrade carries no resolved user.
+      .onBeforeHandle(sandboxAccessGuard(container, "/v1/sandboxes/"))
       // ── images ─────────────────────────────────────────────────────────
       .get("/images", () => container.images.listImages())
       .get("/images/templates", () => container.images.listTemplates())
@@ -556,6 +694,8 @@ export function createV1Routes(container: ServerContainer) {
         "/prebuilds",
         ({ body, query, user, set }) => {
           const spec = body as PrebuildSpec;
+          // Chained on another sandbox's snapshot? Same rule as a spawn.
+          requireSourceAccess(container, user.id, spec.source);
           // Transient credential for cloning private repos in the build pod;
           // scrubbed before the snapshot (never baked into the shared
           // content-addressed artifact). Resolved now (in request scope), not
@@ -616,8 +756,9 @@ export function createV1Routes(container: ServerContainer) {
       )
       .post(
         "/toolsets",
-        ({ body, set }) => {
+        ({ body, user, set }) => {
           const req = body as ToolsetBuildRequest;
+          requireSourceAccess(container, user.id, req.source);
           const job = jobs.dispatch(
             {
               kind: "toolset-build",
@@ -658,8 +799,18 @@ export function createV1Routes(container: ServerContainer) {
         "/sandboxes",
         ({ body, user, set }) => {
           const req = body as CreateSandboxRequest;
+          // Checked here for a synchronous 400 (the create job re-checks for
+          // MCP).
+          assertRepoRequest(req);
           // Fail an org the caller can't use now (403), not in the job.
           resolveOrgId(control, user.id, req.orgId);
+          // Same for a snapshot the caller may not boot from.
+          requireSourceAccess(
+            container,
+            user.id,
+            req.source,
+            req.prebuild?.source,
+          );
           // Non-blocking spawn: pre-allocate the id so the `202` job carries
           // `metadata.sandboxId` — the console navigates straight to the detail
           // page and shows its loading state (the `creating` record lands a
@@ -683,12 +834,28 @@ export function createV1Routes(container: ServerContainer) {
         },
         { body: CreateSandboxRequestSchema },
       )
-      // `?metadata=` is a URL-encoded JSON object of string pairs: only
-      // sandboxes whose metadata holds every pair.
+      // Only sandboxes the caller may access. `?metadata=` is a URL-encoded
+      // JSON object of string pairs: only sandboxes whose metadata holds
+      // every pair. `?owner=me|<userId>` keeps those created by that user.
       .get(
         "/sandboxes",
-        ({ query }) => runtime.list(parseMetadataFilter(query.metadata)),
-        { query: t.Object({ metadata: t.Optional(t.String()) }) },
+        ({ query, user }) => {
+          const filter = parseMetadataFilter(query.metadata);
+          const owner = ownerFilter(query.owner, user.id);
+          if (owner !== undefined) {
+            // Both filters name the creator: they must agree.
+            const named = filter[OWNER_ID_METADATA];
+            if (named !== undefined && named !== owner) return [];
+            filter[OWNER_ID_METADATA] = owner;
+          }
+          return accessibleSandboxes(container, user.id, runtime.list(filter));
+        },
+        {
+          query: t.Object({
+            metadata: t.Optional(t.String()),
+            owner: t.Optional(t.String()),
+          }),
+        },
       )
       .get("/sandboxes/:id", async ({ params }) => runtime.get(params.id))
       // Display-only edits (today: the name). A blank or `null` name clears
@@ -809,12 +976,12 @@ export function createV1Routes(container: ServerContainer) {
       .post(
         "/sandboxes/:id/fork",
         ({ params, body, user, set }) => {
-          // An unknown source is a plain 404, not a failed job.
-          const source = runtime.getLabels(params.id);
-          if (!source) throw new NotFoundError("Sandbox", params.id);
-          // The caller owns the copy (resume re-resolves git credentials
-          // from it); it stays in the source's org.
-          const metadata = { ...body.metadata, [OWNER_ID_METADATA]: user.id };
+          // No id is handed out that never gets a record: an unknown (404) or
+          // non-snapshottable (409) source is a plain error, not a failed job.
+          runtime.assertSnapshottable(params.id);
+          // Unpooled dispatch runs the body synchronously up to its first
+          // await, and the runtime registers the copy's `creating` record
+          // before that: the id in this 202 resolves immediately.
           const id = safeNanoid();
           const job = jobs.dispatch(
             {
@@ -824,18 +991,7 @@ export function createV1Routes(container: ServerContainer) {
               unpooled: true,
             },
             (_signal, log) =>
-              runtime.fork(
-                params.id,
-                { metadata, name: body.name?.trim() },
-                {
-                  id,
-                  authorizedKeys: control.sandboxSshKeys({
-                    metadata,
-                    annotations: source.annotations,
-                  }),
-                  onProgress: log,
-                },
-              ),
+              forkSandboxForUser(container, user, params.id, body, id, log),
           );
           set.status = 202;
           return job;
@@ -869,7 +1025,8 @@ export function createV1Routes(container: ServerContainer) {
           // The auth plugin's resolve doesn't reliably guard WS upgrades —
           // check the resolved user explicitly (same pattern as the terminal
           // WS route) so an unauthenticated socket never reaches the agent.
-          if (!(ws.data as { user?: { id: string } }).user) {
+          const user = (ws.data as { user?: { id: string } }).user;
+          if (!user) {
             ws.close(4001, "Unauthorized");
             return;
           }
@@ -878,6 +1035,7 @@ export function createV1Routes(container: ServerContainer) {
           // writer slot. Pure passthrough — runtime.attach already models both.
           const mode = ws.data.query.mode ?? "rw";
           try {
+            requireSandboxAccess(container, user.id, id);
             const { url } = await runtime.attach(id, name, mode);
             openUpstreamRelay(ws, url);
           } catch (err) {

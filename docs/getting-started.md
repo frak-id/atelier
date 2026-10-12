@@ -16,11 +16,13 @@ Once deployed, daily usage is entirely console-driven:
 
 1. **Define a workspace** — point it at your git repos, set init commands (`bun install`, `npm run build`, …), dev commands, ports, and secrets
 2. **(Optional) Run a prebuild** — Atelier runs the expensive setup once and snapshots the result
-3. **Spawn sandboxes** — each one clones from the snapshot instantly. Open VS Code in your browser, or SSH in with your usual tooling (`ssh sandbox-{id}@your-host -p 2222`). A key reaches a sandbox only when its owner created it or belongs to the org it runs in.
+3. **Spawn sandboxes** — each one clones from the snapshot instantly. Open VS Code in your browser, or SSH in with your usual tooling (`ssh sandbox-{id}@your-host -p 2222`).
 4. **Dispatch AI tasks** — create a coding task from the console; Atelier spawns a sandbox, creates a branch, launches OpenCode with your prompt, and tracks progress
 5. **Preview with auto-HTTPS** — dev commands get a public `https://dev-{name}-{id}.your-domain.com` URL with streaming logs
 
 No local setup is required for users beyond a browser (or an SSH client).
+
+**Who can reach a sandbox.** One rule covers the API (`/v1/sandboxes/:id/*`, including attach and fork), the agent and terminal routes (`/sessions/sandboxes/:id/*`), the MCP tools and SSH: a sandbox is reachable by the user who created it and by every member of the org it runs in. Anyone else gets a `404`, exactly as for a sandbox that does not exist. `GET /v1/sandboxes` (and the MCP `get_sandbox` list) only returns sandboxes you can reach, and takes an optional `?owner=me|<userId>` to keep those created by one user (it composes with `?metadata=`). Two exceptions: with auth bypassed (`local` / `mock` modes, a single user) everything is allowed, and a legacy sandbox with neither an owner nor an org recorded stays open to any authenticated caller (SSH admits no key to it). The owner and org are server-set: a client-supplied `atelier.dev/owner-id` metadata or `atelier.dev/org-id` annotation on create is ignored.
 
 ## How Easy Is It to Install?
 

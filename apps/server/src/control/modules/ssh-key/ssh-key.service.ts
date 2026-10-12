@@ -37,12 +37,14 @@ export class SshKeyService {
   }
 
   create(options: CreateOptions): SshKey {
-    if (!this.isValidPublicKey(options.publicKey)) {
+    const publicKey = options.publicKey.trim();
+    if (!this.isValidPublicKey(publicKey)) {
       throw new ValidationError("Invalid SSH public key format");
     }
     return this.sshKeyRepository.create({
       ...options,
-      fingerprint: this.computeFingerprint(options.publicKey),
+      publicKey,
+      fingerprint: this.computeFingerprint(publicKey),
     });
   }
 
@@ -64,6 +66,8 @@ export class SshKeyService {
   }
 
   private isValidPublicKey(key: string): boolean {
+    // One line only: a newline would smuggle extra authorized_keys entries.
+    if (/[\r\n]/.test(key)) return false;
     const trimmed = key.trim();
     return /^(ssh-ed25519|ssh-rsa|ecdsa-sha2-\S+|ssh-dss)\s+\S+/.test(trimmed);
   }

@@ -13,12 +13,17 @@
 import {
   CreateSandboxRequestSchema,
   SANDBOX_NAME_ANNOTATION,
+  SANDBOX_NAME_MAX_LENGTH,
 } from "@atelier/spec";
 import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { z } from "zod";
 import type { AuthUser } from "../../../control/index.ts";
 import type { ServerContainer } from "../../container.ts";
-import { createSandboxForUser } from "../../v1.routes.ts";
+import {
+  accessibleSandboxes,
+  requireSandboxAccess,
+} from "../../sandbox-guard.ts";
+import { createSandboxForUser, forkSandboxForUser } from "../../v1.routes.ts";
 import { keepTail, rejectParams, safeTool, text } from "../format.ts";
 import { parseSpec } from "../validate.ts";
 
@@ -117,6 +122,9 @@ export function registerSandboxTools(
   user: AuthUser,
 ): void {
   const { runtime } = container;
+  /** The access rule (control/sandbox-access.ts): a denied or unknown id is
+   * a NOT_FOUND, like the HTTP routes. Every tool taking an id calls it. */
+  const guard = (id: string) => requireSandboxAccess(container, user.id, id);
 
   server.registerTool(
     "create_sandbox",
@@ -143,8 +151,8 @@ export function registerSandboxTools(
               "owner?}], `processes` [{name, command, cwd?, env?, primary?, " +
               "readiness?, restart?, lazy?}], `ports` [{name, port, " +
               "public?}], `hooks`, `caches`, `timeoutSeconds`, `metadata`, " +
-              "`annotations`. Do NOT put `toolboxes`, `prebuild` or `orgId` " +
-              "in here; they are separate arguments.",
+              "`annotations`. Do NOT put `toolboxes`, `prebuild`, `repo` or " +
+              "`orgId` in here; they are separate arguments.",
           ),
         toolboxes: z
           .array(z.string())
@@ -161,6 +169,14 @@ export function registerSandboxTools(
             "A PrebuildSpec to bake (cached when unchanged) and use as the " +
               "boot source instead of `spec.source`.",
           ),
+        repo: z
+          .object({ url: z.string(), branch: z.string().optional() })
+          .optional()
+          .describe(
+            "A git repo to boot from (a prebuild of it is reused, else one " +
+              "is baked on `spec.source.image`). Not with `prebuild` or a " +
+              "`spec.source.snapshot`.",
+          ),
         orgId: z
           .string()
           .optional()
@@ -170,7 +186,7 @@ export function registerSandboxTools(
           ),
       },
     },
-    safeTool(async ({ spec, toolboxes, prebuild, orgId }) => {
+    safeTool(async ({ spec, toolboxes, prebuild, repo, orgId }) => {
       // Same boundary validation Elysia's schema guard gives the HTTP route.
       const body = parseSpec(
         CreateSandboxRequestSchema,
@@ -178,6 +194,7 @@ export function registerSandboxTools(
           ...spec,
           ...(toolboxes ? { toolboxes } : {}),
           ...(prebuild ? { prebuild } : {}),
+          ...(repo ? { repo } : {}),
           ...(orgId ? { orgId } : {}),
         },
         "CreateSandboxRequest",
@@ -243,6 +260,7 @@ export function registerSandboxTools(
           { status, metadata },
           "only filters the sandbox list (omit `id` to list)",
         );
+        guard(id);
         return text(sandboxView(await runtime.get(id), verbose));
       }
 
@@ -250,7 +268,11 @@ export function registerSandboxTools(
         { verbose },
         "only applies when reading one sandbox (pass `id`)",
       );
-      const all = runtime.list(metadata);
+      const all = accessibleSandboxes(
+        container,
+        user.id,
+        runtime.list(metadata),
+      );
       const rows = (status ? all.filter((s) => s.status === status) : all)
         .map((s) => {
           const name = s.annotations?.[SANDBOX_NAME_ANNOTATION];
@@ -276,15 +298,35 @@ export function registerSandboxTools(
         "the `snapshot` ref); `resume` brings a paused (or errored) one " +
         "back and returns it like `get_sandbox`; `snapshot` saves the disk " +
         "without pausing (returns `snapshot`, usable as `spec.source." +
-        "snapshot`); `destroy` deletes it permanently and irreversibly, " +
-        "with no confirmation. pause/resume can take minutes.",
+        "snapshot`); `fork` snapshots it and boots an independent copy " +
+        "owned by you (your git identity), in the same org, and returns the " +
+        "copy's `id` and `urls` (waits until it is up); `destroy` deletes it " +
+        "permanently and irreversibly, with no confirmation. " +
+        "pause/resume/fork can take minutes.",
       inputSchema: {
         id: z.string().describe("Sandbox id"),
-        action: z.enum(["pause", "resume", "snapshot", "destroy"]),
+        action: z.enum(["pause", "resume", "snapshot", "fork", "destroy"]),
+        name: z
+          .string()
+          .max(SANDBOX_NAME_MAX_LENGTH)
+          .optional()
+          .describe("fork only: display name of the copy (default: none)"),
       },
     },
-    safeTool(async ({ id, action }) => {
+    safeTool(async ({ id, action, name }) => {
+      guard(id);
+      if (action !== "fork") rejectParams({ name }, "only applies to `fork`");
       switch (action) {
+        case "fork": {
+          const copy = await forkSandboxForUser(container, user, id, { name });
+          return text({
+            id: copy.id,
+            urls: splitUrls(copy.urls).urls.map(({ name, url }) => ({
+              name,
+              url,
+            })),
+          });
+        }
         case "pause": {
           const { ref } = await runtime.pause(id);
           return text({ id, status: "paused", snapshot: ref });
@@ -348,6 +390,7 @@ export function registerSandboxTools(
       },
     },
     safeTool(async ({ id, maxOutputChars, timeoutMs, ...req }) => {
+      guard(id);
       const result = await runtime.exec(id, {
         ...req,
         timeoutMs: timeoutMs ?? EXEC_DEFAULT_TIMEOUT_MS,
@@ -390,6 +433,7 @@ export function registerSandboxTools(
       },
     },
     safeTool(async ({ id, name, action, maxChars }) => {
+      guard(id);
       switch (action) {
         case "logs":
           return text({
@@ -444,6 +488,7 @@ export function registerSandboxTools(
       },
     },
     safeTool(async ({ id, files }) => {
+      guard(id);
       const { results } = await runtime.patchFiles(id, files);
       const failed = results
         .filter((r) => !r.success)
@@ -480,6 +525,7 @@ export function registerSandboxTools(
       },
     },
     safeTool(async ({ id, name, port, public: isPublic }) => {
+      guard(id);
       await runtime.addPort(id, { name, port, public: isPublic });
       const state = await runtime.get(id);
       const url = state.urls.find((u) => u.name === name)?.url;

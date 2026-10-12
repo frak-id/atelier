@@ -98,6 +98,7 @@ function fakeRuntime() {
     deletePrebuild: async (ref: string) => {
       calls.deleted.push(ref);
     },
+    getLabels: () => ({ metadata: {}, annotations: {} }),
     captureToolset: async () => {
       const ref = `toolsets/cap@sha256:${toolsets.size}`;
       toolsets.set(ref, { private: true });

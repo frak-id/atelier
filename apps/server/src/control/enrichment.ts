@@ -17,6 +17,8 @@ import { isSecretRef, type SandboxSpec } from "@atelier/spec";
 import { config, dashboardUrl } from "../shared/lib/config.ts";
 import {
   buildGitAttributionFiles,
+  GIT_CREDENTIALS_PATH,
+  GITCONFIG_PATH,
   OWNER_ANNOTATION,
   OWNER_EMAIL_ANNOTATION,
   OWNER_ID_METADATA,
@@ -202,6 +204,35 @@ function injectGitAttribution(
       [OWNER_ID_METADATA]: owner.id,
     },
   };
+}
+
+/**
+ * Re-attribute a stored (already enriched) spec to a new owner: drop the
+ * previous owner's git identity/credential files, owner annotations and
+ * metadata, then inject `owner`'s. `metadata` is the copy's own metadata
+ * (the previous owner-id never carries over). Everything else, incl. secret
+ * values resolved at the source's creation, is kept as stored.
+ */
+export function reattributeSpec(
+  spec: SandboxSpec,
+  owner: OwnerContext,
+  metadata: Record<string, string> = {},
+): SandboxSpec {
+  const gitPaths = new Set([GITCONFIG_PATH, GIT_CREDENTIALS_PATH]);
+  const {
+    [OWNER_ANNOTATION]: _owner,
+    [OWNER_EMAIL_ANNOTATION]: _ownerEmail,
+    ...annotations
+  } = spec.annotations ?? {};
+  return injectGitAttribution(
+    {
+      ...spec,
+      files: spec.files?.filter((f) => !gitPaths.has(f.path)),
+      annotations,
+      metadata,
+    },
+    owner,
+  );
 }
 
 /** Append the org's mandated fragment (never overrides the caller's fields). */

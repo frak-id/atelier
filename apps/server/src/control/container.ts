@@ -5,10 +5,19 @@
  * enrichment pipeline.
  */
 
+import { isAuthBypassed } from "../shared/lib/config.ts";
 import { AuthService } from "./auth.ts";
-import { type EnrichmentOptions, enrichSpec } from "./enrichment.ts";
+import {
+  type EnrichmentOptions,
+  enrichSpec,
+  reattributeSpec,
+} from "./enrichment.ts";
 import { GitHubRepoService } from "./github-repos.ts";
 import { ApiKeyRepository, ApiKeyService } from "./modules/api-key/index.ts";
+import {
+  IntegrationConnectionRepository,
+  IntegrationConnectionService,
+} from "./modules/integration-connection/index.ts";
 import {
   StarterRepository,
   StarterService,
@@ -37,17 +46,18 @@ import {
   ServerConfigService,
 } from "./modules/server-config/index.ts";
 import { SshKeyRepository, SshKeyService } from "./modules/ssh-key/index.ts";
-import {
-  SteeryNotifyRepository,
-  SteeryNotifyService,
-} from "./modules/steery-notify/index.ts";
 import { ToolboxRepository, ToolboxService } from "./modules/toolbox/index.ts";
 import {
   ToolboxVersionRepository,
   ToolboxVersionService,
 } from "./modules/toolbox-version/index.ts";
 import { UserRepository, UserService } from "./modules/user/index.ts";
-import { type SandboxLabels, sandboxSshKeys } from "./sandbox-access.ts";
+import {
+  canAccessSandbox,
+  type SandboxAccessDeps,
+  type SandboxLabels,
+  sandboxSshKeys,
+} from "./sandbox-access.ts";
 
 export function createControlContainer() {
   const userRepository = new UserRepository();
@@ -81,11 +91,17 @@ export function createControlContainer() {
   const ownershipTransferService = new OwnershipTransferService(
     new OwnershipTransferRepository(),
   );
+  const integrationConnectionService = new IntegrationConnectionService(
+    new IntegrationConnectionRepository(),
+  );
   const authService = new AuthService({ apiKeyService, userService });
   const gitHubRepoService = new GitHubRepoService({ userService });
-  const steeryNotifyService = new SteeryNotifyService(
-    new SteeryNotifyRepository(),
-  );
+
+  const accessDeps: SandboxAccessDeps = {
+    isAuthBypassed,
+    isOrgMember: (orgId, userId) =>
+      orgMemberService.getMembership(orgId, userId) !== undefined,
+  };
 
   return {
     userService,
@@ -103,7 +119,7 @@ export function createControlContainer() {
     starterService,
     workspaceService,
     ownershipTransferService,
-    steeryNotifyService,
+    integrationConnectionService,
     /** Bound seam-crossing enrichment \u2014 the only function `api/` calls
      * before handing a spec to `runtime.create()`. */
     enrichSpec: (
@@ -120,12 +136,14 @@ export function createControlContainer() {
         },
         opts,
       ),
+    /** Re-attribute a stored spec to a new owner (fork); pure, no deps. */
+    reattributeSpec,
     /** The SSH public keys allowed into one sandbox (see sandbox-access.ts). */
     sandboxSshKeys: (labels: SandboxLabels) =>
-      sandboxSshKeys(
-        { sshKeys: sshKeyService, orgMembers: orgMemberService },
-        labels,
-      ),
+      sandboxSshKeys({ ...accessDeps, sshKeys: sshKeyService }, labels),
+    /** The one sandbox access rule (see sandbox-access.ts). */
+    canAccessSandbox: (userId: string, labels: SandboxLabels) =>
+      canAccessSandbox(accessDeps, userId, labels),
   };
 }
 
