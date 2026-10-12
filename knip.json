@@ -11,7 +11,8 @@
       "project": ["src/**/*.ts"]
     },
     "packages/shared": {
-      "project": ["src/**/*.ts"]
+      "project": ["src/**/*.ts"],
+      "entry": ["src/**/*.test.ts"]
     },
     "packages/spec": {
       "project": ["src/**/*.ts"]

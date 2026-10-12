@@ -162,7 +162,10 @@ function PermissionRow({
   request: AgentPermissionRequest;
 }) {
   const reply = useReplyPermission(sandboxId);
-  const presentation = permissionPresentation(request.permission);
+  const presentation = permissionPresentation(
+    request.permission,
+    request.toolKind,
+  );
 
   return (
     <div className="rounded-md border p-3">

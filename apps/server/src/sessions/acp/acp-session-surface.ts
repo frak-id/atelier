@@ -13,7 +13,7 @@
  */
 import type {
   AgentEvent,
-  AgentPermissionReply,
+  AgentPermissionAnswer,
   AgentPermissionRequest,
   AgentQuestionRequest,
   AgentSession,
@@ -111,7 +111,7 @@ export class AcpSessionSurface implements HarnessSessionSurface {
 
   async replyPermission(
     requestId: string,
-    reply: AgentPermissionReply,
+    reply: AgentPermissionAnswer,
   ): Promise<InterventionResult> {
     return this.dispatch.replyPermission(this.sandboxId, requestId, reply);
   }

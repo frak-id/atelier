@@ -60,6 +60,18 @@ export const AgentPermissionRequestSchema = Type.Object({
   patterns: Type.Optional(Type.Array(Type.String())),
   metadata: Type.Optional(Type.Record(Type.String(), Type.Unknown())),
   always: Type.Optional(Type.Array(Type.String())),
+  /** The ACP tool kind (`edit`, `execute`, `fetch`, …), when given. */
+  toolKind: Type.Optional(Type.String()),
+  /** The answers the agent offers, in its order. */
+  options: Type.Optional(
+    Type.Array(
+      Type.Object({
+        optionId: Type.String(),
+        name: Type.String(),
+        kind: Type.String(),
+      }),
+    ),
+  ),
 });
 export type AgentPermissionRequest = Static<
   typeof AgentPermissionRequestSchema
@@ -72,6 +84,15 @@ export const AgentPermissionReplySchema = Type.Union([
   Type.Literal("reject"),
 ]);
 export type AgentPermissionReply = Static<typeof AgentPermissionReplySchema>;
+
+/** Reply body: a coarse `reply`, or the exact `optionId` the agent offered. */
+export const AgentPermissionReplyBodySchema = Type.Union([
+  Type.Object({ reply: AgentPermissionReplySchema }),
+  Type.Object({ optionId: Type.String({ minLength: 1 }) }),
+]);
+
+/** What `replyPermission` takes: a coarse reply or an offered option id. */
+export type AgentPermissionAnswer = AgentPermissionReply | { optionId: string };
 
 export const AgentQuestionRequestSchema = Type.Object({
   id: Type.String(),

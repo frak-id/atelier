@@ -3,6 +3,7 @@
  * table: "/sessions/* → sessions"). Thin Elysia binding over
  * `SessionService`/`TerminalService`; all mechanism lives in `sessions/`.
  */
+import { AgentPermissionReplyBodySchema } from "@frak/atelier-shared";
 import { Elysia, sse, t } from "elysia";
 import { createChildLogger } from "../shared/lib/logger.ts";
 import { createAuthPlugin } from "./auth.plugin.ts";
@@ -47,16 +48,12 @@ export function createSessionsRoutes(container: ServerContainer) {
     .post(
       "/permissions/:requestId/reply",
       ({ params, body }) =>
-        sessions.replyPermission(params.id, params.requestId, body.reply),
-      {
-        body: t.Object({
-          reply: t.Union([
-            t.Literal("once"),
-            t.Literal("always"),
-            t.Literal("reject"),
-          ]),
-        }),
-      },
+        sessions.replyPermission(
+          params.id,
+          params.requestId,
+          "reply" in body ? body.reply : { optionId: body.optionId },
+        ),
+      { body: AgentPermissionReplyBodySchema },
     )
     .get("/questions", ({ params }) => sessions.listQuestions(params.id))
     .post(

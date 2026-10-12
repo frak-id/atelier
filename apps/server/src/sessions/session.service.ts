@@ -12,7 +12,7 @@
  */
 import type {
   AgentEvent,
-  AgentPermissionReply,
+  AgentPermissionAnswer,
   AgentPermissionRequest,
   AgentQuestionRequest,
   AgentSession,
@@ -100,7 +100,7 @@ export class SessionService {
   async replyPermission(
     sandboxId: string,
     requestId: string,
-    reply: AgentPermissionReply,
+    reply: AgentPermissionAnswer,
   ): Promise<InterventionResult> {
     const result = await (await this.surfaceFor(sandboxId)).replyPermission(
       requestId,

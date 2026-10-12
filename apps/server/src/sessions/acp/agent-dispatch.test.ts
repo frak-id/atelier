@@ -113,8 +113,11 @@ class FakeAcpAgent {
     if (!this.clientCtx) throw new Error("no client connected yet");
     return this.clientCtx.request(methods.client.session.requestPermission, {
       sessionId,
-      toolCall: { toolCallId: "tc-1", title: "Run a thing" },
-      options: [{ optionId: "allow-once", name: "Allow", kind: "allow_once" }],
+      toolCall: { toolCallId: "tc-1", title: "Run a thing", kind: "execute" },
+      options: [
+        { optionId: "allow-once", name: "Allow", kind: "allow_once" },
+        { optionId: "reject-once", name: "Reject", kind: "reject_once" },
+      ],
     });
   }
 }
@@ -407,5 +410,56 @@ describe("AgentDispatch × session/list", () => {
     // Nothing holds it now → idle-closes.
     await new Promise((resolve) => setTimeout(resolve, 150));
     expect(live.has(SANDBOX_ID)).toBe(false);
+  });
+});
+
+describe("AgentDispatch × permission requests", () => {
+  async function pendingPrompt(
+    fakeAgent: FakeAcpAgent,
+    dispatch: AgentDispatchT,
+  ) {
+    const session = await dispatch.openSession({
+      sandboxId: SANDBOX_ID,
+      cwd: "/home/dev/work",
+    });
+    const answered = fakeAgent.requestPermission(session.sessionId);
+    await new Promise((resolve) => setTimeout(resolve, 15));
+    return { session, answered };
+  }
+  type AgentDispatchT = InstanceType<typeof AgentDispatch>;
+
+  test("the list is lossless: tool kind and the options the agent offered", async () => {
+    const fakeAgent = new FakeAcpAgent();
+    const { dispatch, stop } = makeDispatch(fakeAgent);
+    cleanups.push(stop);
+    await pendingPrompt(fakeAgent, dispatch);
+
+    const [pending] = dispatch.permissionsFor(SANDBOX_ID);
+    expect(pending?.toolKind).toBe("execute");
+    expect(pending?.options).toEqual([
+      { optionId: "allow-once", name: "Allow", kind: "allow_once" },
+      { optionId: "reject-once", name: "Reject", kind: "reject_once" },
+    ]);
+  });
+
+  test("an optionId the agent did not offer is rejected (400)", async () => {
+    const fakeAgent = new FakeAcpAgent();
+    const { dispatch, stop } = makeDispatch(fakeAgent);
+    cleanups.push(stop);
+    await pendingPrompt(fakeAgent, dispatch);
+    const id = dispatch.permissionsFor(SANDBOX_ID)[0]?.id ?? "";
+
+    let thrown: unknown;
+    try {
+      dispatch.replyPermission(SANDBOX_ID, id, { optionId: "nope" });
+    } catch (err) {
+      thrown = err;
+    }
+    expect((thrown as { statusCode?: number }).statusCode).toBe(400);
+    // Still pending; an offered option works.
+    expect(dispatch.permissionsFor(SANDBOX_ID)).toHaveLength(1);
+    expect(
+      dispatch.replyPermission(SANDBOX_ID, id, { optionId: "allow-once" }),
+    ).toEqual({ ok: true });
   });
 });
