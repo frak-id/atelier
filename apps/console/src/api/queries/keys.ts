@@ -63,6 +63,9 @@ export const queryKeys = {
     all: ["org-policy"] as const,
     detail: (orgId: string) => [...queryKeys.orgPolicy.all, orgId] as const,
   },
+  steeryNotify: {
+    detail: (orgId: string) => ["steery-notify", orgId] as const,
+  },
   toolsets: {
     all: ["toolsets"] as const,
     list: () => [...queryKeys.toolsets.all, "list"] as const,

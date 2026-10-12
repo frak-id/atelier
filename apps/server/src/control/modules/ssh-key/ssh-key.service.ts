@@ -13,9 +13,10 @@ interface CreateOptions {
 }
 
 /**
- * SSH public keys → sandbox SSH access. `getValidPublicKeys()` used to be
- * pulled directly at sandbox boot (v1 leak #2); now it's an explicit input
- * enrichment resolves into `RuntimeCreateOptions.authorizedKeys` at the seam.
+ * SSH public keys → sandbox SSH access. Which keys reach a given sandbox is
+ * `sandboxSshKeys` (control/sandbox-access.ts): resolved at boot into
+ * `RuntimeCreateOptions.authorizedKeys`, and per connection by the SSH
+ * gateway.
  */
 export class SshKeyService {
   constructor(private readonly sshKeyRepository: SshKeyRepository) {}
@@ -29,10 +30,6 @@ export class SshKeyService {
     return this.sshKeyRepository
       .listAll()
       .filter((key) => !key.expiresAt || key.expiresAt > now);
-  }
-
-  getValidPublicKeys(): string[] {
-    return this.getAllValidKeys().map((k) => k.publicKey);
   }
 
   getById(id: string): SshKey | undefined {

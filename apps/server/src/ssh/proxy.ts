@@ -64,11 +64,12 @@ export interface InServerSshGatewayDeps {
   /** The shared ssh-pipe key (OpenSSH private key) the pod trusts. */
   upstreamPrivateKey: string;
   /**
-   * The dev public keys currently authorized (OpenSSH lines). Read fresh on
-   * every authentication so a newly-added key takes effect without a restart —
-   * mirrors sshpiper reading the live `Pipe`'s `authorized_keys_data`.
+   * The dev public keys (OpenSSH lines) allowed into `sandboxId`, the SSH
+   * username: only keys whose owner may access that sandbox. Read fresh on
+   * every authentication so a newly-added key or membership takes effect
+   * without a restart.
    */
-  authorizedKeys: () => string[];
+  authorizedKeys: (sandboxId: string) => string[];
   /**
    * Resolve the upstream `pod:22` for a sandbox id (the SSH username), or
    * `null` when the sandbox is unknown / not running.
@@ -314,7 +315,9 @@ export function startInServerSshGateway(
         if (ctx.method !== "publickey") {
           return ctx.reject(["publickey"], true);
         }
-        const authorized = parseAuthorizedKeys(deps.authorizedKeys());
+        const authorized = parseAuthorizedKeys(
+          deps.authorizedKeys(ctx.username),
+        );
         if (!authenticate(ctx, authorized)) return ctx.reject();
         sandboxId = ctx.username;
         ctx.accept();

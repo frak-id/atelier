@@ -26,6 +26,7 @@ import {
   type RuntimeSurface,
   repoKey,
   runtimeSurfaceOf,
+  SANDBOX_NAME_ANNOTATION,
   type SandboxRepo,
   type SandboxSpec,
   type SandboxState,
@@ -783,20 +784,43 @@ export class RuntimeService {
     return this.sandboxes.get(id)?.generated.sshHostKeys;
   }
 
+  /** A sandbox's opaque metadata and annotations, or undefined when it is
+   * unknown. A synchronous store read like `getSshHostKeys`: the SSH gateway
+   * calls it on every authentication attempt. */
+  getLabels(
+    id: string,
+  ):
+    | { metadata: Record<string, string>; annotations: Record<string, string> }
+    | undefined {
+    const record = this.sandboxes.get(id);
+    return (
+      record && {
+        metadata: record.metadata,
+        annotations: record.spec.annotations ?? {},
+      }
+    );
+  }
+
   /** All sandboxes, from persistence only (no agent round-trips). Live
-   * process health is on `get(id)`. */
-  list(): SandboxSummary[] {
+   * process health is on `get(id)`. With `metadata`, only those whose
+   * metadata holds every one of its pairs. */
+  list(metadata: Record<string, string> = {}): SandboxSummary[] {
     const snapshots = new Map(this.snapshots.list().map((s) => [s.ref, s]));
-    return this.sandboxes.list().map((r) => {
-      const repos = sourceRepos(r.spec, snapshots);
-      return {
-        id: r.id,
-        status: r.status,
-        createdAt: r.createdAt,
-        annotations: r.spec.annotations,
-        ...(repos.length > 0 ? { repos } : {}),
-      };
-    });
+    const wanted = Object.entries(metadata);
+    return this.sandboxes
+      .list()
+      .filter((r) => wanted.every(([k, v]) => r.metadata[k] === v))
+      .map((r) => {
+        const repos = sourceRepos(r.spec, snapshots);
+        return {
+          id: r.id,
+          status: r.status,
+          createdAt: r.createdAt,
+          metadata: r.metadata,
+          annotations: r.spec.annotations,
+          ...(repos.length > 0 ? { repos } : {}),
+        };
+      });
   }
 
   /**
@@ -1204,6 +1228,36 @@ export class RuntimeService {
       createdAt: new Date().toISOString(),
     });
     return { ref, hash };
+  }
+
+  /**
+   * Snapshot sandbox `sourceId` and boot a new sandbox from that snapshot
+   * with the source's spec (toolsets, env, files, processes, ports, hooks).
+   * `metadata` replaces the source's; `name` sets the display name (absent:
+   * none, so the copy never poses as its source). The snapshot holds the
+   * source's op lock, the boot the new id's.
+   */
+  async fork(
+    sourceId: string,
+    fork: { metadata: Record<string, string>; name?: string },
+    options: RuntimeCreateOptions = {},
+  ): Promise<CreateSandboxResponse> {
+    options.onProgress?.(`snapshotting ${sourceId}…`);
+    const { ref } = await this.snapshot(sourceId);
+    const { spec } = this.require(sourceId);
+    const { [SANDBOX_NAME_ANNOTATION]: _name, ...annotations } =
+      spec.annotations ?? {};
+    return this.create(
+      {
+        ...spec,
+        source: { snapshot: ref },
+        metadata: fork.metadata,
+        annotations: fork.name
+          ? { ...annotations, [SANDBOX_NAME_ANNOTATION]: fork.name }
+          : annotations,
+      },
+      options,
+    );
   }
 
   /** Snapshot `pvcName` into `ref` via the volume backend (create + wait,

@@ -11,7 +11,11 @@ import type {
   ToolboxOwner,
   ToolsetRef,
 } from "@atelier/spec";
-import { createControlContainer, recipeFingerprint } from "../control/index.ts";
+import {
+  createControlContainer,
+  recipeFingerprint,
+  SteeryNotifier,
+} from "../control/index.ts";
 import {
   AgentClient,
   createImageBuilder,
@@ -94,7 +98,14 @@ export function createServerContainer() {
     // Lazy so a live edit to jobs.concurrency re-bounds the pool.
     concurrency: () => control.serverConfigService.get("jobs.concurrency"),
   });
-  const dispatch = new AgentDispatch({ agentClient: agent });
+  // Permission prompts also go to a person's phone (Steery) when the
+  // sandbox's org policy asks for it; sessions/ only sees the seam.
+  const notifier = new SteeryNotifier({
+    policies: control.steeryNotifyService,
+    secrets: control.secretService,
+    annotations: (sandboxId) => runtime.getLabels(sandboxId)?.annotations,
+  });
+  const dispatch = new AgentDispatch({ agentClient: agent, notifier });
   const sessions = new SessionService({
     runtime,
     // One surface for every harness: they all speak ACP over the attach

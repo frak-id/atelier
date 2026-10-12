@@ -47,6 +47,7 @@ import type {
 import type { AgentClient } from "../../runtime/index.ts";
 import { safeNanoid } from "../../shared/lib/id.ts";
 import { createChildLogger } from "../../shared/lib/logger.ts";
+import type { PermissionNotifier } from "../permission-notifier.ts";
 import type { InterventionResult } from "../session-surface.ts";
 import { type AcpTransport, connectAcpWebSocket } from "./acp-stream.ts";
 import {
@@ -122,13 +123,15 @@ export interface SurfaceEvent {
 }
 export type SurfaceListener = (event: SurfaceEvent) => void;
 
-/** A buffered ACP permission request awaiting a decision (chat auto-approve or
- * dashboard reply — first `replyPermission` wins). */
+/** A buffered ACP permission request awaiting a decision (chat auto-approve,
+ * dashboard reply or the notifier — first answer wins). `abort` tells the
+ * notifier it was settled without it. */
 interface PendingPermission {
   id: string;
   sessionId: string;
   request: RequestPermissionRequest;
   resolve: (response: RequestPermissionResponse) => void;
+  abort: AbortController;
 }
 
 export interface AgentSessionCallbacks {
@@ -245,6 +248,7 @@ class SandboxAcpConnection {
   }
 
   private constructor(
+    private readonly sandboxId: string,
     private readonly transport: AcpTransport,
     private readonly connection: ClientConnection,
     readonly acp: AgentProxy,
@@ -254,13 +258,16 @@ class SandboxAcpConnection {
      * (idle-TTL reconnects must not lose track of server-created sessions on
      * agents without `session/list`). */
     private readonly createdSessions: Map<string, CreatedSessionEntry>,
+    private readonly notifier: PermissionNotifier | undefined,
   ) {}
 
   static async open(
+    sandboxId: string,
     url: string,
     onGone: (self: SandboxAcpConnection) => void,
     emit: (event: SurfaceEvent) => void,
     createdSessions: Map<string, CreatedSessionEntry>,
+    notifier: PermissionNotifier | undefined,
   ): Promise<SandboxAcpConnection> {
     const transport = connectAcpWebSocket(url);
     // `conn` is captured by the handlers below; it's assigned before any frame
@@ -275,12 +282,14 @@ class SandboxAcpConnection {
       )
       .connect(transport.stream);
     conn = new SandboxAcpConnection(
+      sandboxId,
       transport,
       connection,
       connection.agent,
       onGone,
       emit,
       createdSessions,
+      notifier,
     );
 
     try {
@@ -390,14 +399,58 @@ class SandboxAcpConnection {
   ): Promise<RequestPermissionResponse> {
     const id = safeNanoid();
     return new Promise<RequestPermissionResponse>((resolve) => {
-      this.pendingPermissions.set(id, {
+      const pending: PendingPermission = {
         id,
         sessionId: request.sessionId,
         request,
         resolve,
-      });
+        abort: new AbortController(),
+      };
+      this.pendingPermissions.set(id, pending);
       this.emit({ resource: "permissions" });
+      this.notifier?.notify(
+        {
+          sandboxId: this.sandboxId,
+          sessionId: request.sessionId,
+          title:
+            request.toolCall.title ?? request.toolCall.kind ?? "permission",
+          kind: request.toolCall.kind ?? undefined,
+          options: request.options.map((o) => ({
+            optionId: o.optionId,
+            name: o.name,
+            kind: o.kind,
+          })),
+        },
+        (optionId) => {
+          // Only a still-pending prompt, and only an option it offered.
+          if (
+            this.pendingPermissions.get(id) === pending &&
+            request.options.some((o) => o.optionId === optionId)
+          ) {
+            this.settlePermission(pending, optionId, false);
+          }
+        },
+        pending.abort.signal,
+      );
     });
+  }
+
+  /** Answer a pending prompt (`undefined` = cancelled) and tell the notifier
+   * when it was settled elsewhere. */
+  private settlePermission(
+    pending: PendingPermission,
+    optionId: string | undefined,
+    elsewhere = true,
+  ): void {
+    this.pendingPermissions.delete(pending.id);
+    if (elsewhere) pending.abort.abort();
+    pending.resolve(
+      optionId
+        ? { outcome: { outcome: "selected", optionId } }
+        : { outcome: { outcome: "cancelled" } },
+    );
+    this.emit({ resource: "permissions" });
+    this.maybeScheduleIdleClose();
   }
 
   // ── sessions ───────────────────────────────────────────────────────────────
@@ -589,15 +642,10 @@ class SandboxAcpConnection {
   ): InterventionResult {
     const pending = this.pendingPermissions.get(requestId);
     if (!pending) return { ok: false, status: 404 };
-    this.pendingPermissions.delete(requestId);
-    const optionId = selectPermissionOption(pending.request, decision);
-    pending.resolve(
-      optionId
-        ? { outcome: { outcome: "selected", optionId } }
-        : { outcome: { outcome: "cancelled" } },
+    this.settlePermission(
+      pending,
+      selectPermissionOption(pending.request, decision),
     );
-    this.emit({ resource: "permissions" });
-    this.maybeScheduleIdleClose();
     return { ok: true };
   }
 
@@ -614,6 +662,7 @@ class SandboxAcpConnection {
     }
     const hadPermissions = this.pendingPermissions.size > 0;
     for (const pending of this.pendingPermissions.values()) {
+      pending.abort.abort();
       pending.resolve({ outcome: { outcome: "cancelled" } });
     }
     this.pendingPermissions.clear();
@@ -650,7 +699,13 @@ export class AgentDispatch {
     Map<string, CreatedSessionEntry>
   >();
 
-  constructor(private readonly deps: { agentClient: AgentClient }) {}
+  constructor(
+    private readonly deps: {
+      agentClient: AgentClient;
+      /** Also asks permission prompts elsewhere (a person's phone). */
+      notifier?: PermissionNotifier;
+    },
+  ) {}
 
   // ── event emitter ─────────────────────────────────────────────────────────
 
@@ -706,6 +761,7 @@ export class AgentDispatch {
         "rw",
       );
       const conn = await SandboxAcpConnection.open(
+        sandboxId,
         url,
         (self) => {
           if (this.live.get(sandboxId) === self) this.live.delete(sandboxId);
@@ -726,6 +782,7 @@ export class AgentDispatch {
         },
         (event) => this.emit(sandboxId, event),
         createdSessions,
+        this.deps.notifier,
       );
       this.live.set(sandboxId, conn);
       return conn;

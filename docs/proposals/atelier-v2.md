@@ -216,6 +216,7 @@ POST   /v1/prebuilds                  { source, files, env, build[] } → snapsh
                                       // source = image OR another snapshotRef → prebuilds CHAIN
                                       // idempotent: keyed by content hash; hit = instant return
 POST   /v1/sandboxes                  SandboxSpec → { id, urls }
+GET    /v1/sandboxes?metadata={…}     summaries (with `metadata`); only those holding every pair
 GET    /v1/sandboxes/:id              status, urls, processes (+ readiness), generated
                                       // create response returns runtime-generated values
                                       // (agent password, pod IP, per-sandbox tokens) under
@@ -233,6 +234,7 @@ POST   /v1/sandboxes/:id/ports        { name, port, public }             // expo
 POST   /v1/sandboxes/:id/exec         one-shot command (exists today)
 WS     /v1/sandboxes/:id/attach/:name stdio-bridge / pty attach
 POST   /v1/sandboxes/:id/snapshot     promote current disk → snapshotRef
+POST   /v1/sandboxes/:id/fork         { name?, metadata? } → 202 sandbox-create job: snapshot + boot a copy
 ```
 
 `resume` accepting `{files, env}` inline is the fix for the industry gap

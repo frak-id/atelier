@@ -11,7 +11,8 @@ apps/
 ├── server/       # @atelier/server — Bun/Elysia: runtime/control/sessions/api (see apps/server/AGENTS.md)
 ├── console/      # @atelier/console — React 19 SPA (Vite, TanStack Router), the web GUI
 ├── cli/          # @konfeature/atelier — host CLI (npm package, esbuild-bundled for Node)
-└── agent-v2/     # In-pod agent (`atelier-agent`, Rust, static musl scratch image)
+├── agent-v2/     # In-pod agent (`atelier-agent`, Rust, static musl scratch image)
+└── steery-adapter/ # Steery adapter (`steery-adapter-atelier`, Rust), see docs/integrations/steery.md
 packages/
 ├── shared/       # @frak/atelier-shared — TypeBox schemas, constants, config loader
 ├── spec/         # @atelier/spec — the SandboxSpec seam contract
@@ -52,6 +53,7 @@ bun test                              # bun:test suite, from the repo root
 bun run knip                          # Unused files/deps/exports
 bun run --filter @atelier/server check:boundary  # Server module-boundary rules
 cd apps/agent-v2 && cargo test        # Agent tests (cargo clippy --all-targets for lint)
+cd apps/steery-adapter && cargo test # Steery adapter tests
 ```
 
 CI (`.github/workflows/ci.yml`) runs lint, check, typecheck and `bun test`.

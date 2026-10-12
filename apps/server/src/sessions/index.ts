@@ -19,6 +19,10 @@ export {
   resolveHarnessDispatch,
   type SessionConfigAssignment,
 } from "./acp/harness-registry.ts";
+export type {
+  PermissionNotifier,
+  PermissionPrompt,
+} from "./permission-notifier.ts";
 export { SessionService } from "./session.service.ts";
 export type {
   AgentConnection,

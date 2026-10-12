@@ -206,8 +206,9 @@ export function registerSandboxTools(
         "`exec`: only a `running` sandbox accepts commands; `paused` or " +
         "`error` ones need `sandbox_lifecycle` action=resume. Without " +
         "`id`: list all sandboxes (id, status, name, repos, creation " +
-        "date), newest first, optionally filtered by `status`; summaries " +
-        "only, call again with an `id` for URLs and process health.",
+        "date), newest first, optionally filtered by `status` and " +
+        "`metadata`; summaries only, call again with an `id` for URLs and " +
+        "process health.",
       inputSchema: {
         id: z
           .string()
@@ -220,6 +221,13 @@ export function registerSandboxTools(
           .enum(["creating", "running", "paused", "error"])
           .optional()
           .describe("List only: sandboxes in this status"),
+        metadata: z
+          .record(z.string(), z.string())
+          .optional()
+          .describe(
+            "List only: sandboxes whose metadata holds every one of " +
+              "these pairs",
+          ),
         verbose: z
           .boolean()
           .optional()
@@ -229,10 +237,10 @@ export function registerSandboxTools(
           ),
       },
     },
-    safeTool(async ({ id, status, verbose }) => {
+    safeTool(async ({ id, status, metadata, verbose }) => {
       if (id !== undefined) {
         rejectParams(
-          { status },
+          { status, metadata },
           "only filters the sandbox list (omit `id` to list)",
         );
         return text(sandboxView(await runtime.get(id), verbose));
@@ -242,7 +250,7 @@ export function registerSandboxTools(
         { verbose },
         "only applies when reading one sandbox (pass `id`)",
       );
-      const all = runtime.list();
+      const all = runtime.list(metadata);
       const rows = (status ? all.filter((s) => s.status === status) : all)
         .map((s) => {
           const name = s.annotations?.[SANDBOX_NAME_ANNOTATION];

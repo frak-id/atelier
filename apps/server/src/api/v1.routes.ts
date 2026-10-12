@@ -14,6 +14,7 @@ import {
   type CreateSandboxRequest,
   CreateSandboxRequestSchema,
   ExecRequestSchema,
+  ForkSandboxRequestSchema,
   PatchEnvRequestSchema,
   PatchFilesRequestSchema,
   type PrebuildSpec,
@@ -131,6 +132,29 @@ function sandboxLabel(req: CreateSandboxRequest): string {
   );
 }
 
+/** Parse `GET /v1/sandboxes?metadata=`: a JSON object of string → string
+ * (already URL-decoded). Absent is no filter; anything else is a 400. */
+export function parseMetadataFilter(raw?: string): Record<string, string> {
+  if (raw === undefined) return {};
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(raw);
+  } catch {
+    throw new ValidationError("metadata must be a JSON object");
+  }
+  if (
+    typeof parsed !== "object" ||
+    parsed === null ||
+    Array.isArray(parsed) ||
+    Object.values(parsed).some((v) => typeof v !== "string")
+  ) {
+    throw new ValidationError(
+      "metadata must be a JSON object of string values",
+    );
+  }
+  return parsed as Record<string, string>;
+}
+
 /**
  * The org a spawn runs in (whose secrets, policy and auto-injected toolboxes
  * it gets). An explicit `requested` org must be one the caller belongs to.
@@ -204,7 +228,6 @@ export async function createSandboxForUser(
     spec = { ...spec, source: { snapshot: snapshot.ref } };
   }
   if (selectors.length > 0) onProgress?.("resolving toolboxes…");
-  const authorizedKeys = control.sshKeyService.getValidPublicKeys();
   // The sandbox owner (git user): identity for attribution/display + GitHub
   // token for the injected credential helper.
   const owner = {
@@ -283,6 +306,8 @@ export async function createSandboxForUser(
         }
       : {}),
   };
+  // Keys of the people who may reach it (its owner, its org's members).
+  const authorizedKeys = control.sandboxSshKeys(withToolboxes);
   return runtime.create(withToolboxes, { authorizedKeys, id, onProgress });
 }
 
@@ -658,7 +683,13 @@ export function createV1Routes(container: ServerContainer) {
         },
         { body: CreateSandboxRequestSchema },
       )
-      .get("/sandboxes", () => runtime.list())
+      // `?metadata=` is a URL-encoded JSON object of string pairs: only
+      // sandboxes whose metadata holds every pair.
+      .get(
+        "/sandboxes",
+        ({ query }) => runtime.list(parseMetadataFilter(query.metadata)),
+        { query: t.Object({ metadata: t.Optional(t.String()) }) },
+      )
       .get("/sandboxes/:id", async ({ params }) => runtime.get(params.id))
       // Display-only edits (today: the name). A blank or `null` name clears
       // it; the console then falls back to the id.
@@ -771,6 +802,45 @@ export function createV1Routes(container: ServerContainer) {
         jobs.track({ kind: "sandbox-snapshot", target: params.id }, () =>
           runtime.snapshot(params.id),
         ),
+      )
+      // Fork is a spawn: `202` with a `sandbox-create` job whose
+      // `metadata.sandboxId` is the copy's pre-allocated id, exactly like
+      // `POST /sandboxes`. The job snapshots the source, then boots the copy.
+      .post(
+        "/sandboxes/:id/fork",
+        ({ params, body, user, set }) => {
+          // An unknown source is a plain 404, not a failed job.
+          const source = runtime.getLabels(params.id);
+          if (!source) throw new NotFoundError("Sandbox", params.id);
+          // The caller owns the copy (resume re-resolves git credentials
+          // from it); it stays in the source's org.
+          const metadata = { ...body.metadata, [OWNER_ID_METADATA]: user.id };
+          const id = safeNanoid();
+          const job = jobs.dispatch(
+            {
+              kind: "sandbox-create",
+              target: body.name ?? `fork of ${params.id}`,
+              metadata: { sandboxId: id, forkOf: params.id },
+              unpooled: true,
+            },
+            (_signal, log) =>
+              runtime.fork(
+                params.id,
+                { metadata, name: body.name?.trim() },
+                {
+                  id,
+                  authorizedKeys: control.sandboxSshKeys({
+                    metadata,
+                    annotations: source.annotations,
+                  }),
+                  onProgress: log,
+                },
+              ),
+          );
+          set.status = 202;
+          return job;
+        },
+        { body: ForkSandboxRequestSchema },
       )
       .post(
         "/sandboxes/:id/toolsets/capture",

@@ -8,6 +8,10 @@ import {
   ToolboxConfigPatchSchema,
   ToolboxVersionCaptureRequestSchema,
 } from "@atelier/spec";
+import {
+  STEERY_API_KEY_SECRET,
+  SteeryNotifyPolicySchema,
+} from "@frak/atelier-shared";
 import { Elysia, t } from "elysia";
 import { type ControlContainer, recipeFingerprint } from "../control/index.ts";
 import { ConflictError, ValidationError } from "../shared/errors.ts";
@@ -544,6 +548,45 @@ export function createControlRoutes(container: ServerContainer) {
       { body: t.Record(t.String(), t.Unknown()) },
     );
 
+  // The org's Steery permission notifier: the policy, plus whether its API
+  // key (the org secret STEERY_API_KEY) is set. A PUT with `apiKey` stores
+  // the key as that secret; the key itself is never returned.
+  const steeryNotifyRoutes = new Elysia({ prefix: "/steery-notify" })
+    .use(authPlugin)
+    .get("/:orgId", ({ user, params }) => {
+      control.orgMemberService.requireMembership(params.orgId, user.id);
+      return {
+        ...control.steeryNotifyService.get(params.orgId),
+        hasApiKey: control.secretService
+          .list(params.orgId)
+          .some((s) => s.name === STEERY_API_KEY_SECRET),
+      };
+    })
+    .put(
+      "/:orgId",
+      async ({ user, params, body }) => {
+        control.orgMemberService.requireRole(params.orgId, user.id, [
+          "owner",
+          "admin",
+        ]);
+        const { apiKey, ...policy } = body;
+        if (apiKey) {
+          await control.secretService.set(
+            params.orgId,
+            STEERY_API_KEY_SECRET,
+            apiKey,
+          );
+        }
+        return control.steeryNotifyService.set(params.orgId, policy);
+      },
+      {
+        body: t.Composite([
+          SteeryNotifyPolicySchema,
+          t.Object({ apiKey: t.Optional(t.String({ minLength: 1 })) }),
+        ]),
+      },
+    );
+
   // The caller's GitHub repositories (their OWN OAuth token, never another
   // user's): the console's quick-prebuild picker lists them, and `inspect`
   // prefills the create form with branches + detected setup steps.
@@ -582,6 +625,7 @@ export function createControlRoutes(container: ServerContainer) {
     .use(secretRoutes)
     .use(configRoutes)
     .use(orgPolicyRoutes)
+    .use(steeryNotifyRoutes)
     .use(toolboxRoutes)
     .use(githubRoutes);
 }

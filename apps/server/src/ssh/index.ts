@@ -61,7 +61,12 @@ export async function startSshGateway(
     hostKey,
     upstreamUser: config.domain.ssh.upstreamUser,
     upstreamPrivateKey,
-    authorizedKeys: () => container.control.sshKeyService.getValidPublicKeys(),
+    // Only keys whose owner may access the sandbox (its creator or a member
+    // of its org); an unknown sandbox admits no key.
+    authorizedKeys: (sandboxId) => {
+      const labels = container.runtime.getLabels(sandboxId);
+      return labels ? container.control.sandboxSshKeys(labels) : [];
+    },
     resolveUpstream,
   });
   log.info(

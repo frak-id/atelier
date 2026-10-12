@@ -37,12 +37,17 @@ import {
   ServerConfigService,
 } from "./modules/server-config/index.ts";
 import { SshKeyRepository, SshKeyService } from "./modules/ssh-key/index.ts";
+import {
+  SteeryNotifyRepository,
+  SteeryNotifyService,
+} from "./modules/steery-notify/index.ts";
 import { ToolboxRepository, ToolboxService } from "./modules/toolbox/index.ts";
 import {
   ToolboxVersionRepository,
   ToolboxVersionService,
 } from "./modules/toolbox-version/index.ts";
 import { UserRepository, UserService } from "./modules/user/index.ts";
+import { type SandboxLabels, sandboxSshKeys } from "./sandbox-access.ts";
 
 export function createControlContainer() {
   const userRepository = new UserRepository();
@@ -78,6 +83,9 @@ export function createControlContainer() {
   );
   const authService = new AuthService({ apiKeyService, userService });
   const gitHubRepoService = new GitHubRepoService({ userService });
+  const steeryNotifyService = new SteeryNotifyService(
+    new SteeryNotifyRepository(),
+  );
 
   return {
     userService,
@@ -95,6 +103,7 @@ export function createControlContainer() {
     starterService,
     workspaceService,
     ownershipTransferService,
+    steeryNotifyService,
     /** Bound seam-crossing enrichment \u2014 the only function `api/` calls
      * before handing a spec to `runtime.create()`. */
     enrichSpec: (
@@ -110,6 +119,12 @@ export function createControlContainer() {
           orgPolicy: orgPolicyService,
         },
         opts,
+      ),
+    /** The SSH public keys allowed into one sandbox (see sandbox-access.ts). */
+    sandboxSshKeys: (labels: SandboxLabels) =>
+      sandboxSshKeys(
+        { sshKeys: sshKeyService, orgMembers: orgMemberService },
+        labels,
       ),
   };
 }

@@ -1,6 +1,7 @@
-import type {
-  AgentPermissionRequest,
-  AgentQuestionRequest,
+import {
+  type AgentPermissionRequest,
+  type AgentQuestionRequest,
+  permissionPresentation,
 } from "@frak/atelier-shared";
 import { useQuery } from "@tanstack/react-query";
 import { createFileRoute, Link } from "@tanstack/react-router";
@@ -34,10 +35,7 @@ import {
 } from "@/components/ui/card";
 import { EmptyState } from "@/components/ui/empty-state";
 import { useAgentEvents } from "@/hooks/use-agent-events";
-import {
-  permissionPresentation,
-  riskBadgeVariant,
-} from "@/lib/status-presentation";
+import { riskBadgeVariant } from "@/lib/status-presentation";
 
 export const Route = createFileRoute("/sandboxes/$sandboxId/sessions")({
   component: SessionsPage,
