@@ -264,8 +264,11 @@ class SandboxAcpConnection {
      * agents without `session/list`). */
     private readonly createdSessions: Map<string, CreatedSessionEntry>,
     private readonly notifier: PermissionNotifier | undefined,
-    /** ACP traffic on this connection (an update, a prompt starting or
-     * ending, a permission request): the `agent` idle signal. */
+    /** The `agent` idle signal: a prompt starting or ending, a permission
+     * request. Not `session/update`: the attach bridge replays its output
+     * buffer to every new connection, so a reconnect (any read after the
+     * idle-TTL close) would re-deliver an old turn's updates. A live turn is
+     * covered anyway: it blocks the pause until `markBusy` ends it. */
     private readonly touch: () => void,
   ) {}
 
@@ -376,7 +379,6 @@ class SandboxAcpConnection {
   }
 
   private handleUpdate(notification: SessionNotification): void {
-    this.touch();
     // Chat streaming first (raw passthrough), regardless of live state.
     this.updateHandlers.get(notification.sessionId)?.(notification);
 

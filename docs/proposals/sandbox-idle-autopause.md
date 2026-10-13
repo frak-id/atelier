@@ -46,7 +46,7 @@ server.
 | `console` | Client→sandbox frames on the attach (rw) and terminal relays: keystrokes, pastes and resizes, not output, and not the replies a terminal emulator sends on its own (cursor position, device attributes, OSC colors), which a TUI may poll. | server, `api/ws-relay.ts` |
 | `api` | A mutating runtime call: exec, files, env, process start/stop/add, ports, rw attach (HTTP `/v1` and MCP alike). Reads never count, the console polls them. | runtime |
 | `lifecycle` | Create and resume. The idle clock starts there. | runtime |
-| `agent` | An ACP turn driven through Atelier: a prompt starting or ending, every `session/update`, a permission request. Any harness speaking ACP. | `sessions/acp/agent-dispatch.ts` |
+| `agent` | An ACP turn driven through Atelier: a prompt starting or ending, a permission request (a turn in flight blocks the pause, §5). Any harness speaking ACP. Not `session/update`: the agent's attach bridge replays its output to every new connection, so a reconnect (the console listing sessions) would re-deliver an old turn's updates. | `sessions/acp/agent-dispatch.ts` |
 | `network` | Bytes received + sent per minute on the sandbox's interfaces, minus the agent's own control traffic. Counts when a minute reaches the threshold. | agent |
 | `files` | Writes under the home (where repos are cloned), minus build output, dependencies and the hidden tool state at the top of the home. | agent |
 | `cpu` | CPU time per minute above a threshold. Off by default. | agent |
