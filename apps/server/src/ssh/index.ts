@@ -20,7 +20,6 @@ import {
 } from "./proxy.ts";
 
 export type { InServerSshGateway } from "./proxy.ts";
-export { startInServerSshGateway } from "./proxy.ts";
 
 const log = createChildLogger("ssh-gateway");
 

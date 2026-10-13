@@ -31,7 +31,7 @@ import {
 
 /** The guest-agent view of a process (spec `ProcessEntry` with `env` resolved
  * to plain strings). Field set is identical so the projection is lossless. */
-export interface AgentProcess {
+interface AgentProcess {
   name: string;
   command: string;
   cwd?: string;
@@ -48,7 +48,7 @@ export interface AgentProcess {
 
 /** The forwarder subset of a port — `public`/`auth` are ingress concerns and
  * never reach the guest. */
-export interface AgentPort {
+interface AgentPort {
   name: string;
   port: number;
 }

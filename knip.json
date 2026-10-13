@@ -5,20 +5,24 @@
       "entry": ["scripts/*.ts"]
     },
     "apps/console": {
-      "project": ["src/**/*.{ts,tsx}"]
+      "project": ["src/**/*.{ts,tsx,css}"],
+      "entry": ["src/**/*.test.{ts,tsx}"]
     },
     "apps/cli": {
-      "project": ["src/**/*.ts"]
+      "project": ["src/**/*.ts"],
+      "entry": ["src/index.ts", "src/**/*.test.ts"]
     },
     "packages/shared": {
       "project": ["src/**/*.ts"],
       "entry": ["src/**/*.test.ts"]
     },
     "packages/spec": {
-      "project": ["src/**/*.ts"]
+      "project": ["src/**/*.ts"],
+      "entry": ["src/**/*.test.ts"]
     },
     "packages/compose": {
-      "project": ["src/**/*.ts"]
+      "project": ["src/**/*.ts"],
+      "entry": ["src/**/*.test.ts"]
     },
     "apps/server": {
       "project": ["src/**/*.ts"],

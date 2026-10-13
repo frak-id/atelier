@@ -8,60 +8,20 @@
 
 export type { TerminalSession } from "./agent/index.ts";
 export { AgentClient } from "./agent/index.ts";
-export {
-  CsiVolumeBackend,
-  createSandboxBackend,
-  KubernetesBackend,
-  type SandboxBackend,
-  type VolumeBackend,
-} from "./backend/index.ts";
-export {
-  JobCanceledError,
-  type JobDispatchOptions,
-  JobService,
-  type JobServiceDeps,
-} from "./jobs.service.ts";
+export { createSandboxBackend } from "./backend/index.ts";
+export { JobService } from "./jobs.service.ts";
 export {
   ensureSharedSshPipeKey,
   getSharedSshPipeKeyOpenSSH,
 } from "./kube/index.ts";
 export {
   createImageBuilder,
-  type ImageBuilderBackend,
-  type ImageBuilderDeps,
   ImageBuilderService,
-  type ImageBuildRequest,
-  type ImageBuildResult,
-  ImageNotAvailableError,
-  RegistryUnreachableError,
   readContextDockerfile,
-  type SeedManifest,
-  type SeedSubstitution,
   unpackZipContext,
 } from "./registry/index.ts";
-export {
-  type RuntimeCreateOptions,
-  type RuntimeDeps,
-  RuntimeService,
-} from "./runtime.service.ts";
-export type {
-  ImageProvenance,
-  ImageRecord,
-  ImageStatus,
-  ImageStore,
-  JobKind,
-  JobRecord,
-  JobStatus,
-  JobStore,
-  SandboxRecord,
-  SandboxStore,
-  SandboxToolsetRefEntry,
-  SandboxToolsetRefStore,
-  SnapshotRecord,
-  SnapshotStore,
-  ToolsetRecord,
-  ToolsetStore,
-} from "./store.ts";
+export { RuntimeService } from "./runtime.service.ts";
+export type { JobRecord } from "./store.ts";
 export {
   DrizzleImageStore,
   DrizzleJobStore,
@@ -69,7 +29,5 @@ export {
   DrizzleSandboxToolsetRefStore,
   DrizzleSnapshotStore,
   DrizzleToolsetStore,
-  InMemoryImageStore,
   InMemoryJobStore,
-  InMemorySandboxToolsetRefStore,
 } from "./store.ts";

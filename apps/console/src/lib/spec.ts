@@ -24,7 +24,7 @@ const MAX_ERRORS = 10;
 
 /** Typebox `Check` + short, path-prefixed error list. The one validation
  * primitive behind every spec editor (sandbox/prebuild/toolbox). */
-export function validateAgainst<T>(
+function validateAgainst<T>(
   schema: TSchema,
   value: unknown,
 ): { ok: true; value: T } | { ok: false; errors: string[] } {

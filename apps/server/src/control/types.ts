@@ -24,7 +24,7 @@ export interface Organization {
   updatedAt: string;
 }
 
-export type OrgMemberRole = "owner" | "admin" | "member" | "viewer";
+type OrgMemberRole = "owner" | "admin" | "member" | "viewer";
 
 export interface OrgMember {
   id: string;

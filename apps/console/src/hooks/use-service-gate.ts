@@ -7,11 +7,7 @@ import { useProcessAction } from "@/api/queries/sandboxes";
  * so mounting the iframe immediately can still race a Bad Gateway. */
 const READY_GRACE_MS = 500;
 
-export type ServiceGateStatus =
-  | "pass-through"
-  | "stopped"
-  | "starting"
-  | "ready";
+type ServiceGateStatus = "pass-through" | "stopped" | "starting" | "ready";
 
 export interface ServiceGate {
   status: ServiceGateStatus;

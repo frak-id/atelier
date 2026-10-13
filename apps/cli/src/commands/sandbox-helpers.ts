@@ -14,15 +14,10 @@ import { ATELIER_KEY_PATH } from "../ssh-keys.ts";
 const HARNESS = "atelier.dev/harness";
 const PREBUILD = "atelier.dev/prebuild";
 const WORKSPACE = "atelier.dev/workspace";
-const OWNER = "atelier.dev/owner";
 
 type Annotations = Record<string, string> | undefined;
 
 export const harnessOf = (a: Annotations): string => a?.[HARNESS] ?? "-";
-export const workspaceOf = (a: Annotations): string | undefined =>
-  a?.[WORKSPACE];
-export const ownerOf = (a: Annotations): string | undefined => a?.[OWNER];
-export const prebuildOf = (a: Annotations): string | undefined => a?.[PREBUILD];
 
 /** A compact one-line descriptor for a sandbox row: harness + workspace/repo +
  * prebuild marker. */

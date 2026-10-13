@@ -7,6 +7,12 @@
  */
 import { afterEach, beforeAll, describe, expect, test } from "bun:test";
 import type { ServerWebSocket } from "bun";
+// Type-only (erased at runtime), so it does not load the module before the env
+// below is set.
+import type {
+  PermissionNotifier,
+  PermissionPrompt,
+} from "../permission-notifier.ts";
 
 process.env.ACP_IDLE_TTL_MS = "40";
 
@@ -17,9 +23,6 @@ let ndJsonStream: typeof import("@agentclientprotocol/sdk").ndJsonStream;
 let PROTOCOL_VERSION: typeof import("@agentclientprotocol/sdk").PROTOCOL_VERSION;
 type AgentContext = import("@agentclientprotocol/sdk").AgentContext;
 type AgentClientType = import("../../runtime/index.ts").AgentClient;
-type PermissionNotifier =
-  import("../permission-notifier.ts").PermissionNotifier;
-type PermissionPrompt = import("../permission-notifier.ts").PermissionPrompt;
 
 beforeAll(async () => {
   // ACP_IDLE_TTL_MS is read once at module load, so set it before importing.

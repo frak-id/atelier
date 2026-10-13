@@ -6,7 +6,6 @@ import {
   RouteErrorComponent,
   RouteNotFoundComponent,
 } from "@/components/route-error";
-import { TooltipProvider } from "@/components/ui/tooltip";
 import { ThemeProvider } from "@/providers/theme";
 import "./index.css";
 import { routeTree } from "./routeTree.gen";
@@ -47,9 +46,7 @@ if (rootElement) {
     <StrictMode>
       <ThemeProvider>
         <QueryClientProvider client={queryClient}>
-          <TooltipProvider delayDuration={300}>
-            <RouterProvider router={router} />
-          </TooltipProvider>
+          <RouterProvider router={router} />
         </QueryClientProvider>
       </ThemeProvider>
     </StrictMode>,

@@ -1,14 +1,7 @@
 import { KubeClient } from "./kube.client.ts";
 
-export { KubeApiError, KubeClient } from "./kube.client.ts";
-export type {
-  KubeResource,
-  PvcOptions,
-  SandboxPodOptions,
-  SshPipeOptions,
-  ToolIngressOptions,
-  VolumeSnapshotOptions,
-} from "./kube.resources.ts";
+export { KubeApiError } from "./kube.client.ts";
+export type { KubeResource } from "./kube.resources.ts";
 export {
   buildPvc,
   buildSandboxPod,
@@ -19,7 +12,7 @@ export {
   toolHost,
   toolIngressName,
 } from "./kube.resources.ts";
-export { buildKnownHostsData, knownHostsPattern } from "./ssh-known-hosts.ts";
+export { buildKnownHostsData } from "./ssh-known-hosts.ts";
 export {
   ensureSharedSshPipeKey,
   getSharedSshPipeKeyOpenSSH,

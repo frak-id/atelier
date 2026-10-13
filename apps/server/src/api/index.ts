@@ -97,5 +97,3 @@ export function createApp(container: ServerContainer) {
       docs: "/swagger",
     }));
 }
-
-export type App = ReturnType<typeof createApp>;

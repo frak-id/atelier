@@ -10,7 +10,7 @@ import * as clack from "@clack/prompts";
 type CancelSymbol = Extract<Awaited<ReturnType<typeof clack.text>>, symbol>;
 
 /** Bail out cleanly when the user cancels a clack prompt. */
-export function orCancel<T>(value: T | CancelSymbol): T {
+function orCancel<T>(value: T | CancelSymbol): T {
   if (clack.isCancel(value)) {
     clack.cancel("Cancelled.");
     process.exit(0);
@@ -27,7 +27,6 @@ export const intro = (msg: string): void => clack.intro(msg);
 export const outro = (msg: string): void => clack.outro(msg);
 export const note = (msg: string, title?: string): void =>
   clack.note(msg, title);
-export const logMsg = clack.log;
 
 export function spinner(): {
   start: (msg?: string) => void;

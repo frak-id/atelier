@@ -25,7 +25,7 @@ export interface LocalKey {
 /** Fingerprint a public key exactly as the server does: base64(sha256(raw key
  * bytes)), `SHA256:`-prefixed, trailing `=` stripped. Returns null for a line
  * that isn't a valid public key. */
-export function fingerprint(publicKey: string): string | null {
+function fingerprint(publicKey: string): string | null {
   const parts = publicKey.trim().split(/\s+/);
   const keyDataBase64 = parts[1];
   if (!keyDataBase64) return null;
@@ -74,8 +74,7 @@ export function listLocalKeys(): LocalKey[] {
   return keys;
 }
 
-export const atelierKeyExists = (): boolean =>
-  existsSync(`${ATELIER_KEY_PATH}.pub`);
+const atelierKeyExists = (): boolean => existsSync(`${ATELIER_KEY_PATH}.pub`);
 
 /** Cross-reference local `~/.ssh` public keys against the keys registered on
  * the server: returns every local key plus the first one the server knows

@@ -541,8 +541,6 @@ export function registerLocal(program: Command, ctx: Ctx): void {
     });
 }
 
-export const LOCAL_CONTEXT = CONTEXT;
-
 /** Shared by onboarding: boot local + wire the context (interactive spinner). */
 export async function bootstrapLocal(ctx: Ctx): Promise<void> {
   await up(ctx, {

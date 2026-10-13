@@ -10,7 +10,7 @@ import {
 } from "@/lib/sandbox-status";
 import { cn } from "@/lib/utils";
 
-export const TERMINAL_TAB = "__terminal__";
+const TERMINAL_TAB = "__terminal__";
 
 type ImmersiveSandbox = {
   id: string;

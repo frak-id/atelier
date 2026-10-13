@@ -67,7 +67,7 @@ async function kubeEndpointResolver(
   };
 }
 
-export class AgentUnavailableError extends SandboxError {
+class AgentUnavailableError extends SandboxError {
   constructor(sandboxId: string, cause: string) {
     super(
       `Agent for sandbox ${sandboxId} is unavailable: ${cause}`,
@@ -81,7 +81,7 @@ export class AgentUnavailableError extends SandboxError {
 /** The agent answered but rejected the request (4xx) — a caller error, not
  * an availability problem: don't dress it up as a 503. Propagates the
  * agent's status code so a validation failure surfaces as one. */
-export class AgentRequestError extends SandboxError {
+class AgentRequestError extends SandboxError {
   constructor(sandboxId: string, status: number, detail: string) {
     super(
       `Agent for sandbox ${sandboxId} rejected the request: ${detail}`,

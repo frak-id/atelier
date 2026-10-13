@@ -42,12 +42,12 @@ const BUILD_CONTAINER = "build";
 /**
  * ConfigMaps are capped at ~1MiB by the API server and base64 inflates ~33%,
  * so refuse anything whose encoded size approaches that. Seed contexts are
- * ~10-90KB; only a large zip upload would ever hit this. Exported so the
- * upload/accept path (H7: `v1.routes.ts`) can reject an over-ceiling BYO/zip
- * context synchronously, before a `202`, instead of discovering it here mid-
- * build.
+ * ~10-90KB; only a large zip upload would ever hit this. The upload/accept
+ * path (H7: `v1.routes.ts`) mirrors this ceiling to reject an over-ceiling
+ * BYO/zip context synchronously, before a `202`, instead of discovering it
+ * here mid-build.
  */
-export const MAX_CONTEXT_BYTES = 900_000;
+const MAX_CONTEXT_BYTES = 900_000;
 
 const POD_APPEAR_TIMEOUT_MS = 120_000;
 const BUILD_TIMEOUT_MS = 30 * 60_000;

@@ -10,13 +10,7 @@ import type { ImageBuilderBackend } from "./builder.types.ts";
 import { BuildkitImageBuilder } from "./buildkit.builder.ts";
 import { DockerImageBuilder } from "./docker.builder.ts";
 
-export type {
-  ImageBuilderBackend,
-  ImageBuildRequest,
-  ImageBuildResult,
-} from "./builder.types.ts";
-export { BuildkitImageBuilder } from "./buildkit.builder.ts";
-export { DockerImageBuilder } from "./docker.builder.ts";
+export type { ImageBuilderBackend } from "./builder.types.ts";
 
 /**
  * Select the image builder backend from `config.imageBuilder.kind`:

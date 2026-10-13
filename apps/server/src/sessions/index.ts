@@ -5,30 +5,8 @@
  */
 
 export { AcpSessionSurface } from "./acp/acp-session-surface.ts";
-export { type AcpTransport, connectAcpWebSocket } from "./acp/acp-stream.ts";
-export {
-  AgentDispatch,
-  type AgentSession,
-  type AgentSessionCallbacks,
-  type OpenAgentSessionInput,
-} from "./acp/agent-dispatch.ts";
-export {
-  type AgentModelSelection,
-  type HarnessDispatchAdapter,
-  registerHarnessDispatch,
-  resolveHarnessDispatch,
-  type SessionConfigAssignment,
-} from "./acp/harness-registry.ts";
-export type {
-  PermissionNotifier,
-  PermissionPrompt,
-} from "./permission-notifier.ts";
+export { AgentDispatch } from "./acp/agent-dispatch.ts";
+export { registerHarnessDispatch } from "./acp/harness-registry.ts";
 export { SessionService } from "./session.service.ts";
-export type {
-  AgentConnection,
-  CreateSessionResult,
-  HarnessSessionSurface,
-  InterventionResult,
-} from "./session-surface.ts";
 export { AgentTaskService } from "./task.service.ts";
 export { TerminalService } from "./terminal.service.ts";

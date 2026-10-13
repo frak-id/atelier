@@ -26,7 +26,7 @@ export function sandboxStatusPresentation(status: SandboxStatus): {
   return STATUS_PRESENTATION[status] ?? { label: status, variant: "outline" };
 }
 
-export const HARNESS_ANNOTATION_KEY = "atelier.dev/harness";
+const HARNESS_ANNOTATION_KEY = "atelier.dev/harness";
 
 export function harnessFromAnnotations(
   annotations: Record<string, string> | undefined,
@@ -34,7 +34,7 @@ export function harnessFromAnnotations(
   return annotations?.[HARNESS_ANNOTATION_KEY];
 }
 
-export const OWNER_ANNOTATION_KEY = "atelier.dev/owner";
+const OWNER_ANNOTATION_KEY = "atelier.dev/owner";
 
 /** The sandbox owner (git user) for console display, injected server-side. */
 export function ownerFromAnnotations(
