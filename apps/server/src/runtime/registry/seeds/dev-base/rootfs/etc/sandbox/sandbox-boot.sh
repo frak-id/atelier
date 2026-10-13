@@ -115,7 +115,7 @@ mkdir -p /data/upper /data/work /data/toolsets
 
 # The overlay surfaces /data/upper's OWN uid/gid as the merged /home/dev root
 # (the upperdir is the merged root's inode). Created root-owned, `dev` could
-# not create top-level entries in its own home (git clone of workspace/,
+# not create top-level entries in its own home (a prebuild's repo clone,
 # ~/.bash_history, any new dotfile -> EACCES). Chown the upper root only
 # (NOT -R: copied-up content must keep its own ownership) so /home/dev is
 # dev-owned. The agent re-asserts this on every assembly too; doing it here

@@ -40,10 +40,10 @@ import {
   shQuote,
 } from "./builder.types.ts";
 import {
+  BUILD_CONTEXT_DIR,
   type BuildContainerSpec,
   jobResourceName,
   runKubeBuildJob,
-  WORKSPACE_DIR,
 } from "./k8s-build-job.ts";
 
 // Pinned to the latest moby/buildkit release (checked 2026-09-23) — a
@@ -229,9 +229,9 @@ export function buildctlArgs(
     "--frontend",
     "dockerfile.v0",
     "--local",
-    `context=${WORKSPACE_DIR}`,
+    `context=${BUILD_CONTEXT_DIR}`,
     "--local",
-    `dockerfile=${WORKSPACE_DIR}`,
+    `dockerfile=${BUILD_CONTEXT_DIR}`,
     "--opt",
     `platform=${imageBuilderConfig().platform}`,
   );

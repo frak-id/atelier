@@ -57,9 +57,9 @@ describe("dispatchTask", () => {
     await service.dispatchTask(OWNER, {
       sandboxId: SANDBOX,
       prompt: "x",
-      cwd: "/workspace/app",
+      cwd: "/home/dev/app",
     });
-    expect(fake.opened[0]?.cwd).toBe("/workspace/app");
+    expect(fake.opened[0]?.cwd).toBe("/home/dev/app");
   });
 
   test("rejects a sandbox that is not running", async () => {

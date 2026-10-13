@@ -1071,7 +1071,7 @@ async fn materialize_inner(req: &MaterializeRequest) -> Result<MaterializeResult
     // merged home's ownership: overlayfs surfaces the upperdir's own uid/gid
     // as the `/home/dev` root (the upper IS the merged root's inode). A fresh
     // `/data/upper` is `root:root`, so without this `dev` cannot create
-    // top-level entries in its own home — git clone of `workspace/`,
+    // top-level entries in its own home — a prebuild's repo clone,
     // `~/.bash_history`, any new dotfile → EACCES. `-R` would be wrong: it
     // would clobber the ownership of files copied up from the lowers.
     //

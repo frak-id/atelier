@@ -31,7 +31,7 @@ import { kubeClient } from "../../kube/index.ts";
 const log = createChildLogger("image-builder-k8s");
 
 /** Where the init container unpacks the context and the build container reads. */
-export const WORKSPACE_DIR = "/workspace";
+export const BUILD_CONTEXT_DIR = "/workspace";
 /** Where the ConfigMap-delivered context tarball is mounted (read-only). */
 const CONTEXT_MOUNT = "/atelier-context";
 const CONTEXT_FILE = "context.tar.gz";
@@ -202,12 +202,12 @@ export function buildJobManifest(
               command: [
                 "sh",
                 "-c",
-                `set -e; mkdir -p ${WORKSPACE_DIR}; ` +
-                  `tar xzf ${CONTEXT_MOUNT}/${CONTEXT_FILE} -C ${WORKSPACE_DIR}`,
+                `set -e; mkdir -p ${BUILD_CONTEXT_DIR}; ` +
+                  `tar xzf ${CONTEXT_MOUNT}/${CONTEXT_FILE} -C ${BUILD_CONTEXT_DIR}`,
               ],
               volumeMounts: [
                 { name: "context", mountPath: CONTEXT_MOUNT, readOnly: true },
-                { name: "workspace", mountPath: WORKSPACE_DIR },
+                { name: "workspace", mountPath: BUILD_CONTEXT_DIR },
               ],
             },
           ],
@@ -223,7 +223,7 @@ export function buildJobManifest(
                 : {}),
               terminationMessagePolicy: "File",
               volumeMounts: [
-                { name: "workspace", mountPath: WORKSPACE_DIR },
+                { name: "workspace", mountPath: BUILD_CONTEXT_DIR },
                 ...((container.volumeMounts ?? []) as unknown[]),
               ],
             },
