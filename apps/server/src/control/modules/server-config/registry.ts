@@ -144,7 +144,7 @@ function oneOf<T extends string>(options: readonly T[]): (v: unknown) => T {
   };
 }
 
-const builderKinds = ["docker", "kaniko", "buildkit"] as const;
+const builderKinds = ["docker", "buildkit"] as const;
 const validateBuilderKind = oneOf(builderKinds);
 
 /**
@@ -205,12 +205,10 @@ export const CONFIG_REGISTRY = {
     options: builderKinds,
     label: "Image builder",
     description:
-      "Which build backend to use: docker (shell out to a Docker daemon), " +
-      "buildkit (recommended for in-cluster builds — runs daemonless with " +
-      "no endpoint set, or dispatches to an existing buildkitd if you set " +
-      "one below), or kaniko (a K8s Job, no daemon — DEPRECATED: upstream " +
-      "archived by Google in 2025, no more updates; kept selectable but " +
-      "prefer buildkit).",
+      "Which build backend to use: docker (shell out to a Docker daemon) " +
+      "or buildkit (recommended for in-cluster builds — runs daemonless " +
+      "with no endpoint set, or dispatches to an existing buildkitd if you set " +
+      "one below).",
     envVar: "ATELIER_IMAGE_BUILDER_KIND",
     default: "docker",
     parseEnv: validateBuilderKind,
@@ -221,9 +219,8 @@ export const CONFIG_REGISTRY = {
     type: "string",
     label: "Builder image override",
     description:
-      "Override the builder image (buildkit client/daemon or the " +
-      "deprecated kaniko executor). Empty uses the sensible per-kind " +
-      "default. Ignored for the docker backend.",
+      "Override the buildkit builder image (client or daemonless). Empty " +
+      "uses the sensible default. Ignored for the docker backend.",
     envVar: "ATELIER_IMAGE_BUILDER_IMAGE",
     default: "",
     parseEnv: optionalString,
@@ -444,7 +441,7 @@ export interface ConfigValues {
   "prebuild.gitTracking": boolean;
   "prebuild.pruneKeep": number;
   "kubernetes.registryUrl": string;
-  "imageBuilder.kind": "docker" | "kaniko" | "buildkit";
+  "imageBuilder.kind": "docker" | "buildkit";
   "imageBuilder.image": string;
   "imageBuilder.endpoint": string;
   "imageBuilder.dockerHost": string;

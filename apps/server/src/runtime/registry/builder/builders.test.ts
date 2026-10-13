@@ -15,7 +15,6 @@ import type { ImageBuildRequest } from "./builder.types.ts";
 
 process.env.ATELIER_SERVER_MODE = "mock";
 
-const { kanikoArgs } = await import("./kaniko.builder.ts");
 const { buildctlArgs, buildkitContainerSpec, resolveBuildkitImage } =
   await import("./buildkit.builder.ts");
 const {
@@ -36,28 +35,6 @@ const baseReq = {
   tag: "zot.atelier-system.svc:5000/dev-base:latest",
   insecureRegistry: true,
 } as const;
-
-describe("kanikoArgs", () => {
-  test("targets the unpacked workspace and writes the digest file", () => {
-    const args = kanikoArgs(baseReq);
-    expect(args).toContain("--context=dir:///workspace");
-    expect(args).toContain("--dockerfile=/workspace/Dockerfile");
-    expect(args).toContain(`--destination=${baseReq.tag}`);
-    expect(args).toContain("--digest-file=/dev/termination-log");
-  });
-
-  test("insecure registry adds the skip-tls flags", () => {
-    expect(kanikoArgs(baseReq)).toContain("--skip-tls-verify");
-    const secure = kanikoArgs({ ...baseReq, insecureRegistry: false });
-    expect(secure).not.toContain("--skip-tls-verify");
-  });
-
-  test("cacheRepo enables caching", () => {
-    const args = kanikoArgs({ ...baseReq, cacheRepo: "reg/cache" });
-    expect(args).toContain("--cache=true");
-    expect(args).toContain("--cache-repo=reg/cache");
-  });
-});
 
 describe("buildctlArgs", () => {
   const tls = { secretName: "", serverName: "" };
@@ -255,7 +232,7 @@ describe("buildJobManifest", () => {
         name: "atelier-build-dev-base-abc123",
         contextDir: "/tmp/ctx",
         dockerfile: "FROM scratch",
-        container: { image: "kaniko:latest", args: ["--destination=x"] },
+        container: { image: "builder:latest", args: ["--destination=x"] },
       },
       "atelier-build-dev-base-abc123-ctx",
     ) as {
@@ -279,7 +256,7 @@ describe("buildJobManifest", () => {
     expect(podSpec.restartPolicy).toBe("Never");
     expect(podSpec.initContainers[0]?.name).toBe("unpack");
     expect(podSpec.containers[0]?.name).toBe("build");
-    expect(podSpec.containers[0]?.image).toBe("kaniko:latest");
+    expect(podSpec.containers[0]?.image).toBe("builder:latest");
     expect(podSpec.containers[0]?.terminationMessagePolicy).toBe("File");
     expect(podSpec.volumes[0]?.configMap?.name).toBe(
       "atelier-build-dev-base-abc123-ctx",
@@ -321,12 +298,8 @@ describe("formatBuildArgs", () => {
     expect(formatBuildArgs({}, (k, v) => [`${k}=${v}`])).toEqual([]);
   });
 
-  test("kanikoArgs and buildctlArgs both route through it (one shared loop)", () => {
+  test("buildctlArgs routes through it", () => {
     const buildArgs = { TOKEN: "abc", VERSION: "1.2.3" };
-    const kaniko = kanikoArgs({ ...baseReq, buildArgs });
-    expect(kaniko).toContain("--build-arg=TOKEN=abc");
-    expect(kaniko).toContain("--build-arg=VERSION=1.2.3");
-
     const buildkit = buildctlArgs(
       { ...baseReq, buildArgs },
       "tcp://buildkitd:1234",

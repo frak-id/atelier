@@ -82,7 +82,7 @@ import { closeUpstream, openUpstreamRelay, relayMessage } from "./ws-relay.ts";
 const log = createChildLogger("v1-routes");
 
 /**
- * H7: the active cluster-native builder (kaniko/buildkit) packages the whole
+ * H7: the cluster-native builder (buildkit) packages the whole
  * build context as a single base64'd ConfigMap and refuses anything whose
  * encoded size nears the Kubernetes API server's ~1MiB object cap — see
  * `MAX_CONTEXT_BYTES` in `../runtime/registry/builder/k8s-build-job.ts`
@@ -91,7 +91,7 @@ const log = createChildLogger("v1-routes");
  * truth). `zip-context.ts`'s 100MB cap is for the docker backend; a BYO/zip
  * context over this much smaller ceiling would previously be accepted
  * (`202`) and only fail asynchronously mid-build. Reject it synchronously at
- * accept time instead when kaniko/buildkit is the active builder.
+ * accept time instead when buildkit is the active builder.
  */
 const MAX_K8S_NATIVE_CONTEXT_BYTES = 900_000;
 
@@ -584,15 +584,14 @@ export function createV1Routes(container: ServerContainer) {
           // ceiling up front when that's the active builder, for the same
           // reason as the zip-upload path below.
           if (
-            (imageBuilderConfig().kind === "kaniko" ||
-              imageBuilderConfig().kind === "buildkit") &&
+            imageBuilderConfig().kind === "buildkit" &&
             "dockerfile" in body &&
             exceedsK8sNativeContextCeiling(Buffer.byteLength(body.dockerfile))
           ) {
             throw new ValidationError(
               `Dockerfile (${Buffer.byteLength(body.dockerfile)} bytes) ` +
                 `exceeds the ${MAX_K8S_NATIVE_CONTEXT_BYTES} byte ceiling ` +
-                `of the active kaniko/buildkit builder.`,
+                `of the active buildkit builder.`,
             );
           }
           const record =
@@ -623,14 +622,13 @@ export function createV1Routes(container: ServerContainer) {
           // otherwise answer `202` and only fail once `stageContextTarball`
           // discovers it mid-build.
           if (
-            (imageBuilderConfig().kind === "kaniko" ||
-              imageBuilderConfig().kind === "buildkit") &&
+            imageBuilderConfig().kind === "buildkit" &&
             exceedsK8sNativeContextCeiling(body.file.size)
           ) {
             throw new ValidationError(
               `Uploaded context (${body.file.size} bytes) exceeds the ` +
                 `${MAX_K8S_NATIVE_CONTEXT_BYTES} byte ceiling of the active ` +
-                `kaniko/buildkit builder. Slim the context or use the docker ` +
+                `buildkit builder. Slim the context or use the docker ` +
                 `builder for large uploads.`,
             );
           }

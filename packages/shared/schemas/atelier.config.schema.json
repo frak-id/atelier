@@ -286,10 +286,6 @@
               "type": "string"
             },
             {
-              "const": "kaniko",
-              "type": "string"
-            },
-            {
               "const": "buildkit",
               "type": "string"
             }

@@ -1,7 +1,7 @@
 /**
- * Shared driver for the cluster-native image builders (kaniko, buildkit).
- * Both run the build as a one-shot Kubernetes Job in `kubeClient.namespace`
- * and differ ONLY in the build container they run — everything else (getting
+ * Driver for the cluster-native image builder (buildkit). It runs the build
+ * as a one-shot Kubernetes Job in `kubeClient.namespace`; a builder only
+ * supplies the build container — everything else (getting
  * the context into the cluster, watching the Job, streaming logs, reading the
  * pushed digest back, cleanup) is identical and lives here.
  *

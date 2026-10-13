@@ -100,7 +100,7 @@ export function volumeSnapshotClass(): string {
 }
 
 export interface ResolvedImageBuilder {
-  kind: "docker" | "kaniko" | "buildkit";
+  kind: "docker" | "buildkit";
   image: string;
   endpoint: string;
   dockerHost: string;

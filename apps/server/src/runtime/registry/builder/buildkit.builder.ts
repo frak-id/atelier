@@ -11,9 +11,7 @@
  *     `buildctl-daemonless.sh` (spawns an ephemeral `buildkitd` via
  *     RootlessKit, waits for it, then runs `buildctl` against it — see
  *     https://github.com/moby/buildkit/blob/master/docs/rootless.md). This
- *     needs NO external daemon or Docker socket, same as kaniko, but stays
- *     on the actively-maintained BuildKit codebase (upstream Kaniko was
- *     archived by Google in 2025). Rootless BuildKit needs to create
+ *     needs NO external daemon or Docker socket. Rootless BuildKit needs to create
  *     user/mount namespaces inside its own unprivileged container, which
  *     the default seccomp/AppArmor profiles both block and the default
  *     restrictive `securityContext` doesn't allow — see

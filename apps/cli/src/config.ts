@@ -9,8 +9,8 @@
  *   2. `ATELIER_API_URL` / `ATELIER_API_KEY` env vars (override, for CI)
  *
  * The on-disk shape is `{ current, contexts: { <name>: { baseUrl, apiKey } } }`.
- * A legacy flat `{ baseUrl, apiKey }` file is transparently read as the single
- * `default` context, so existing installs keep working.
+ * The old flat `{ baseUrl, apiKey }` file is no longer read: authed commands
+ * ask to re-run `atelier login`, and any write replaces it.
  *
  * The auth is the same Bearer key any API caller uses (`atl_…`/JWT minted via
  * `POST /api-keys` or the console): the CLI is exactly as privileged as any
@@ -39,13 +39,10 @@ interface ContextConfig {
   apiKey?: string;
 }
 
-/** On-disk shape. `current` + `contexts` is canonical; the top-level
- * `baseUrl`/`apiKey` are the legacy flat form we still read + migrate. */
+/** On-disk shape. */
 interface StoredConfig {
   current?: string;
   contexts?: Record<string, ContextConfig>;
-  baseUrl?: string;
-  apiKey?: string;
 }
 
 interface NormalizedStore {
@@ -61,23 +58,18 @@ function readRaw(): StoredConfig {
   }
 }
 
-/** Fold either on-disk shape into the canonical `{ current, contexts }`. */
 function normalize(raw: StoredConfig): NormalizedStore {
   if (raw.contexts && typeof raw.contexts === "object") {
     const current =
       raw.current && raw.contexts[raw.current] ? raw.current : DEFAULT_CONTEXT;
     return { current, contexts: { ...raw.contexts } };
   }
-  // Legacy flat file → a single `default` context.
-  if (raw.baseUrl || raw.apiKey) {
-    return {
-      current: DEFAULT_CONTEXT,
-      contexts: {
-        [DEFAULT_CONTEXT]: { baseUrl: raw.baseUrl, apiKey: raw.apiKey },
-      },
-    };
-  }
   return { current: DEFAULT_CONTEXT, contexts: {} };
+}
+
+/** The pre-contexts flat `{ baseUrl, apiKey }` file. */
+function isFlatConfig(raw: object): boolean {
+  return !("contexts" in raw) && ("baseUrl" in raw || "apiKey" in raw);
 }
 
 function readStore(): NormalizedStore {
@@ -131,6 +123,12 @@ export function loadConfig(): ResolvedConfig {
  * error when no API key is resolvable. */
 export function resolveConfig(): CliConfig {
   const resolved = loadConfig();
+  if (!resolved.apiKey && isFlatConfig(readRaw())) {
+    throw new Error(
+      `${configPath} uses the old flat format, which is no longer read. ` +
+        "Run `atelier login` (or `atelier config init`) to set it up again.",
+    );
+  }
   if (!resolved.apiKey) {
     throw new Error(
       "No API key configured. Run `atelier config init`, `atelier local up`, " +

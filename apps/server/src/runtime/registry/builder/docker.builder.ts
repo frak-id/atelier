@@ -9,8 +9,8 @@
  * Security note (see the design review): a shared/remote docker daemon is a
  * root-equivalent RCE surface for whoever can submit a build — arbitrary
  * `RUN` steps execute as the daemon's own privileges. Fine as the first/dev
- * target; multi-tenant deployments should move to buildkit-rootless or
- * kaniko once those backends exist.
+ * target; multi-tenant deployments should use buildkit (rootless,
+ * daemonless by default).
  */
 import { randomUUID } from "node:crypto";
 import { mkdtemp, rm, writeFile } from "node:fs/promises";
@@ -61,7 +61,7 @@ export class DockerImageBuilder implements ImageBuilderBackend {
   // docker daemon's insecure-registry allowlist is daemon-config, not a
   // per-build flag, and `docker build` has no BuildKit-style remote cache
   // import/export without enabling the buildx/buildkit driver. Both fields
-  // exist on the port for the buildkit/kaniko backends that DO honor them.
+  // exist on the port for the buildkit backend, which DOES honor them.
   async build(
     req: ImageBuildRequest,
     onLog: (chunk: string) => void,

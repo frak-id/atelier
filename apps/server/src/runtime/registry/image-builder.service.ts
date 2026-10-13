@@ -391,7 +391,7 @@ export class ImageBuilderService {
     const tag = `${this.qualify(record.name)}:latest`;
     const controller = new AbortController();
     // Bound the backend call to BUILD_TIMEOUT_MS regardless of provenance:
-    // the k8s builders (kaniko/buildkit) already self-bound via
+    // the k8s builder (buildkit) already self-bounds via
     // `activeDeadlineSeconds`, but the docker backend has no such bound of
     // its own — a hung `docker build`/`push` against a wedged daemon would
     // otherwise wedge this build's `inflight` entry until a full server

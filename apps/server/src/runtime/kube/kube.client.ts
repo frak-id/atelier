@@ -384,24 +384,6 @@ export class KubeClient {
     }
   }
 
-  /** Fetch a namespaced resource, or `null` ONLY if it does not exist (404);
-   * any other failure is rethrown (same reasoning as `resourceExists`).
-   * Mock-safe (returns `null` under mock mode). Thin typed wrapper over `get`
-   * for callers that need to read a field (e.g. a PVC's `spec.volumeMode`). */
-  async getResource<T = unknown>(
-    kind: string,
-    name: string,
-    namespace = this.namespace,
-  ): Promise<T | null> {
-    if (isMock()) return null;
-    try {
-      return await this.get<T>(resourceItemPath(kind, name, namespace));
-    } catch (err) {
-      if (isKubeNotFound(err)) return null;
-      throw err;
-    }
-  }
-
   async waitForResourceDeleted(
     kind: string,
     name: string,

@@ -102,14 +102,12 @@ sandboxes via the Model Context Protocol (`/mcp`). Agents authenticate with
 Production base images are typically built out-of-band with the cluster's
 BuildKit (`buildctl`) against a shared `buildkitd` and pushed to Zot; see
 `infra/k8s/deploy.sh` and [`infra/k8s/README.md`](../infra/k8s/README.md#rebuild-images-in-cluster-no-local-docker).
-The server also has a server-side build API (`POST /v1/images`,
-`ImageBuilderService`) that uses the `imageBuilder.*` config — it's what the
-`kind`/`endpoint`/etc. schema below actually drives; there's just no
-build-from-console UI on top of it yet. `imageBuilder.kind=buildkit` with no
-`endpoint` (the default) runs BuildKit daemonless in a one-shot Job, so an
-in-cluster build needs no pre-existing daemon — the same zero-dependency
-property `kind=kaniko` offered, without depending on the now-archived
-upstream Kaniko project. `kind=kaniko` stays selectable but is deprecated.
+The server also builds images itself (`POST /v1/images`,
+`ImageBuilderService`, triggered from the console or CLI) using the
+`imageBuilder.*` config. `imageBuilder.kind=buildkit` with no `endpoint` (the
+default) runs BuildKit daemonless in a one-shot Job, so an in-cluster build
+needs no pre-existing daemon; `kind=docker` shells out to a Docker daemon
+(what `atelier local up` uses).
 
 ## Recipes
 

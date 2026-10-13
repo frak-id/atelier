@@ -2,7 +2,7 @@
  * The image builder's backend port — mirrors the split documented in
  * `../../backend/backend.types.ts` for `SandboxBackend`/`VolumeBackend`:
  * this interface is the ONLY thing a concrete builder (docker daemon,
- * buildkit, kaniko) implements, and it is deliberately narrow. Every policy
+ * buildkit) implements, and it is deliberately narrow. Every policy
  * decision lives one layer up, in `ImageBuilderService` (not yet built — see
  * the seed loader's header comment):
  *
@@ -22,8 +22,8 @@
  * A concrete backend's ONLY job: build `dockerfile` against `contextDir`,
  * push to `tag`, and return the pushed manifest's digest. Backends differ
  * wildly in how a build context reaches them (docker streams it to a local
- * daemon; buildkit's `buildctl` sends it `--local`; kaniko needs it staged
- * into the cluster, e.g. a ConfigMap mounted into a Job pod) — that
+ * daemon; the in-cluster buildkit Job needs it staged into the cluster as a
+ * ConfigMap mounted into the Job pod) — that
  * difference is fully absorbed inside each backend's `build()`, never
  * surfaced in this port.
  */
@@ -45,7 +45,7 @@ export interface ImageBuildRequest {
    * local daemon and do NOT push. The returned digest is the local image ID
    * (content identity for bookkeeping) rather than a pushed manifest digest;
    * the service stores the bare tag as the image ref. Only the docker backend
-   * honors this — kaniko/buildkit always target a registry. */
+   * honors this — buildkit always targets a registry. */
   local?: boolean;
   /** Build-time `--build-arg`s. MUST NOT carry secrets — they land in the
    * image's build history. Use the backend's own credential mechanism for
@@ -87,9 +87,9 @@ export interface ImageBuilderBackend {
 /** Single-quote a shell argument (POSIX), escaping embedded single quotes —
  * the same scheme `runtime.service.ts`'s `shellQuote` and the agent's
  * `sh_quote` (Rust) use. Only the buildkit backend currently needs this (its
- * `buildctl` invocation runs through `sh -c`); docker/kaniko pass args
- * straight to argv (no shell involved) so they don't need quoting, but they
- * still go through {@link formatBuildArgs} for a single shared loop. */
+ * `buildctl` invocation runs through `sh -c`); docker passes args straight
+ * to argv (no shell involved) so it doesn't need quoting, but it still goes
+ * through {@link formatBuildArgs} for a single shared loop. */
 export function shQuote(arg: string): string {
   return `'${arg.replace(/'/g, "'\\''")}'`;
 }

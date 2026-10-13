@@ -64,22 +64,6 @@ describe("resourceExists", () => {
   });
 });
 
-describe("getResource", () => {
-  test("404 → null", async () => {
-    const c = client();
-    failGet(c, notFound());
-    expect(await c.getResource("PersistentVolumeClaim", "pvc")).toBeNull();
-  });
-
-  test("API unavailable → throws", async () => {
-    const c = client();
-    failGet(c, unavailable());
-    await expect(c.getResource("PersistentVolumeClaim", "pvc")).rejects.toThrow(
-      "connection refused",
-    );
-  });
-});
-
 describe("waitForResourceDeleted", () => {
   test("keeps polling through a transient error, then sees the 404", async () => {
     const c = client();

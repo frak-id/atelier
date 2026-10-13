@@ -250,27 +250,23 @@ export type PortsConfig = Static<typeof PortsConfigSchema>;
 // build contexts (`apps/server/src/runtime/registry/seeds/`) plus any
 // user-supplied Dockerfile/zip or externally-registered ref (GHCR etc). This
 // section configures HOW the server builds one when asked to (`ImageBuilder‑
-// Service` / `POST /v1/images`) — three strategies are supported:
+// Service` / `POST /v1/images`) — two strategies are supported:
 //
 //   - docker:   shells out to a `docker` daemon (local socket, or a remote
 //               `tcp://` one via `dockerHost`/`DOCKER_HOST`). Default — the
 //               lowest-friction option, works with any Docker/OrbStack/Lima
 //               install. Not a good fit for untrusted multi-tenant builds
-//               (a shared daemon is root-equivalent); buildkit-rootless or
-//               kaniko are the safer choice there.
-//   - kaniko:   spawn a K8s Job running gcr.io/kaniko-project/executor
-//               with the build context mounted from a ConfigMap. Works out
-//               of the box with no external daemon dependency — the right
-//               fit for a stock k3s node.
-//   - buildkit: spawn a tiny `buildctl` client Job that dispatches the
-//               build to an existing BuildKit daemon at `endpoint`. Use
-//               this when the cluster already hosts a buildkitd Pod that
-//               you want to reuse.
+//               (a shared daemon is root-equivalent); buildkit-rootless is
+//               the safer choice there.
+//   - buildkit: a one-shot K8s Job with the build context mounted from a
+//               ConfigMap. With no `endpoint` it runs BuildKit rootless and
+//               daemonless inside the Job (no external dependency, the right
+//               fit for a stock k3s node); with `endpoint` set it runs a tiny
+//               `buildctl` client that dispatches to that BuildKit daemon.
 // ---------------------------------------------------------------------------
 
 export const ImageBuilderKindSchema = Type.Union([
   Type.Literal("docker"),
-  Type.Literal("kaniko"),
   Type.Literal("buildkit"),
 ]);
 
@@ -304,29 +300,21 @@ export const ImageBuilderConfigSchema = Type.Object(
     /**
      * Which builder strategy to use. `buildkit` (with `endpoint` left
      * empty) is the recommended zero-daemon, in-cluster choice — it runs
-     * BuildKit itself daemonless inside the one-shot build Job. `kaniko` is
-     * DEPRECATED (upstream archived by Google in 2025, no more updates) but
-     * stays selectable. `docker` is the local/remote daemon backend used by
+     * BuildKit itself daemonless inside the one-shot build Job. `docker` is
+     * the local/remote daemon backend used by
      * `atelier local up` — it stays the schema default because it's what
      * local mode needs; Kubernetes deployments set `kind` explicitly (see
      * `infra/k8s/30-config.yaml`).
      */
-    kind: Type.Union(
-      [
-        Type.Literal("docker"),
-        Type.Literal("kaniko"),
-        Type.Literal("buildkit"),
-      ],
-      { default: "docker" },
-    ),
+    kind: Type.Union([Type.Literal("docker"), Type.Literal("buildkit")], {
+      default: "docker",
+    }),
     /**
      * Override the builder image. Defaults to a sensible value per kind:
      *   - buildkit: moby/buildkit:v0.33.0 as the buildctl CLIENT (when
      *               `endpoint` is set), or moby/buildkit:v0.33.0-rootless
      *               run DAEMONLESS in the build Job (when `endpoint` is
      *               empty — the default, no external daemon needed)
-     *   - kaniko:   gcr.io/kaniko-project/executor:latest (deprecated — see
-     *               `kind` above)
      *   - docker:   unused (the daemon itself does the build)
      */
     image: Type.String({ default: "" }),
@@ -348,7 +336,7 @@ export const ImageBuilderConfigSchema = Type.Object(
     dockerHost: Type.String({ default: "" }),
     /**
      * Target build platform, shared by every backend (docker `--platform`,
-     * kaniko `--custom-platform`, buildkit `--opt platform`). Empty (the
+     * buildkit `--opt platform`). Empty (the
      * default) builds for the daemon's native architecture — so `local up`
      * on an arm64 Mac builds arm64 with no emulation. Pin it (e.g.
      * linux/amd64) for a cluster whose nodes differ from the build host

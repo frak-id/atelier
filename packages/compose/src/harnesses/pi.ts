@@ -9,10 +9,12 @@
  * the pi-web processes/ports itself. The harness never assumes those binaries
  * exist, so it declares no pi-web process or port.
  *
- * `pi` itself may live in either of two places: the legacy npm global install
- * (`~/.local/bin/pi`) or pi's managed install (`curl pi.dev/install.sh | sh`,
- * also what `pi update` migrates to), whose launcher is `~/.pi/agent/bin/pi`.
- * `pi-acp` spawns a bare `pi`, so both dirs go on the acp process's PATH.
+ * `pi` itself may live in either of two places: pi's managed install
+ * (`curl pi.dev/install.sh | sh`, also what `pi update` migrates to), whose
+ * launcher is `~/.pi/agent/bin/pi`, or an npm global install under `~/.local`
+ * (`~/.local/bin/pi`, what toolbox recipes install with `pi-acp`). `pi-acp`
+ * spawns a bare `pi`, so both dirs go on the acp process's PATH, managed
+ * first. `~/.local/bin` stays either way: `pi-acp` itself lives there.
  *
  * The `acp` process is spawned directly by the supervisor (no login shell), so
  * the `~/.local/bin` PATH shim from `/etc/profile.d` is NOT sourced — the
