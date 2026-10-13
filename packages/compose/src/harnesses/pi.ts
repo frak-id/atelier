@@ -9,6 +9,11 @@
  * the pi-web processes/ports itself. The harness never assumes those binaries
  * exist, so it declares no pi-web process or port.
  *
+ * `pi` itself may live in either of two places: the legacy npm global install
+ * (`~/.local/bin/pi`) or pi's managed install (`curl pi.dev/install.sh | sh`,
+ * also what `pi update` migrates to), whose launcher is `~/.pi/agent/bin/pi`.
+ * `pi-acp` spawns a bare `pi`, so both dirs go on the acp process's PATH.
+ *
  * The `acp` process is spawned directly by the supervisor (no login shell), so
  * the `~/.local/bin` PATH shim from `/etc/profile.d` is NOT sourced — the
  * command must be the ABSOLUTE binary path with an explicit `PATH`/`HOME` env
@@ -21,6 +26,8 @@ import type { SpecFragment } from "../spec-merge.ts";
 
 const HOME = "/home/dev";
 const LOCAL_BIN = `${HOME}/.local/bin`;
+/** pi's managed-install launcher dir (`~/.pi/agent/bin/pi`). */
+const PI_MANAGED_BIN = `${HOME}/.pi/agent/bin`;
 
 export interface ComposePiOptions {
   /** MCP server names to record in the `atelier.dev/mcp` annotation. */
@@ -45,11 +52,13 @@ export function composePi(opts: ComposePiOptions = {}): SpecFragment {
         cwd: HOME,
         // Run as `dev` so pi writes its data/config under ${HOME}, not root.
         user: "dev",
-        // Explicit PATH/HOME: the process runs without a login shell, so
-        // `pi-acp` needs `~/.local/bin` on PATH to exec its own tools, and
+        // Explicit PATH/HOME: the process runs without a login shell (the
+        // managed install only adds its bin dir via ~/.bashrc), so `pi-acp`
+        // needs pi's bin dirs on PATH to spawn `pi` — managed install first
+        // so it wins over a stale npm one; absent dirs are harmless — and
         // HOME so pi resolves ~/.pi, ~/.config/pi-cliproxyapi, etc.
         env: {
-          PATH: `${LOCAL_BIN}:/usr/local/bin:/usr/bin:/bin`,
+          PATH: `${PI_MANAGED_BIN}:${LOCAL_BIN}:/usr/local/bin:/usr/bin:/bin`,
           HOME,
         },
         stdio: "bridge",

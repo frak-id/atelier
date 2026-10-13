@@ -301,6 +301,11 @@ rides the opencode ACP session surface) and the cliproxy key delivered as a
 `0600` file:
 `{ path: "/home/dev/.config/pi-cliproxyapi/key", content: <KEY>, owner: "dev", mode: "600" }`.
 
+> **Managed pi install:** since pi moved to its managed install
+> (`~/.pi/agent/bin/pi`, put on PATH only by `~/.bashrc`), `composePi()`
+> prepends `/home/dev/.pi/agent/bin` to the `PATH` above — without it pi-acp
+> fails `session/new` with "executable not found (command: pi)".
+
 > **`composePi()` gap:** the SDK composer emits bare `command: "pi-acp"` relying
 > on a login-shell PATH. The supervisor does **not** source a login shell, so
 > staging uses the **absolute path + explicit `PATH`/`HOME` env**. Either fix
