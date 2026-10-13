@@ -12,6 +12,8 @@ export const queryKeys = {
     detail: (id: string) => [...queryKeys.sandboxes.all, "detail", id] as const,
     processLogs: (id: string, name: string) =>
       [...queryKeys.sandboxes.all, "detail", id, "logs", name] as const,
+    activity: (id: string) =>
+      [...queryKeys.sandboxes.all, "detail", id, "activity"] as const,
   },
   sessions: {
     all: (sandboxId: string) => ["sessions", sandboxId] as const,

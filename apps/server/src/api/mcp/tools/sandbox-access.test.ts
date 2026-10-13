@@ -147,7 +147,14 @@ function fakeContainer(): ServerContainer {
       throw new Error("started");
     },
   };
-  return { runtime, control, tasks } as unknown as ServerContainer;
+  const idle = {
+    decorate: <T>(rows: T[]) => rows,
+    summary: () => undefined,
+    setKeepAwake: (id: string) => {
+      track(id);
+    },
+  };
+  return { runtime, control, tasks, idle } as unknown as ServerContainer;
 }
 
 async function as(user: AuthUser) {

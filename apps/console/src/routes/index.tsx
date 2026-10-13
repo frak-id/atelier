@@ -48,6 +48,7 @@ import { GithubIcon } from "@/components/ui/github-icon";
 import { Skeleton } from "@/components/ui/skeleton";
 import { useAgentEvents } from "@/hooks/use-agent-events";
 import { formatRelativeTime, repoBranchLabel } from "@/lib/formatters";
+import { formatDuration, idlePausedAt, msUntil } from "@/lib/idle";
 import {
   harnessFromAnnotations,
   orgIdFromAnnotations,
@@ -257,6 +258,31 @@ function SandboxRepos({
   );
 }
 
+/** When an unused running sandbox will be paused, or why it was. */
+function IdleHint({ sandbox }: { sandbox: SandboxSummary }) {
+  const idle = sandbox.idle;
+  if (sandbox.status === "paused" && idlePausedAt(sandbox.annotations)) {
+    return (
+      <span className="text-xs text-muted-foreground">· paused when idle</span>
+    );
+  }
+  if (idle?.state === "active" && idle.pausesAt) {
+    const left = formatDuration(msUntil(idle.pausesAt));
+    return (
+      <span className="text-xs text-muted-foreground">
+        ·{" "}
+        {idle.mode === "observe"
+          ? `would idle-pause in ${left}`
+          : `idle pause in ${left}`}
+      </span>
+    );
+  }
+  if (idle?.state === "due") {
+    return <span className="text-xs text-warning">· idle</span>;
+  }
+  return null;
+}
+
 function SandboxRow({
   sandbox,
   orgNameById,
@@ -303,6 +329,7 @@ function SandboxRow({
             <span className="text-xs text-muted-foreground">
               {formatRelativeTime(sandbox.createdAt)}
             </span>
+            <IdleHint sandbox={sandbox} />
           </span>
           {sandbox.repos && sandbox.repos.length > 0 ? (
             <SandboxRepos repos={sandbox.repos} />

@@ -1,6 +1,10 @@
 import { SandboxError } from "../../shared/errors.ts";
 import { config, isMock } from "../../shared/lib/config.ts";
 import { createChildLogger } from "../../shared/lib/logger.ts";
+import type {
+  AgentActivityReport,
+  AgentActivitySettings,
+} from "../activity.ts";
 import type { AgentConfig } from "../agent-config.ts";
 import type { AgentEndpoint } from "../backend/backend.types.ts";
 import { kubeClient } from "../kube/index.ts";
@@ -215,6 +219,54 @@ export class AgentClient {
 
   async health(sandboxId: string): Promise<AgentHealth> {
     return this.request<AgentHealth>(sandboxId, "/health");
+  }
+
+  /**
+   * The agent's last hour of measured activity (`GET /activity`: network
+   * bytes, file writes, CPU, per-process traffic). `null` when the agent
+   * predates the endpoint (404): an image built before idle auto-pause.
+   * Throws `AgentUnavailableError` when the agent can't be reached.
+   */
+  async activity(sandboxId: string): Promise<AgentActivityReport | null> {
+    if (isMock()) {
+      const now = Date.now();
+      return {
+        nowMs: now,
+        bootedAtMs: now,
+        bucketSeconds: 60,
+        network: "unavailable",
+        files: "unavailable",
+        cpu: "unavailable",
+        fileSettings: { roots: [], exclude: [] },
+        buckets: [],
+        processes: [],
+      };
+    }
+    try {
+      return await this.request<AgentActivityReport>(sandboxId, "/activity", {
+        timeout: 5000,
+      });
+    } catch (err) {
+      if (err instanceof AgentRequestError && err.statusCode === 404) {
+        return null;
+      }
+      throw err;
+    }
+  }
+
+  /** Replace the agent's file-activity filter (`PUT /activity/settings`).
+   * Its own endpoint, not part of `PUT /config` (deny_unknown_fields): an
+   * older agent just 404s here. */
+  async putActivitySettings(
+    sandboxId: string,
+    settings: AgentActivitySettings,
+  ): Promise<void> {
+    if (isMock()) return;
+    await this.request(sandboxId, "/activity/settings", {
+      method: "PUT",
+      body: settings,
+      timeout: 5000,
+    });
   }
 
   /**

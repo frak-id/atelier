@@ -142,6 +142,26 @@ export class JobService {
   }
 
   /**
+   * Whether a running or queued job works on `sandboxId`: its `target` (the
+   * sandbox lifecycle ops) or its `metadata.sandboxId` / `metadata.forkOf`
+   * (a toolset capture, a fork's source). The idle reaper never pauses a
+   * sandbox under one. Reads only the in-process handles, never the table.
+   */
+  hasActiveFor(sandboxId: string): boolean {
+    const ids = [...this.controllers.keys(), ...this.waiting.map((w) => w.id)];
+    return ids.some((id) => {
+      const job = this.store.get(id);
+      return (
+        job !== undefined &&
+        !isJobTerminal(job.status) &&
+        (job.target === sandboxId ||
+          job.metadata?.sandboxId === sandboxId ||
+          job.metadata?.forkOf === sandboxId)
+      );
+    });
+  }
+
+  /**
    * POOLED dispatch. Creates a `queued` row, then starts it immediately if a
    * concurrency slot is free (else it waits). Returns the row synchronously —
    * its status reflects whether it started (`running`) or is waiting

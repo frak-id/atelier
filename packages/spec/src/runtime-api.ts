@@ -3,6 +3,7 @@
  * These are the wire contract at the seam — the whole thing.
  */
 import { type Static, Type } from "@sinclair/typebox";
+import { SandboxIdleSummarySchema } from "./sandbox-activity.ts";
 import { ProcessSchema, SandboxSpecSchema } from "./sandbox-spec.ts";
 
 // ── generated values ─────────────────────────────────────────────────────────
@@ -123,6 +124,9 @@ export const SandboxSummarySchema = Type.Object(
      * chain, root first). Absent when it booted from a bare image or a
      * snapshot with no known recipe. */
     repos: Type.Optional(Type.Array(SandboxRepoSchema)),
+    /** Idle auto-pause state, added by the API (absent from the runtime's
+     * own list, which knows nothing of the rules). */
+    idle: Type.Optional(SandboxIdleSummarySchema),
   },
   { additionalProperties: false, $id: "SandboxSummary" },
 );
@@ -143,7 +147,9 @@ export const SANDBOX_ORG_ANNOTATION = "atelier.dev/org-id";
 export const SANDBOX_NAME_MAX_LENGTH = 64;
 
 /** `PATCH /v1/sandboxes/:id`. `name`: set the display name; `null` or a
- * blank string clears it (the console falls back to the id). */
+ * blank string clears it (the console falls back to the id).
+ * `keepAwakeUntil`: exempt the sandbox from idle auto-pause until an ISO
+ * time, or `"forever"` when the operator allows it; `null` clears it. */
 export const UpdateSandboxRequestSchema = Type.Object(
   {
     name: Type.Optional(
@@ -151,6 +157,9 @@ export const UpdateSandboxRequestSchema = Type.Object(
         Type.String({ maxLength: SANDBOX_NAME_MAX_LENGTH }),
         Type.Null(),
       ]),
+    ),
+    keepAwakeUntil: Type.Optional(
+      Type.Union([Type.String({ maxLength: 64 }), Type.Null()]),
     ),
   },
   { additionalProperties: false, $id: "UpdateSandboxRequest" },

@@ -147,6 +147,31 @@ function oneOf<T extends string>(options: readonly T[]): (v: unknown) => T {
 const builderKinds = ["docker", "buildkit"] as const;
 const validateBuilderKind = oneOf(builderKinds);
 
+const idleModes = ["off", "observe", "enforce"] as const;
+const validateIdleMode = oneOf(idleModes);
+const idleNetworkModes = ["both", "inbound", "outbound", "off"] as const;
+const validateIdleNetwork = oneOf(idleNetworkModes);
+
+/** A comma-separated list, normalized (trimmed, no empty items). */
+function commaList(value: unknown): string {
+  return optionalString(value)
+    .split(",")
+    .map((s) => s.trim())
+    .filter((s) => s.length > 0)
+    .join(",");
+}
+
+/** Comma-separated absolute paths (the idle file-watch roots). */
+function absolutePathList(value: unknown): string {
+  const list = commaList(value);
+  for (const path of list.split(",")) {
+    if (path && !path.startsWith("/")) {
+      throw new ValidationError(`expected absolute paths, got "${path}"`);
+    }
+  }
+  return list;
+}
+
 /**
  * The two first config keys (see request): prebuild git tracking + the
  * retention window for the snapshots it produces.
@@ -419,6 +444,148 @@ export const CONFIG_REGISTRY = {
     parseEnv: optionalString,
     validate: optionalString,
   } satisfies ConfigDef<string>,
+  // ── idle auto-pause (docs/proposals/sandbox-idle-autopause.md). Read by
+  //    the reaper every minute, so edits apply live. Operator-only: there is
+  //    deliberately no org or per-user override of the idle time. ─────────
+  "sandbox.idle.mode": {
+    key: "sandbox.idle.mode",
+    type: "string",
+    options: idleModes,
+    label: "Idle auto-pause",
+    description:
+      "Pause running sandboxes nobody uses. observe computes and shows when " +
+      "each sandbox would pause without pausing it (use it to tune the " +
+      "thresholds below); enforce pauses them; off disables the feature.",
+    envVar: "ATELIER_IDLE_MODE",
+    default: "observe",
+    parseEnv: validateIdleMode,
+    validate: validateIdleMode,
+  } satisfies ConfigDef<string>,
+  "sandbox.idle.minutes": {
+    key: "sandbox.idle.minutes",
+    type: "number",
+    label: "Idle time before pause (minutes)",
+    description:
+      "How long a sandbox must go without activity before it is paused.",
+    envVar: "ATELIER_IDLE_MINUTES",
+    default: 120,
+    parseEnv: positiveInt,
+    validate: positiveInt,
+  } satisfies ConfigDef<number>,
+  "sandbox.idle.network": {
+    key: "sandbox.idle.network",
+    type: "string",
+    options: idleNetworkModes,
+    label: "Idle: network traffic counts",
+    description:
+      "Which network traffic counts as activity. inbound: connections to " +
+      "the sandbox (its URLs, SSH); outbound: connections it opens (an " +
+      "agent calling an LLM API, git); both; or off.",
+    envVar: "ATELIER_IDLE_NETWORK",
+    default: "both",
+    parseEnv: validateIdleNetwork,
+    validate: validateIdleNetwork,
+  } satisfies ConfigDef<string>,
+  "sandbox.idle.networkMinBytesPerMinute": {
+    key: "sandbox.idle.networkMinBytesPerMinute",
+    type: "number",
+    label: "Idle: network bytes per minute",
+    description:
+      "Bytes a minute of traffic (per direction) must reach to count as " +
+      "activity. Keeps the heartbeats of a forgotten editor tab or SSH " +
+      "session from holding a sandbox awake.",
+    envVar: "ATELIER_IDLE_NETWORK_MIN_BYTES",
+    default: 65536,
+    parseEnv: positiveInt,
+    validate: positiveInt,
+  } satisfies ConfigDef<number>,
+  "sandbox.idle.files": {
+    key: "sandbox.idle.files",
+    type: "boolean",
+    label: "Idle: file writes count",
+    description:
+      "Count file writes under the watched roots (minus excludes) as " +
+      "activity.",
+    envVar: "ATELIER_IDLE_FILES",
+    default: true,
+    parseEnv: parseBoolEnv,
+    validate: validateBool,
+  } satisfies ConfigDef<boolean>,
+  "sandbox.idle.fileRoots": {
+    key: "sandbox.idle.fileRoots",
+    type: "string",
+    label: "Idle: watched directories",
+    description:
+      "Comma-separated absolute paths whose file writes count as activity. " +
+      "Repos are cloned into the home (/home/dev/<repo>).",
+    envVar: "ATELIER_IDLE_FILE_ROOTS",
+    default: "/home/dev",
+    parseEnv: absolutePathList,
+    validate: absolutePathList,
+  } satisfies ConfigDef<string>,
+  "sandbox.idle.fileExcludes": {
+    key: "sandbox.idle.fileExcludes",
+    type: "string",
+    label: "Idle: ignored paths",
+    description:
+      "Comma-separated directory names, *.ext suffixes, or absolute path " +
+      "patterns (/home/dev/.* : * matches within one path segment) whose " +
+      "writes never count: dependency installs, build output, logs, git " +
+      "housekeeping, and the tool state hidden at the top of the home.",
+    envVar: "ATELIER_IDLE_FILE_EXCLUDES",
+    default:
+      "node_modules,.git,.next,.nuxt,.turbo,.cache,dist,build,target,*.log," +
+      "/home/dev/.*",
+    parseEnv: commaList,
+    validate: commaList,
+  } satisfies ConfigDef<string>,
+  "sandbox.idle.cpu": {
+    key: "sandbox.idle.cpu",
+    type: "boolean",
+    label: "Idle: CPU usage counts",
+    description:
+      "Count CPU usage above the threshold below as activity (catches a " +
+      "long unattended build). Off by default: a runaway process would " +
+      "keep its sandbox awake forever.",
+    envVar: "ATELIER_IDLE_CPU",
+    default: false,
+    parseEnv: parseBoolEnv,
+    validate: validateBool,
+  } satisfies ConfigDef<boolean>,
+  "sandbox.idle.cpuMinMillicores": {
+    key: "sandbox.idle.cpuMinMillicores",
+    type: "number",
+    label: "Idle: CPU threshold (millicores)",
+    description:
+      "Average CPU over a minute, in millicores (1000 = one core), for " +
+      "that minute to count when CPU usage counts.",
+    envVar: "ATELIER_IDLE_CPU_MIN_MILLICORES",
+    default: 250,
+    parseEnv: positiveInt,
+    validate: positiveInt,
+  } satisfies ConfigDef<number>,
+  "sandbox.idle.maxKeepAwakeHours": {
+    key: "sandbox.idle.maxKeepAwakeHours",
+    type: "number",
+    label: "Idle: longest keep-awake (hours)",
+    description:
+      "The longest a user may exempt a sandbox from idle auto-pause.",
+    envVar: "ATELIER_IDLE_MAX_KEEP_AWAKE_HOURS",
+    default: 24,
+    parseEnv: positiveInt,
+    validate: positiveInt,
+  } satisfies ConfigDef<number>,
+  "sandbox.idle.allowKeepAwakeForever": {
+    key: "sandbox.idle.allowKeepAwakeForever",
+    type: "boolean",
+    label: "Idle: allow keep-awake forever",
+    description:
+      "Let users exempt a sandbox from idle auto-pause with no end date.",
+    envVar: "ATELIER_IDLE_ALLOW_KEEP_AWAKE_FOREVER",
+    default: false,
+    parseEnv: parseBoolEnv,
+    validate: validateBool,
+  } satisfies ConfigDef<boolean>,
   "jobs.concurrency": {
     key: "jobs.concurrency",
     type: "number",
@@ -458,6 +625,17 @@ export interface ConfigValues {
   "kubernetes.defaultVolumeSize": string;
   "kubernetes.storageClass": string;
   "kubernetes.volumeSnapshotClass": string;
+  "sandbox.idle.mode": "off" | "observe" | "enforce";
+  "sandbox.idle.minutes": number;
+  "sandbox.idle.network": "both" | "inbound" | "outbound" | "off";
+  "sandbox.idle.networkMinBytesPerMinute": number;
+  "sandbox.idle.files": boolean;
+  "sandbox.idle.fileRoots": string;
+  "sandbox.idle.fileExcludes": string;
+  "sandbox.idle.cpu": boolean;
+  "sandbox.idle.cpuMinMillicores": number;
+  "sandbox.idle.maxKeepAwakeHours": number;
+  "sandbox.idle.allowKeepAwakeForever": boolean;
   "jobs.concurrency": number;
 }
 
@@ -475,6 +653,17 @@ export function isConfigKey(key: string): key is ConfigKey {
 const PLANE_ONLY_KEYS = new Set<ConfigKey>([
   "prebuild.gitTracking",
   "prebuild.pruneKeep",
+  "sandbox.idle.mode",
+  "sandbox.idle.minutes",
+  "sandbox.idle.network",
+  "sandbox.idle.networkMinBytesPerMinute",
+  "sandbox.idle.files",
+  "sandbox.idle.fileRoots",
+  "sandbox.idle.fileExcludes",
+  "sandbox.idle.cpu",
+  "sandbox.idle.cpuMinMillicores",
+  "sandbox.idle.maxKeepAwakeHours",
+  "sandbox.idle.allowKeepAwakeForever",
 ]);
 
 /** The AtelierConfig dotted path a key mirrors (for reading the operator's

@@ -142,11 +142,23 @@ beforeAll(async () => {
     },
   };
 
+  const idle = {
+    decorate: <T>(rows: T[]) => rows,
+    view: (id: string) => {
+      calls.push(`activity:${id}`);
+      return { sandboxId: id };
+    },
+    setKeepAwake: (id: string) => {
+      calls.push(`keep-awake:${id}`);
+    },
+  };
+
   const container = {
     runtime,
     jobs,
     sessions,
     terminal,
+    idle,
     control: {
       ...realControl,
       authService: {
@@ -205,7 +217,9 @@ function request(
 /** Every route that addresses a sandbox id, with a valid body. */
 const SANDBOX_ROUTES: [string, string, unknown?][] = [
   ["GET", "/v1/sandboxes/owned"],
+  ["GET", "/v1/sandboxes/owned/activity"],
   ["PATCH", "/v1/sandboxes/owned", { name: "x" }],
+  ["PATCH", "/v1/sandboxes/owned", { keepAwakeUntil: null }],
   ["POST", "/v1/sandboxes/owned/pause"],
   ["POST", "/v1/sandboxes/owned/resume", {}],
   ["DELETE", "/v1/sandboxes/owned"],

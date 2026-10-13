@@ -57,7 +57,10 @@ Domains are configurable. Default pattern:
 The agent runs inside each sandbox pod, listening on TCP port 9998 (config +
 process API), 9997 (attach bridge: stdio/PTY relay), and 7681 (ad-hoc
 terminal WS relay). The server reaches the agent via the pod IP obtained
-from the K8s API (`pod.status.podIP`).
+from the K8s API (`pod.status.podIP`). Once a minute it also reads the
+agent's `GET /activity` (network bytes, file writes, CPU) for idle
+auto-pause; that traffic, on the agent's own ports, never counts as
+activity.
 
 ## npm Registry
 

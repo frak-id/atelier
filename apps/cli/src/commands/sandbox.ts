@@ -1,5 +1,5 @@
-/** `atelier` sandbox lifecycle: up, ps, get, logs, exec, pause, resume, rm,
- * attach, ssh, sync, env, expose, snapshot, fork, process. */
+/** `atelier` sandbox lifecycle: up, ps, get, logs, exec, pause, resume,
+ * keep-awake, rm, attach, ssh, sync, env, expose, snapshot, fork, process. */
 import type {
   AddProcessRequest,
   CreateSandboxResponse,
@@ -23,7 +23,13 @@ import {
   splitRemote,
 } from "../util.ts";
 import { followLogs } from "./logs-follow.ts";
-import { harnessOf, sshCommand } from "./sandbox-helpers.ts";
+import {
+  describeIdle,
+  harnessOf,
+  idleOf,
+  parseDuration,
+  sshCommand,
+} from "./sandbox-helpers.ts";
 
 /** Authoring superset: a runtime spec plus the bake-only `build`/`repos` steps
  * that `--bake` extracts into a prebuild. */
@@ -162,12 +168,13 @@ export function registerSandbox(program: Command, ctx: Ctx): void {
       if (ctx.json) return printJson(rows);
       if (rows.length === 0) return line(pc.dim("no sandboxes"));
       table(
-        ["ID", "STATUS", "HARNESS", "AGE"],
+        ["ID", "STATUS", "HARNESS", "AGE", "IDLE"],
         rows.map((r) => [
           r.id,
           statusColor(r.status),
           harnessOf(r.annotations),
           age(r.createdAt),
+          idleOf(r.idle),
         ]),
       );
     });
@@ -176,9 +183,12 @@ export function registerSandbox(program: Command, ctx: Ctx): void {
     .command("get <id>")
     .description("Show a sandbox's status, processes, and URLs")
     .action(async (id: string) => {
-      const state = unwrap(await ctx.api().v1.sandboxes({ id }).get());
-      if (ctx.json) return printJson(state);
+      const sandbox = ctx.api().v1.sandboxes({ id });
+      const state = unwrap(await sandbox.get());
+      const activity = unwrap(await sandbox.activity.get());
+      if (ctx.json) return printJson({ ...state, activity });
       line(`${pc.bold(state.id)}  [${statusColor(state.status)}]`);
+      line(`  idle: ${describeIdle(activity)}`);
       for (const p of state.processes) {
         const tags = [p.primary ? "primary" : "", p.ready ? "ready" : ""]
           .filter(Boolean)
@@ -270,6 +280,49 @@ export function registerSandbox(program: Command, ctx: Ctx): void {
       if (ctx.json) return printJson(state);
       line(`resumed ${state.id}  [${statusColor(state.status)}]`);
     });
+
+  program
+    .command("keep-awake <id>")
+    .description(
+      "Keep a sandbox from being paused when idle (e.g. a long job left " +
+        "running), within the server's limit",
+    )
+    .option("--for <duration>", "how long, e.g. 90m, 8h, 2d")
+    .option("--forever", "with no end, if the server allows it")
+    .option("--off", "stop keeping it awake")
+    .action(
+      async (
+        id: string,
+        opts: { for?: string; forever?: boolean; off?: boolean },
+      ) => {
+        const picked = [opts.for !== undefined, opts.forever, opts.off];
+        if (picked.filter(Boolean).length !== 1) {
+          fail("keep-awake takes one of --for <duration>, --forever or --off");
+        }
+        let keepAwakeUntil: string | null = null;
+        if (opts.forever) {
+          // KEEP_AWAKE_FOREVER (@atelier/spec sandbox-activity.ts).
+          keepAwakeUntil = "forever";
+        } else if (opts.for !== undefined) {
+          const ms = parseDuration(opts.for);
+          if (!ms) fail(`invalid duration '${opts.for}' (e.g. 90m, 8h, 2d)`);
+          keepAwakeUntil = new Date(Date.now() + ms).toISOString();
+        }
+        await ctx
+          .api()
+          .v1.sandboxes({ id })
+          .patch({ keepAwakeUntil })
+          .then(unwrap);
+        if (keepAwakeUntil === null) {
+          line(`${id} can be paused when idle again`);
+        } else if (keepAwakeUntil === "forever") {
+          line(`${id} kept awake until you turn it off`);
+        } else {
+          const at = new Date(keepAwakeUntil).toLocaleString();
+          line(`${id} kept awake until ${at}`);
+        }
+      },
+    );
 
   program
     .command("rm <id>")

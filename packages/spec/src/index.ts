@@ -5,6 +5,7 @@ export * from "./prebuild-spec.ts";
 export * from "./repo-prebuild.ts";
 export * from "./runtime-api.ts";
 export * from "./runtime-surface.ts";
+export * from "./sandbox-activity.ts";
 export * from "./sandbox-spec.ts";
 export * from "./secret-ref.ts";
 export * from "./toolbox-config-spec.ts";

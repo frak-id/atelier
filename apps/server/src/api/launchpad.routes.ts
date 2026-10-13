@@ -33,6 +33,7 @@ export function createLaunchpadRoutes(container: ServerContainer) {
     createSandbox: (user, request, sandboxId, progress) =>
       createSandboxForUser(container, user, request, sandboxId, progress),
     resumeBody: (sandboxId) => withFreshCredentials(container, sandboxId),
+    idle: container.idle,
   });
 
   const starterRoutes = new Elysia({ prefix: "/starters" })

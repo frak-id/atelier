@@ -77,7 +77,12 @@ import {
   sandboxAccessGuard,
 } from "./sandbox-guard.ts";
 import { spawnSurface } from "./spawn-surface.ts";
-import { closeUpstream, openUpstreamRelay, relayMessage } from "./ws-relay.ts";
+import {
+  closeUpstream,
+  isUserInput,
+  openUpstreamRelay,
+  relayMessage,
+} from "./ws-relay.ts";
 
 const log = createChildLogger("v1-routes");
 
@@ -474,7 +479,7 @@ export async function withFreshCredentials(
 }
 
 export function createV1Routes(container: ServerContainer) {
-  const { runtime, control, jobs } = container;
+  const { runtime, control, jobs, idle } = container;
   const authPlugin = createAuthPlugin(control);
 
   // The durable, observable queue for long runtime ops (prebuild bake, toolset
@@ -849,7 +854,9 @@ export function createV1Routes(container: ServerContainer) {
             if (named !== undefined && named !== owner) return [];
             filter[OWNER_ID_METADATA] = owner;
           }
-          return accessibleSandboxes(container, user.id, runtime.list(filter));
+          return idle.decorate(
+            accessibleSandboxes(container, user.id, runtime.list(filter)),
+          );
         },
         {
           query: t.Object({
@@ -859,11 +866,19 @@ export function createV1Routes(container: ServerContainer) {
         },
       )
       .get("/sandboxes/:id", async ({ params }) => runtime.get(params.id))
-      // Display-only edits (today: the name). A blank or `null` name clears
-      // it; the console then falls back to the id.
+      // Idle auto-pause view: the operator's rule applied to this sandbox,
+      // its activity clocks and the agent's last hour of measurements.
+      .get("/sandboxes/:id/activity", ({ params }) => idle.view(params.id))
+      // Annotation-only edits: the display name (a blank or `null` name
+      // clears it; the console then falls back to the id) and keep-awake
+      // (validated against the operator's bounds).
       .patch(
         "/sandboxes/:id",
         ({ params, body, set }) => {
+          // Validate first, so a rejected keep-awake changes nothing.
+          if (body.keepAwakeUntil !== undefined) {
+            idle.setKeepAwake(params.id, body.keepAwakeUntil);
+          }
           if (body.name !== undefined) {
             const name = body.name?.trim() || undefined;
             runtime.setAnnotation(params.id, SANDBOX_NAME_ANNOTATION, name);
@@ -1049,7 +1064,9 @@ export function createV1Routes(container: ServerContainer) {
         message(ws, message) {
           // Drop client→upstream bytes for read-only attachments.
           if (ws.data.query.mode === "ro") return;
-          relayMessage(ws, message);
+          if (relayMessage(ws, message) && isUserInput(message)) {
+            runtime.touch(ws.data.params.id, "console");
+          }
         },
         close(ws) {
           closeUpstream(ws);

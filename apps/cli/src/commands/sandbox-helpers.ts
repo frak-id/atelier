@@ -1,7 +1,14 @@
 /** Shared read-side helpers for sandbox display + SSH, used by both the
  * scriptable commands and the interactive browser. */
 import { existsSync } from "node:fs";
-import type { SandboxUrl } from "@atelier/spec";
+import type {
+  IdleBlocker,
+  SandboxActivity,
+  SandboxIdleSummary,
+  SandboxUrl,
+} from "@atelier/spec";
+import pc from "picocolors";
+import { age, until } from "../output.ts";
 import { ATELIER_KEY_PATH } from "../ssh-keys.ts";
 
 const HARNESS = "atelier.dev/harness";
@@ -27,6 +34,74 @@ export function describeAnnotations(a: Annotations): string {
   if (ws) parts.push(ws);
   if (a?.[PREBUILD]) parts.push("prebuilt");
   return parts.join(" · ") || "-";
+}
+
+/** The IDLE column of `atelier ps`: when an unused running sandbox will be
+ * paused. */
+export function idleOf(idle: SandboxIdleSummary | undefined): string {
+  switch (idle?.state) {
+    case "active":
+      if (!idle.pausesAt) return "-";
+      return idle.mode === "observe"
+        ? pc.dim(`would pause in ${until(idle.pausesAt)}`)
+        : `pauses in ${until(idle.pausesAt)}`;
+    case "due":
+      return pc.yellow("idle");
+    case "blocked":
+      return pc.dim("held awake");
+    default:
+      return "-";
+  }
+}
+
+const BLOCKERS: Record<IdleBlocker, string> = {
+  "keep-awake": "kept awake",
+  "agent-turn": "an agent turn is running",
+  "permission-pending": "an agent waits for a permission answer",
+  job: "a job is working on it",
+  "lifecycle-op": "a lifecycle operation is running",
+  "agent-unreported": "its agent doesn't report activity (older image)",
+};
+
+/** One line on idle auto-pause for `atelier get`. */
+export function describeIdle(a: SandboxActivity): string {
+  if (a.state === "off") return pc.dim("auto-pause off");
+  if (a.state === "not-running") {
+    return a.idlePausedAt
+      ? `paused after ${a.idleMinutes} min without use`
+      : pc.dim("not running");
+  }
+  const parts = [
+    a.lastActiveAt ? `last activity ${age(a.lastActiveAt)} ago` : "",
+  ];
+  if (a.state === "active" && a.pausesAt) {
+    parts.push(`pauses in ${until(a.pausesAt)}`);
+  } else if (a.state === "due") {
+    parts.push(
+      a.mode === "enforce"
+        ? pc.yellow("pausing now")
+        : pc.yellow("would be paused (observe mode)"),
+    );
+  } else if (a.state === "blocked") {
+    const reasons = a.blockers.map((b) =>
+      b === "keep-awake" && a.keepAwakeUntil && a.keepAwakeUntil !== "forever"
+        ? `kept awake for ${until(a.keepAwakeUntil)}`
+        : BLOCKERS[b],
+    );
+    parts.push(`held: ${reasons.join(", ")}`);
+  }
+  return parts.filter(Boolean).join(" · ");
+}
+
+/** `90m`, `8h`, `2d`, `1.5h` → milliseconds (undefined when unparseable). */
+export function parseDuration(text: string): number | undefined {
+  const match = /^(\d+(?:\.\d+)?)\s*(m|min|h|d)$/.exec(text.trim());
+  if (!match) return undefined;
+  const n = Number(match[1]);
+  const unit = { m: 60_000, min: 60_000, h: 3_600_000, d: 86_400_000 }[
+    match[2] as "m" | "min" | "h" | "d"
+  ];
+  return n > 0 ? n * unit : undefined;
 }
 
 /**

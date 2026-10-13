@@ -44,7 +44,7 @@ const RUN_TOOLSETS: &str = "/run/toolsets";
 /// design (docs/proposals/toolset-overlay-squashfs.md §5): nothing can hold
 /// `/home/dev` busy before this point, because nothing touches it before
 /// this point.
-const HOME_READY_MARKER: &str = "/run/home-ready";
+pub(crate) const HOME_READY_MARKER: &str = "/run/home-ready";
 /// Written by `materialize` when assembly FAILS. The entrypoint waits for
 /// either this or HOME_READY_MARKER, so a genuine failure starts sshd (onto a
 /// degraded home, for diagnosis) immediately instead of burning the full pull

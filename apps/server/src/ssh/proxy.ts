@@ -72,6 +72,13 @@ export interface InServerSshGatewayDeps {
   resolveUpstream: (
     sandboxId: string,
   ) => Promise<UpstreamTarget | null> | UpstreamTarget | null;
+  /**
+   * Called when the client sends bytes on a shell, exec or sftp channel (a
+   * person typing or transferring files): the `ssh` idle signal. Port
+   * forwards don't call it: VS Code Remote-SSH keepalives would keep a
+   * forgotten window awake; the in-pod agent measures their volume instead.
+   */
+  onActivity?: (sandboxId: string) => void;
 }
 
 export interface InServerSshGateway {
@@ -199,8 +206,13 @@ function ptyOptions(info: PseudoTtyInfo) {
   };
 }
 
-/** Wire one authenticated client session to a ready upstream connection. */
-function handleSession(accept: () => Session, upstream: ssh2.Client): void {
+/** Wire one authenticated client session to a ready upstream connection.
+ * `onClientData` fires on every chunk the client sends on the channel. */
+function handleSession(
+  accept: () => Session,
+  upstream: ssh2.Client,
+  onClientData: () => void,
+): void {
   const session = accept();
   let pty: PseudoTtyInfo | null = null;
   const env: Record<string, string> = {};
@@ -233,6 +245,7 @@ function handleSession(accept: () => Session, upstream: ssh2.Client): void {
       }
       active = stream;
       pipeChannel(client, stream);
+      client.on("data", onClientData);
     });
   });
 
@@ -249,6 +262,7 @@ function handleSession(accept: () => Session, upstream: ssh2.Client): void {
         }
         active = stream;
         pipeChannel(client, stream);
+        client.on("data", onClientData);
       },
     );
   });
@@ -266,6 +280,7 @@ function handleSession(accept: () => Session, upstream: ssh2.Client): void {
         return r?.();
       }
       pipeRaw(client, stream);
+      client.on("data", onClientData);
     });
   });
 }
@@ -375,8 +390,9 @@ async function connectUpstream(
     else pending.push(fn);
   };
 
+  const onClientData = () => deps.onActivity?.(sandboxId);
   client.on("session", (accept) =>
-    whenReady(() => handleSession(accept, upstream)),
+    whenReady(() => handleSession(accept, upstream, onClientData)),
   );
   client.on("tcpip", (accept, rejectFn, info) =>
     whenReady(() => handleTcpip(accept, rejectFn, upstream, info)),

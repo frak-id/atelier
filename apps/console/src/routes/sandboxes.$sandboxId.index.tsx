@@ -34,6 +34,7 @@ import { ImmersiveView } from "@/components/immersive-view";
 import { LaunchpadBadge } from "@/components/launchpad/launchpad-badge";
 import { MultiTerminal } from "@/components/multi-terminal";
 import { RenameSandboxDialog } from "@/components/rename-sandbox-dialog";
+import { SandboxActivitySection } from "@/components/sandbox-activity";
 import { TerminalView } from "@/components/terminal-view";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -218,6 +219,7 @@ function SandboxDetailPage() {
       <UrlsSection sandboxId={sandbox.id} urls={sandbox.urls} />
       <TerminalSection sandboxId={sandbox.id} />
       <ProcessesSection sandboxId={sandbox.id} processes={sandbox.processes} />
+      <SandboxActivitySection sandboxId={sandbox.id} />
       <ExposePortSection sandboxId={sandbox.id} />
       <SaveToolsetForToolboxSection sandboxId={sandbox.id} />
       <CaptureToolsetSection sandboxId={sandbox.id} />

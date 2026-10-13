@@ -39,7 +39,12 @@ export function WorkspacePhasePanel({
               ? "This workspace is asleep"
               : p.label}
           </h2>
-          <p className="text-sm text-muted-foreground">{p.hint}</p>
+          <p className="text-sm text-muted-foreground">
+            {workspace.phase === "sleeping" && workspace.sleptIdleAt
+              ? "It went to sleep after a while without use. Your work is " +
+                "saved: wake it up to continue where you left off."
+              : p.hint}
+          </p>
           {workspace.phase === "failed" && workspace.error ? (
             <details className="text-left text-xs text-muted-foreground">
               <summary className="cursor-pointer text-center">Details</summary>

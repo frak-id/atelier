@@ -406,7 +406,7 @@ async fn handle_conn(
     let Some(endpoint) = registry.get(&target.name).await else {
         return;
     };
-    let Ok(ws) = accept_async(stream).await else {
+    let Ok(ws) = accept_async(crate::activity::control::Counted::new(stream)).await else {
         return;
     };
     let (mut sink, mut source) = ws.split();

@@ -87,6 +87,18 @@ Bun.cron("23 * * * *", () => {
   }
 });
 
+// Idle auto-pause (docs/proposals/sandbox-idle-autopause.md): poll every
+// running sandbox's activity, and pause the idle ones when the operator's
+// `sandbox.idle.mode` is `enforce` (read every tick, like the rest of the
+// rule). Every mode: the mode key decides what a tick does.
+Bun.cron("* * * * *", async () => {
+  try {
+    await container.idle.tick();
+  } catch (err) {
+    logger.error({ err }, "idle reaper tick failed");
+  }
+});
+
 // Recompute each stored prebuild's content key against current remote HEADs
 // + base image digest, and rebuild anything that moved (runtime.service.ts
 // `refreshStalePrebuilds`), then enforce the retention window. Both are gated

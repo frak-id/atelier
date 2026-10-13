@@ -117,6 +117,37 @@ Point the app's `kubernetes.registryUrl` (in `infra/k8s/30-config.yaml`) at
 the registry's `host:port` (no scheme). A plain-HTTP registry must also be a
 mirror in the node's `/etc/rancher/k3s/registries.yaml`.
 
+### Pause idle sandboxes
+
+The server pauses running sandboxes nobody uses (proposal:
+[sandbox-idle-autopause.md](proposals/sandbox-idle-autopause.md)). The rules
+are `sandbox.idle.*` keys of the server config plane: edit them on the
+console's *Server configuration* page, or lock them with their env var.
+
+| Key | Env var | Default |
+|-----|---------|---------|
+| `sandbox.idle.mode` (`off`/`observe`/`enforce`) | `ATELIER_IDLE_MODE` | `observe` |
+| `sandbox.idle.minutes` | `ATELIER_IDLE_MINUTES` | `120` |
+| `sandbox.idle.network` (`both`/`inbound`/`outbound`/`off`) | `ATELIER_IDLE_NETWORK` | `both` |
+| `sandbox.idle.networkMinBytesPerMinute` | `ATELIER_IDLE_NETWORK_MIN_BYTES` | `65536` |
+| `sandbox.idle.files` | `ATELIER_IDLE_FILES` | `true` |
+| `sandbox.idle.fileRoots` | `ATELIER_IDLE_FILE_ROOTS` | `/home/dev` |
+| `sandbox.idle.fileExcludes` | `ATELIER_IDLE_FILE_EXCLUDES` | `node_modules,.git,.next,.nuxt,.turbo,.cache,dist,build,target,*.log,/home/dev/.*` |
+| `sandbox.idle.cpu` | `ATELIER_IDLE_CPU` | `false` |
+| `sandbox.idle.cpuMinMillicores` | `ATELIER_IDLE_CPU_MIN_MILLICORES` | `250` |
+| `sandbox.idle.maxKeepAwakeHours` | `ATELIER_IDLE_MAX_KEEP_AWAKE_HOURS` | `24` |
+| `sandbox.idle.allowKeepAwakeForever` | `ATELIER_IDLE_ALLOW_KEEP_AWAKE_FOREVER` | `false` |
+
+Start in `observe`: every sandbox page shows when it *would* be paused,
+its per-minute traffic and its traffic by process, so the byte threshold
+can be checked against real idle tabs before switching to `enforce`.
+Network and file signals need a sandbox image whose agent serves
+`GET /activity`; older ones are never paused while those signals count.
+On Kata's stock guest kernel (no `inet_diag`) the agent measures network
+traffic per interface (sensor `netdev`): no direction and no per-process
+breakdown, so `sandbox.idle.network` set to `inbound` or `outbound` counts
+any traffic there.
+
 ### Enable prebuilds with TopoLVM
 
 Create a `VolumeSnapshotClass` for the `topolvm.io` driver (see

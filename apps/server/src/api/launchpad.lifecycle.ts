@@ -19,6 +19,7 @@ import {
   type ResolvedService,
   type ResumeRequest,
   resolveWorkspaceServices,
+  SANDBOX_IDLE_PAUSED_ANNOTATION,
   type SandboxSummary,
   type Starter,
   starterLaunchRequest,
@@ -39,6 +40,7 @@ import type {
 } from "../runtime/index.ts";
 import { ConflictError, NotFoundError } from "../shared/errors.ts";
 import { safeNanoid } from "../shared/lib/id.ts";
+import type { IdleReaper } from "./idle-reaper.ts";
 import {
   readableOwners,
   requireOwnerReadAccess,
@@ -56,6 +58,11 @@ export interface WorkspaceView {
   phase: Exclude<WorkspacePhase, "gone">;
   /** The latest launch/wake-up failure, when `phase` is `failed`. */
   error?: string;
+  /** When `ready`: the time it goes to sleep if nobody uses it (idle
+   * auto-pause, enforced; absent when it won't). */
+  sleepsAt?: string;
+  /** When `sleeping` because nobody used it (not put to sleep by hand). */
+  sleptIdleAt?: string;
   createdAt: string;
   updatedAt: string;
 }
@@ -94,6 +101,8 @@ export interface LaunchpadLifecycleDeps {
   /** The resume body with the owner's git credentials refreshed
    * (`withFreshCredentials`). */
   resumeBody: (sandboxId: string) => Promise<ResumeRequest>;
+  /** Idle auto-pause: when a ready workspace goes to sleep. */
+  idle: Pick<IdleReaper, "sleepsAt">;
 }
 
 function snapshotOf(starter: Starter): WorkspaceSnapshot {
@@ -328,6 +337,12 @@ export class LaunchpadLifecycle {
       phase === "failed"
         ? (job?.error ?? "The workspace stopped unexpectedly.")
         : undefined;
+    const sleepsAt =
+      phase === "ready" ? this.deps.idle.sleepsAt(record.sandboxId) : undefined;
+    const sleptIdleAt =
+      phase === "sleeping"
+        ? sandbox?.annotations?.[SANDBOX_IDLE_PAUSED_ANNOTATION]
+        : undefined;
     return {
       id: record.sandboxId,
       title: record.title,
@@ -337,6 +352,8 @@ export class LaunchpadLifecycle {
       ...(record.snapshot.icon ? { icon: record.snapshot.icon } : {}),
       phase,
       ...(error ? { error } : {}),
+      ...(sleepsAt ? { sleepsAt } : {}),
+      ...(sleptIdleAt ? { sleptIdleAt } : {}),
       createdAt: record.createdAt,
       updatedAt: record.updatedAt,
     };

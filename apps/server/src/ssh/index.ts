@@ -68,6 +68,7 @@ export async function startSshGateway(
       return labels ? container.control.sandboxSshKeys(labels) : [];
     },
     resolveUpstream,
+    onActivity: (sandboxId) => container.runtime.touch(sandboxId, "ssh"),
   });
   log.info(
     { port: gateway.port, listenPort: config.domain.ssh.listenPort },

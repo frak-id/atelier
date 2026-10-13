@@ -4,6 +4,7 @@
 //! readiness/primary/after/restart/lazy semantics, and stdio/PTY attach share
 //! one bridge with a single-writer guard.
 
+mod activity;
 mod attach;
 mod bridge;
 mod command;
@@ -28,6 +29,7 @@ use hyper::service::service_fn;
 use hyper_util::rt::TokioIo;
 use tokio::net::TcpListener;
 
+use activity::Activity;
 use forwarder::Forwarder;
 use store::ConfigStore;
 use supervisor::Supervisor;
@@ -64,6 +66,11 @@ async fn main() {
     let store = Arc::new(ConfigStore::load());
     let supervisor = Supervisor::new(store.clone());
     let terminals = TerminalRegistry::new(store.clone());
+
+    // Activity measurement for idle auto-pause (network bytes, file writes,
+    // CPU), served on `GET /activity`.
+    let activity = Activity::new();
+    activity::spawn(activity.clone(), supervisor.clone());
 
     // Interactive terminal WS relay (ad-hoc login shells) on its own port, so
     // the runtime proxies WS /sandboxes/:id/terminal/sessions/:sid/ws through.
@@ -143,15 +150,17 @@ async fn main() {
         let store = store.clone();
         let supervisor = supervisor.clone();
         let terminals = terminals.clone();
+        let activity = activity.clone();
         tokio::spawn(async move {
-            let io = TokioIo::new(stream);
+            let io = TokioIo::new(activity::control::Counted::new(stream));
             let service = service_fn(move |req| {
                 let store = store.clone();
                 let supervisor = supervisor.clone();
                 let terminals = terminals.clone();
+                let activity = activity.clone();
                 async move {
                     Ok::<_, std::convert::Infallible>(
-                        router::route(req, store, supervisor, terminals).await,
+                        router::route(req, store, supervisor, terminals, activity).await,
                     )
                 }
             });

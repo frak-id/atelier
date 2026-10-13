@@ -376,7 +376,7 @@ async fn handle_conn(stream: TcpStream, id: String, registry: Arc<TerminalRegist
     let Some(terminal) = registry.lookup(&id).await else {
         return;
     };
-    let Ok(ws) = accept_async(stream).await else {
+    let Ok(ws) = accept_async(crate::activity::control::Counted::new(stream)).await else {
         return;
     };
     let (mut sink, mut source) = ws.split();
