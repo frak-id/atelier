@@ -7,13 +7,12 @@
  * runtime's activity clocks plus the live blockers and get back the state,
  * the deadline and whether to pause now.
  */
-import {
-  type ActivitySignal,
-  type IdleBlocker,
-  type IdleMode,
-  type IdleState,
-  KEEP_AWAKE_FOREVER,
-  type SandboxStatus,
+import type {
+  ActivitySignal,
+  IdleBlocker,
+  IdleMode,
+  IdleState,
+  SandboxStatus,
 } from "@atelier/spec";
 import { ValidationError } from "../../../shared/errors.ts";
 import type { ServerConfigService } from "../server-config/index.ts";
@@ -21,15 +20,12 @@ import type { ServerConfigService } from "../server-config/index.ts";
 export interface IdleRule {
   mode: IdleMode;
   minutes: number;
-  network: "both" | "inbound" | "outbound" | "off";
+  network: boolean;
   networkMinBytesPerMinute: number;
   files: boolean;
-  fileRoots: string[];
-  fileExcludes: string[];
   cpu: boolean;
   cpuMinMillicores: number;
   maxKeepAwakeHours: number;
-  allowKeepAwakeForever: boolean;
 }
 
 /** Signals that always count: a person or a server-driven agent acting. */
@@ -42,22 +38,12 @@ const ALWAYS_COUNTED: ActivitySignal[] = [
 ];
 
 /** Signals only the in-pod agent can report. */
-const AGENT_SIGNALS = new Set<ActivitySignal>([
-  "networkInbound",
-  "networkOutbound",
-  "files",
-  "cpu",
-]);
+const AGENT_SIGNALS = new Set<ActivitySignal>(["network", "files", "cpu"]);
 
 /** The signals `rule` counts as activity. */
 export function countedSignals(rule: IdleRule): ActivitySignal[] {
   const out = [...ALWAYS_COUNTED];
-  if (rule.network === "both" || rule.network === "inbound") {
-    out.push("networkInbound");
-  }
-  if (rule.network === "both" || rule.network === "outbound") {
-    out.push("networkOutbound");
-  }
+  if (rule.network) out.push("network");
   if (rule.files) out.push("files");
   if (rule.cpu) out.push("cpu");
   return out;
@@ -92,15 +78,9 @@ export interface IdleEvaluation {
   shouldPause: boolean;
 }
 
-/** Whether a keep-awake value exempts the sandbox at `now`. "forever" only
- * while the operator allows it. */
-function keepAwakeActive(
-  value: string | undefined,
-  rule: IdleRule,
-  now: number,
-): boolean {
+/** Whether a keep-awake value exempts the sandbox at `now`. */
+function keepAwakeActive(value: string | undefined, now: number): boolean {
   if (!value) return false;
-  if (value === KEEP_AWAKE_FOREVER) return rule.allowKeepAwakeForever;
   const until = Date.parse(value);
   return Number.isFinite(until) && until > now;
 }
@@ -117,7 +97,7 @@ export function evaluateIdle(rule: IdleRule, input: IdleInput): IdleEvaluation {
   if (input.status !== "running") return { ...base, state: "not-running" };
 
   const blockers: IdleBlocker[] = [];
-  if (keepAwakeActive(input.keepAwakeUntil, rule, input.now)) {
+  if (keepAwakeActive(input.keepAwakeUntil, input.now)) {
     blockers.push("keep-awake");
   }
   if (input.work.turns > 0) blockers.push("agent-turn");
@@ -144,13 +124,6 @@ export function evaluateIdle(rule: IdleRule, input: IdleInput): IdleEvaluation {
   };
 }
 
-function list(value: string): string[] {
-  return value
-    .split(",")
-    .map((s) => s.trim())
-    .filter((s) => s.length > 0);
-}
-
 export class IdlePolicyService {
   constructor(private readonly config: ServerConfigService) {}
 
@@ -163,37 +136,22 @@ export class IdlePolicyService {
       network: get("sandbox.idle.network"),
       networkMinBytesPerMinute: get("sandbox.idle.networkMinBytesPerMinute"),
       files: get("sandbox.idle.files"),
-      fileRoots: list(get("sandbox.idle.fileRoots")),
-      fileExcludes: list(get("sandbox.idle.fileExcludes")),
       cpu: get("sandbox.idle.cpu"),
       cpuMinMillicores: get("sandbox.idle.cpuMinMillicores"),
       maxKeepAwakeHours: get("sandbox.idle.maxKeepAwakeHours"),
-      allowKeepAwakeForever: get("sandbox.idle.allowKeepAwakeForever"),
     };
   }
 
   /**
    * Validate a requested keep-awake against the operator's bounds and
-   * normalize it: `null` (clear) → undefined, `"forever"` when allowed, or
-   * an ISO time in the future no further than `maxKeepAwakeHours` away.
+   * normalize it: `null` (clear) → undefined, or an ISO time in the future no further than `maxKeepAwakeHours` away.
    */
   parseKeepAwake(value: string | null, now = Date.now()): string | undefined {
     if (value === null || value.trim() === "") return undefined;
     const rule = this.rule();
-    if (value === KEEP_AWAKE_FOREVER) {
-      if (!rule.allowKeepAwakeForever) {
-        throw new ValidationError(
-          "Keeping a sandbox awake forever is disabled on this server; " +
-            `pick a time at most ${rule.maxKeepAwakeHours} h ahead.`,
-        );
-      }
-      return KEEP_AWAKE_FOREVER;
-    }
     const until = Date.parse(value);
     if (!Number.isFinite(until)) {
-      throw new ValidationError(
-        `keepAwakeUntil must be an ISO time or "${KEEP_AWAKE_FOREVER}"`,
-      );
+      throw new ValidationError("keepAwakeUntil must be an ISO time");
     }
     if (until <= now) {
       throw new ValidationError("keepAwakeUntil must be in the future");

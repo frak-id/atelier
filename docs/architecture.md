@@ -318,8 +318,8 @@ communicating with the server via TCP.
 │  ├── Terminal WS relay (TCP:7681) — ad-hoc login shells         │
 │  ├── File system operations, command execution (/exec)          │
 │  ├── Activity measurement (GET /activity) — network bytes per   │
-│  │   minute and process (sock_diag), file writes (fanotify,     │
-│  │   inotify fallback), CPU (cgroup) for idle auto-pause        │
+│  │   minute (interface counters), file writes (fanotify), CPU   │
+│  │   (cgroup) for idle auto-pause                               │
 │  └── Toolset build/capture (content-hash artifacts pushed to Zot)│
 └─────────────────────────────────────────────────────────────────┘
 ```

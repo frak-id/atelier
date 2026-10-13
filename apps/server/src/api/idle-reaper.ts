@@ -9,7 +9,6 @@
  * requests in flight).
  */
 import {
-  type ProcessTraffic,
   SANDBOX_IDLE_PAUSED_ANNOTATION,
   SANDBOX_KEEP_AWAKE_ANNOTATION,
   type SandboxActivity,
@@ -22,11 +21,7 @@ import {
   type IdlePolicyService,
   type IdleRule,
 } from "../control/index.ts";
-import type {
-  ActivityThresholds,
-  JobService,
-  RuntimeService,
-} from "../runtime/index.ts";
+import type { JobService, RuntimeService } from "../runtime/index.ts";
 import type { AgentDispatch } from "../sessions/index.ts";
 import { NotFoundError } from "../shared/errors.ts";
 import { createChildLogger } from "../shared/lib/logger.ts";
@@ -54,15 +49,11 @@ export interface IdleReaperDeps {
   now?: () => number;
 }
 
-function thresholdsOf(rule: IdleRule): ActivityThresholds {
-  return {
-    networkMinBytesPerMinute: rule.networkMinBytesPerMinute,
-    // 1000 millicores for a minute = 60 000 ms of CPU time.
-    cpuMinMsPerMinute: rule.cpuMinMillicores * 60,
-  };
-}
-
 const iso = (ms: number) => new Date(ms).toISOString();
+
+/** `{ [key]: iso(ms) }` when `ms` is set, else nothing (for spreading). */
+const isoField = <K extends string>(key: K, ms: number | undefined) =>
+  ms === undefined ? {} : ({ [key]: iso(ms) } as Record<K, string>);
 
 /** Run `fn` over `items`, at most `limit` at a time. */
 async function forEachLimit<T>(
@@ -112,11 +103,9 @@ export class IdleReaper {
     });
   }
 
+  /** The rule carries the thresholds (`ActivityThresholds`) itself. */
   private poll(id: string, rule: IdleRule) {
-    return this.deps.runtime.pollActivity(id, thresholdsOf(rule), {
-      roots: rule.fileRoots,
-      exclude: rule.fileExcludes,
-    });
+    return this.deps.runtime.pollActivity(id, rule);
   }
 
   private async reap(id: string, rule: IdleRule): Promise<void> {
@@ -226,25 +215,8 @@ export class IdleReaper {
       mode: rule.mode,
       state: evaluation.state,
       lastActiveAt: iso(evaluation.lastActiveAt),
-      ...(evaluation.pausesAt !== undefined
-        ? { pausesAt: iso(evaluation.pausesAt) }
-        : {}),
+      ...isoField("pausesAt", evaluation.pausesAt),
     };
-  }
-
-  /** When this sandbox will actually be paused if nobody uses it: only in
-   * `enforce` mode and with nothing holding it (the Launchpad warns before
-   * a workspace goes to sleep). */
-  sleepsAt(id: string): string | undefined {
-    const rule = this.deps.policy.rule();
-    if (rule.mode !== "enforce") return undefined;
-    const evaluation = this.evaluate(id, rule);
-    if (evaluation?.state !== "active" && evaluation?.state !== "due") {
-      return undefined;
-    }
-    return evaluation.pausesAt !== undefined
-      ? iso(evaluation.pausesAt)
-      : undefined;
   }
 
   /** Add the `idle` decoration to running sandboxes' list rows. */
@@ -272,25 +244,18 @@ export class IdleReaper {
     for (const [signal, at] of Object.entries(record.last)) {
       signals[signal as keyof typeof signals] = iso(at);
     }
-    const byVolume = (a: ProcessTraffic, b: ProcessTraffic) =>
-      b.inboundBytes + b.outboundBytes - (a.inboundBytes + a.outboundBytes);
     return {
       sandboxId: id,
       mode: rule.mode,
       state: evaluation.state,
       idleMinutes: rule.minutes,
       lastActiveAt: iso(evaluation.lastActiveAt),
-      ...(evaluation.pausesAt !== undefined
-        ? { pausesAt: iso(evaluation.pausesAt) }
-        : {}),
+      ...isoField("pausesAt", evaluation.pausesAt),
       blockers: evaluation.blockers,
       ...(keepAwake && evaluation.blockers.includes("keep-awake")
         ? { keepAwakeUntil: keepAwake }
         : {}),
-      keepAwakeLimits: {
-        maxHours: rule.maxKeepAwakeHours,
-        allowForever: rule.allowKeepAwakeForever,
-      },
+      maxKeepAwakeHours: rule.maxKeepAwakeHours,
       ...(idlePausedAt ? { idlePausedAt } : {}),
       counted: evaluation.counted,
       signals,
@@ -300,19 +265,18 @@ export class IdleReaper {
       },
       agent: {
         reporting: record.agent?.reporting ?? false,
-        ...(record.agent ? { polledAt: iso(record.agent.polledAt) } : {}),
+        ...isoField("polledAt", record.agent?.polledAt),
         ...(report
           ? { network: report.network, files: report.files, cpu: report.cpu }
           : {}),
       },
       minutes: (report?.buckets ?? []).map((b) => ({
         start: iso(b.startMs),
-        inboundBytes: b.inboundBytes,
-        outboundBytes: b.outboundBytes,
+        receivedBytes: b.receivedBytes,
+        sentBytes: b.sentBytes,
         fileWrites: b.fileWrites,
         cpuMs: b.cpuMs,
       })),
-      processes: [...(report?.processes ?? [])].sort(byVolume),
     };
   }
 

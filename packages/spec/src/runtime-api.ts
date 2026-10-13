@@ -149,7 +149,7 @@ export const SANDBOX_NAME_MAX_LENGTH = 64;
 /** `PATCH /v1/sandboxes/:id`. `name`: set the display name; `null` or a
  * blank string clears it (the console falls back to the id).
  * `keepAwakeUntil`: exempt the sandbox from idle auto-pause until an ISO
- * time, or `"forever"` when the operator allows it; `null` clears it. */
+ * time (within the operator's bound); `null` clears it. */
 export const UpdateSandboxRequestSchema = Type.Object(
   {
     name: Type.Optional(

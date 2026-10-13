@@ -70,7 +70,7 @@ async fn main() {
     // Activity measurement for idle auto-pause (network bytes, file writes,
     // CPU), served on `GET /activity`.
     let activity = Activity::new();
-    activity::spawn(activity.clone(), supervisor.clone());
+    activity::spawn(activity.clone());
 
     // Interactive terminal WS relay (ad-hoc login shells) on its own port, so
     // the runtime proxies WS /sandboxes/:id/terminal/sessions/:sid/ws through.

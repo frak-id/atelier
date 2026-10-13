@@ -1,16 +1,9 @@
 /**
  * The sandbox page's Activity card (idle auto-pause): whether it will be
  * paused when nobody uses it and when, a keep-awake control, what was seen
- * last per signal, the last hour of agent measurements, and network traffic
- * by process (stats only: the pause decision never looks at processes).
+ * last per signal and the last hour of agent measurements.
  */
-import {
-  type ActivityMinute,
-  type ActivitySignal,
-  INTERFACE_NETWORK_SENSOR,
-  KEEP_AWAKE_FOREVER,
-  type SandboxActivity,
-} from "@atelier/spec";
+import type { ActivityMinute, SandboxActivity } from "@atelier/spec";
 import { useQuery } from "@tanstack/react-query";
 import { Moon, Sun } from "lucide-react";
 import { useState } from "react";
@@ -26,35 +19,26 @@ import {
 } from "@/components/ui/card";
 import { NativeSelect } from "@/components/ui/native-select";
 import { Skeleton } from "@/components/ui/skeleton";
-import { formatRelativeTime } from "@/lib/formatters";
 import {
-  BLOCKER_LABELS,
   formatBytes,
   formatDuration,
+  formatRelativeTime,
+  msUntil,
+} from "@/lib/formatters";
+import {
+  BLOCKER_LABELS,
   idleStatePresentation,
   keepAwakeChoices,
   keepAwakeUntil,
-  msUntil,
   SIGNAL_LABELS,
 } from "@/lib/idle";
 import { cn } from "@/lib/utils";
-
-const ALL_SIGNALS: ActivitySignal[] = [
-  "ssh",
-  "console",
-  "agent",
-  "api",
-  "networkInbound",
-  "networkOutbound",
-  "files",
-  "cpu",
-  "lifecycle",
-];
 
 export function SandboxActivitySection({ sandboxId }: { sandboxId: string }) {
   const { data, isPending, isError, error } = useQuery(
     sandboxActivityQuery(sandboxId),
   );
+  const presentation = data ? idleStatePresentation(data.state) : undefined;
 
   return (
     <Card>
@@ -65,10 +49,8 @@ export function SandboxActivitySection({ sandboxId }: { sandboxId: string }) {
             {data ? <Summary activity={data} /> : "Idle auto-pause"}
           </CardDescription>
         </div>
-        {data ? (
-          <Badge variant={idleStatePresentation(data.state).variant}>
-            {idleStatePresentation(data.state).label}
-          </Badge>
+        {presentation ? (
+          <Badge variant={presentation.variant}>{presentation.label}</Badge>
         ) : null}
       </CardHeader>
       <CardContent className="space-y-5">
@@ -85,7 +67,6 @@ export function SandboxActivitySection({ sandboxId }: { sandboxId: string }) {
             ) : null}
             <MinuteBars activity={data} />
             <Signals activity={data} />
-            <ProcessTraffic activity={data} />
             <Sensors activity={data} />
           </>
         )}
@@ -136,9 +117,7 @@ function Summary({ activity: a }: { activity: SandboxActivity }) {
           {a.blockers
             .map((b) =>
               b === "keep-awake" && a.keepAwakeUntil
-                ? a.keepAwakeUntil === KEEP_AWAKE_FOREVER
-                  ? "kept awake until turned off"
-                  : `kept awake for ${formatDuration(msUntil(a.keepAwakeUntil))}`
+                ? `kept awake for ${formatDuration(msUntil(a.keepAwakeUntil))}`
                 : BLOCKER_LABELS[b],
             )
             .join(", ")}
@@ -150,7 +129,7 @@ function Summary({ activity: a }: { activity: SandboxActivity }) {
 
 function KeepAwake({ activity: a }: { activity: SandboxActivity }) {
   const keepAwake = useKeepAwake();
-  const choices = keepAwakeChoices(a.keepAwakeLimits);
+  const choices = keepAwakeChoices(a.maxKeepAwakeHours);
   const [choice, setChoice] = useState(
     choices.find((c) => c.value === "8")?.value ?? choices[0]?.value ?? "1",
   );
@@ -160,10 +139,7 @@ function KeepAwake({ activity: a }: { activity: SandboxActivity }) {
       <div className="flex flex-wrap items-center gap-2 text-sm">
         <Sun className="size-4 text-warning" />
         <span>
-          Kept awake{" "}
-          {a.keepAwakeUntil === KEEP_AWAKE_FOREVER
-            ? "until turned off"
-            : `until ${new Date(a.keepAwakeUntil).toLocaleString()}`}
+          Kept awake until {new Date(a.keepAwakeUntil).toLocaleString()}
         </span>
         <Button
           variant="outline"
@@ -217,22 +193,16 @@ function MinuteBars({ activity: a }: { activity: SandboxActivity }) {
     const age = Math.floor((now - new Date(m.start).getTime()) / 60_000);
     if (age >= 0 && age < 60) slots[59 - age] = m;
   }
-  const total = (m: ActivityMinute) => m.inboundBytes + m.outboundBytes;
+  const total = (m: ActivityMinute) => m.receivedBytes + m.sentBytes;
   const max = Math.max(1, ...a.minutes.map(total));
   const threshold = a.thresholds.networkMinBytesPerMinute;
-  // Interface counters: no direction, the sum counts (as on the server).
-  const undirected = a.agent.network === INTERFACE_NETWORK_SENSOR;
 
   return (
     <div className="space-y-1">
       <div className="flex h-12 items-end gap-px">
         {slots.map((m, i) => {
           const bytes = m ? total(m) : 0;
-          const counts =
-            !!m &&
-            (undirected
-              ? total(m) >= threshold
-              : m.inboundBytes >= threshold || m.outboundBytes >= threshold);
+          const counts = !!m && bytes >= threshold;
           const height = bytes
             ? Math.max(8, (Math.log1p(bytes) / Math.log1p(max)) * 100)
             : 0;
@@ -241,7 +211,7 @@ function MinuteBars({ activity: a }: { activity: SandboxActivity }) {
               // biome-ignore lint/suspicious/noArrayIndexKey: fixed 60 slots
               key={i}
               className="relative flex h-full flex-1 flex-col justify-end"
-              title={m ? minuteTitle(m, undirected) : undefined}
+              title={m ? minuteTitle(m) : undefined}
             >
               {m && m.fileWrites > 0 ? (
                 <span className="absolute top-0 left-1/2 size-1 -translate-x-1/2 rounded-full bg-info" />
@@ -269,15 +239,15 @@ function MinuteBars({ activity: a }: { activity: SandboxActivity }) {
   );
 }
 
-function minuteTitle(m: ActivityMinute, undirected: boolean): string {
+function minuteTitle(m: ActivityMinute): string {
   const time = new Date(m.start).toLocaleTimeString([], {
     hour: "2-digit",
     minute: "2-digit",
   });
   return [
     time,
-    `${undirected ? "received" : "in"} ${formatBytes(m.inboundBytes)}`,
-    `${undirected ? "sent" : "out"} ${formatBytes(m.outboundBytes)}`,
+    `received ${formatBytes(m.receivedBytes)}`,
+    `sent ${formatBytes(m.sentBytes)}`,
     m.fileWrites ? `${m.fileWrites} file writes` : "",
     m.cpuMs ? `CPU ${(m.cpuMs / 1000).toFixed(1)} s` : "",
   ]
@@ -288,85 +258,36 @@ function minuteTitle(m: ActivityMinute, undirected: boolean): string {
 function Signals({ activity: a }: { activity: SandboxActivity }) {
   return (
     <div className="space-y-1">
-      <SignalGrid activity={a} />
+      <div className="grid gap-x-6 gap-y-1 text-sm sm:grid-cols-2">
+        {(Object.keys(SIGNAL_LABELS) as (keyof typeof SIGNAL_LABELS)[]).map(
+          (signal) => {
+            const counted = a.counted.includes(signal);
+            const at = a.signals[signal];
+            return (
+              <div
+                key={signal}
+                className={cn(
+                  "flex justify-between gap-2",
+                  !counted && "text-muted-foreground/60",
+                )}
+              >
+                <span>{SIGNAL_LABELS[signal]}</span>
+                <span className="text-muted-foreground">
+                  {counted
+                    ? at
+                      ? formatRelativeTime(at)
+                      : "—"
+                    : "not counted"}
+                </span>
+              </div>
+            );
+          },
+        )}
+      </div>
       <p className="text-xs text-muted-foreground">
         An agent used through its own terminal or web UI counts through its
         traffic and its file edits.
       </p>
-    </div>
-  );
-}
-
-function SignalGrid({ activity: a }: { activity: SandboxActivity }) {
-  return (
-    <div className="grid gap-x-6 gap-y-1 text-sm sm:grid-cols-2">
-      {ALL_SIGNALS.map((signal) => {
-        const counted = a.counted.includes(signal);
-        const at = a.signals[signal];
-        return (
-          <div
-            key={signal}
-            className={cn(
-              "flex justify-between gap-2",
-              !counted && "text-muted-foreground/60",
-            )}
-          >
-            <span>{SIGNAL_LABELS[signal]}</span>
-            <span className="text-muted-foreground">
-              {counted ? (at ? formatRelativeTime(at) : "—") : "not counted"}
-            </span>
-          </div>
-        );
-      })}
-    </div>
-  );
-}
-
-function ProcessTraffic({ activity: a }: { activity: SandboxActivity }) {
-  if (a.agent.network === INTERFACE_NETWORK_SENSOR) {
-    return (
-      <p className="text-xs text-muted-foreground">
-        Network is measured per interface here: this sandbox's guest kernel
-        can't report traffic per connection, so there is no breakdown by
-        process, and any traffic counts whatever its direction.
-      </p>
-    );
-  }
-  if (a.processes.length === 0) return null;
-  return (
-    <div className="space-y-1">
-      <p className="text-xs font-medium text-muted-foreground">
-        Network by process, last hour
-      </p>
-      <table className="w-full text-sm">
-        <thead className="text-xs text-muted-foreground">
-          <tr>
-            <th className="text-left font-normal">Process</th>
-            <th className="text-right font-normal">Inbound</th>
-            <th className="text-right font-normal">Outbound</th>
-          </tr>
-        </thead>
-        <tbody>
-          {a.processes.map((p) => (
-            <tr key={p.name}>
-              <td className="py-0.5">
-                <span className="font-mono text-xs">{p.name}</span>
-                {p.supervised ? (
-                  <Badge variant="outline" className="ml-2 px-1.5 py-0">
-                    process
-                  </Badge>
-                ) : null}
-              </td>
-              <td className="text-right tabular-nums">
-                {formatBytes(p.inboundBytes)}
-              </td>
-              <td className="text-right tabular-nums">
-                {formatBytes(p.outboundBytes)}
-              </td>
-            </tr>
-          ))}
-        </tbody>
-      </table>
     </div>
   );
 }

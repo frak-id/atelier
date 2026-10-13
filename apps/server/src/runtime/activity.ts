@@ -10,22 +10,15 @@
  * one; the agent's 60-minute window refills the network/file history on the
  * first poll.
  */
-import { type ActivitySignal, INTERFACE_NETWORK_SENSOR } from "@atelier/spec";
+import type { ActivitySignal } from "@atelier/spec";
 
 /** One minute bucket as the agent reports it (`apps/agent/src/activity`). */
 interface AgentActivityBucket {
   startMs: number;
-  inboundBytes: number;
-  outboundBytes: number;
+  receivedBytes: number;
+  sentBytes: number;
   fileWrites: number;
   cpuMs: number;
-}
-
-interface AgentProcessTraffic {
-  name: string;
-  supervised: boolean;
-  inboundBytes: number;
-  outboundBytes: number;
 }
 
 /** The agent's `GET /activity` body. */
@@ -33,43 +26,18 @@ export interface AgentActivityReport {
   nowMs: number;
   bootedAtMs: number;
   bucketSeconds: number;
-  network: string;
-  files: string;
-  cpu: string;
-  fileSettings: AgentActivitySettings;
+  network: "pending" | "netdev" | "unavailable";
+  files: "pending" | "fanotify" | "unavailable";
+  cpu: "pending" | "cgroup2" | "procstat" | "unavailable";
   buckets: AgentActivityBucket[];
-  processes: AgentProcessTraffic[];
-}
-
-/** The agent-side file filter (`PUT /activity/settings`). */
-export interface AgentActivitySettings {
-  roots: string[];
-  exclude: string[];
-}
-
-/** The file filter to push to an agent reporting `reported`, or undefined
- * when it already has it. */
-export function activitySettingsToPush(
-  reported: AgentActivitySettings,
-  wanted: AgentActivitySettings,
-): AgentActivitySettings | undefined {
-  const same = (x: string[], y: string[]) =>
-    x.length === y.length && x.every((v, i) => v === y[i]);
-  return same(wanted.roots, reported.roots) &&
-    same(wanted.exclude, reported.exclude)
-    ? undefined
-    : wanted;
 }
 
 /** What a minute must reach to count as activity (policy, passed in). */
 export interface ActivityThresholds {
-  /** Per direction: a minute counts for `networkInbound` when its inbound
-   * bytes reach this, likewise outbound. From an agent measuring interface
-   * counters ({@link INTERFACE_NETWORK_SENSOR}), received + sent reach it
-   * and count for both directions. */
+  /** Received + sent interface bytes in a minute. */
   networkMinBytesPerMinute: number;
-  /** CPU milliseconds in a minute (1000 ms = one core for a second). */
-  cpuMinMsPerMinute: number;
+  /** CPU millicores: 1000 = one core busy for the whole minute. */
+  cpuMinMillicores: number;
 }
 
 export interface SandboxActivityRecord {
@@ -91,10 +59,16 @@ export interface SandboxActivityRecord {
 export class ActivityRecorder {
   private readonly records = new Map<string, SandboxActivityRecord>();
   /** When recording started: the floor of every sandbox's clock. */
-  readonly startedAt: number;
+  private readonly startedAt: number;
 
   constructor(private readonly now: () => number = Date.now) {
     this.startedAt = now();
+  }
+
+  /** The sandbox's record without creating one: an empty record floored at
+   * the recorder's start when nothing was seen yet. */
+  read(id: string): SandboxActivityRecord {
+    return this.records.get(id) ?? { since: this.startedAt, last: {} };
   }
 
   private record(id: string): SandboxActivityRecord {
@@ -135,21 +109,17 @@ export class ActivityRecorder {
       bootedAtMs: report.bootedAtMs + skew,
       buckets: report.buckets.map((b) => ({ ...b, startMs: b.startMs + skew })),
     };
-    const undirected = report.network === INTERFACE_NETWORK_SENSOR;
-    const min = thresholds.networkMinBytesPerMinute;
+    const cpuMinMs = thresholds.cpuMinMillicores * 60;
     for (const bucket of rebased.buckets) {
       const at = Math.min(bucket.startMs + bucketMs, now);
-      const total = bucket.inboundBytes + bucket.outboundBytes;
-      if (undirected ? total >= min : bucket.inboundBytes >= min) {
-        this.touch(id, "networkInbound", at);
-      }
-      if (undirected ? total >= min : bucket.outboundBytes >= min) {
-        this.touch(id, "networkOutbound", at);
+      if (
+        bucket.receivedBytes + bucket.sentBytes >=
+        thresholds.networkMinBytesPerMinute
+      ) {
+        this.touch(id, "network", at);
       }
       if (bucket.fileWrites > 0) this.touch(id, "files", at);
-      if (bucket.cpuMs >= thresholds.cpuMinMsPerMinute) {
-        this.touch(id, "cpu", at);
-      }
+      if (bucket.cpuMs >= cpuMinMs) this.touch(id, "cpu", at);
     }
     this.record(id).agent = { reporting: true, polledAt: now, report: rebased };
   }
@@ -158,10 +128,6 @@ export class ActivityRecorder {
    * the previous report's data out of the view. */
   markUnreported(id: string): void {
     this.record(id).agent = { reporting: false, polledAt: this.now() };
-  }
-
-  get(id: string): SandboxActivityRecord | undefined {
-    return this.records.get(id);
   }
 
   /** Drop a destroyed sandbox's state. */

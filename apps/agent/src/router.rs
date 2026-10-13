@@ -11,7 +11,7 @@ use hyper::body::Bytes;
 use hyper::{Method, Request, Response, StatusCode};
 use serde::Deserialize;
 
-use crate::activity::{Activity, FileSettings};
+use crate::activity::Activity;
 use crate::command::{self, DEFAULT_EXEC_TIMEOUT_MS};
 use crate::config::AgentConfig;
 use crate::files::{self, WriteFilesRequest};
@@ -65,9 +65,8 @@ pub async fn route(
             serde_json::json!({ "keys": crate::ssh::host_keys() }),
         ),
         // The last hour of measured activity, raw (the server applies the
-        // idle thresholds), and the file filter the server pushes.
+        // idle thresholds).
         (&Method::GET, "/activity") => json(StatusCode::OK, activity.report()),
-        (&Method::PUT, "/activity/settings") => handle_activity_settings(req, &activity).await,
         (&Method::GET, "/processes") => json(
             StatusCode::OK,
             serde_json::json!({ "processes": supervisor.list().await }),
@@ -418,23 +417,6 @@ fn classify_start_error(e: &str) -> StatusCode {
         StatusCode::NOT_FOUND
     } else {
         StatusCode::INTERNAL_SERVER_ERROR
-    }
-}
-
-async fn handle_activity_settings(
-    req: Request<hyper::body::Incoming>,
-    activity: &Arc<Activity>,
-) -> Response<Full<Bytes>> {
-    let body = match read_body(req, MAX_CONFIG_BODY_BYTES).await {
-        Ok(b) => b,
-        Err(resp) => return resp,
-    };
-    match serde_json::from_slice::<FileSettings>(&body) {
-        Ok(settings) => {
-            activity.set_settings(settings);
-            json(StatusCode::OK, serde_json::json!({ "success": true }))
-        }
-        Err(e) => error(StatusCode::BAD_REQUEST, &format!("Invalid settings: {e}")),
     }
 }
 

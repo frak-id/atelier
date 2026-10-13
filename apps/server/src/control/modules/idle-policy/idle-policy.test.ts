@@ -15,15 +15,12 @@ const NOW = Date.parse("2026-10-14T12:00:00Z");
 const RULE: IdleRule = {
   mode: "enforce",
   minutes: 120,
-  network: "both",
+  network: true,
   networkMinBytesPerMinute: 65536,
   files: true,
-  fileRoots: ["/home/dev/workspace"],
-  fileExcludes: ["node_modules"],
   cpu: false,
   cpuMinMillicores: 250,
   maxKeepAwakeHours: 24,
-  allowKeepAwakeForever: false,
 };
 
 function input(patch: Partial<IdleInput> = {}): IdleInput {
@@ -42,25 +39,23 @@ function input(patch: Partial<IdleInput> = {}): IdleInput {
 
 describe("countedSignals", () => {
   test("person and agent signals always count; the rest per rule", () => {
-    expect(countedSignals({ ...RULE, network: "off", files: false })).toEqual([
+    expect(countedSignals({ ...RULE, network: false, files: false })).toEqual([
       "ssh",
       "console",
       "api",
       "lifecycle",
       "agent",
     ]);
-    expect(countedSignals({ ...RULE, network: "outbound", cpu: true })).toEqual(
-      [
-        "ssh",
-        "console",
-        "api",
-        "lifecycle",
-        "agent",
-        "networkOutbound",
-        "files",
-        "cpu",
-      ],
-    );
+    expect(countedSignals({ ...RULE, cpu: true })).toEqual([
+      "ssh",
+      "console",
+      "api",
+      "lifecycle",
+      "agent",
+      "network",
+      "files",
+      "cpu",
+    ]);
   });
 });
 
@@ -96,9 +91,9 @@ describe("evaluateIdle", () => {
   });
 
   test("signals the rule doesn't count are ignored", () => {
-    const last = { networkInbound: NOW - MIN, cpu: NOW - MIN };
+    const last = { network: NOW - MIN, cpu: NOW - MIN };
     expect(
-      evaluateIdle({ ...RULE, network: "outbound" }, input({ last })).state,
+      evaluateIdle({ ...RULE, network: false }, input({ last })).state,
     ).toBe("due");
     expect(evaluateIdle(RULE, input({ last })).state).toBe("active");
   });
@@ -122,25 +117,16 @@ describe("evaluateIdle", () => {
   });
 
   test("an older agent only blocks when agent-side signals count", () => {
-    const rule: IdleRule = { ...RULE, network: "off", files: false };
+    const rule: IdleRule = { ...RULE, network: false, files: false };
     const ev = evaluateIdle(rule, input({ agentReporting: false }));
     expect(ev.state).toBe("due");
   });
 
-  test("an expired keep-awake no longer holds; forever needs the operator", () => {
+  test("an expired or unparsable keep-awake no longer holds", () => {
     const past = new Date(NOW - MIN).toISOString();
-    expect(evaluateIdle(RULE, input({ keepAwakeUntil: past })).state).toBe(
-      "due",
-    );
-    expect(evaluateIdle(RULE, input({ keepAwakeUntil: "forever" })).state).toBe(
-      "due",
-    );
-    expect(
-      evaluateIdle(
-        { ...RULE, allowKeepAwakeForever: true },
-        input({ keepAwakeUntil: "forever" }),
-      ).blockers,
-    ).toEqual(["keep-awake"]);
+    for (const keepAwakeUntil of [past, "forever"]) {
+      expect(evaluateIdle(RULE, input({ keepAwakeUntil })).state).toBe("due");
+    }
   });
 
   test("off and not-running have no deadline", () => {
@@ -158,30 +144,17 @@ describe("IdlePolicyService.parseKeepAwake", () => {
     const values: Record<string, unknown> = {
       "sandbox.idle.mode": "enforce",
       "sandbox.idle.minutes": 120,
-      "sandbox.idle.network": "both",
+      "sandbox.idle.network": true,
       "sandbox.idle.networkMinBytesPerMinute": 65536,
       "sandbox.idle.files": true,
-      "sandbox.idle.fileRoots": "/home/dev/workspace, /srv",
-      "sandbox.idle.fileExcludes": "node_modules,,*.log,/home/dev/.*",
       "sandbox.idle.cpu": false,
       "sandbox.idle.cpuMinMillicores": 250,
       "sandbox.idle.maxKeepAwakeHours": 8,
-      "sandbox.idle.allowKeepAwakeForever": false,
       ...patch,
     };
     const config = { get: (key: string) => values[key] };
     return new IdlePolicyService(config as unknown as ServerConfigService);
   }
-
-  test("the rule splits the comma lists", () => {
-    const rule = service().rule();
-    expect(rule.fileRoots).toEqual(["/home/dev/workspace", "/srv"]);
-    expect(rule.fileExcludes).toEqual([
-      "node_modules",
-      "*.log",
-      "/home/dev/.*",
-    ]);
-  });
 
   test("null or blank clears", () => {
     expect(service().parseKeepAwake(null, NOW)).toBeUndefined();
@@ -193,7 +166,7 @@ describe("IdlePolicyService.parseKeepAwake", () => {
     expect(service().parseKeepAwake(at, NOW)).toBe(at);
   });
 
-  test("past, too far, garbage and a disallowed forever are refused", () => {
+  test("past, too far, garbage and forever are refused", () => {
     for (const value of [
       new Date(NOW - MIN).toISOString(),
       new Date(NOW + 9 * 60 * MIN).toISOString(),
@@ -204,10 +177,5 @@ describe("IdlePolicyService.parseKeepAwake", () => {
         ValidationError,
       );
     }
-  });
-
-  test("forever passes once the operator allows it", () => {
-    const svc = service({ "sandbox.idle.allowKeepAwakeForever": true });
-    expect(svc.parseKeepAwake("forever", NOW)).toBe("forever");
   });
 });

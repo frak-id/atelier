@@ -490,7 +490,7 @@ describe("sandbox_lifecycle", () => {
     ).toEqual({ id: "s", status: "destroyed" });
   });
 
-  test("keep_awake sets hours ahead, forever, or clears with 0", async () => {
+  test("keep_awake sets hours ahead, or clears with 0", async () => {
     const { call, fake } = await setup();
     const before = Date.now();
     const res = await call("sandbox_lifecycle", {
@@ -507,21 +507,15 @@ describe("sandbox_lifecycle", () => {
     await call("sandbox_lifecycle", {
       id: "s",
       action: "keep_awake",
-      forever: true,
-    });
-    await call("sandbox_lifecycle", {
-      id: "s",
-      action: "keep_awake",
       hours: 0,
     });
-    expect(fake.calls.keepAwake.slice(1)).toEqual(["forever", null]);
+    expect(fake.calls.keepAwake.slice(1)).toEqual([null]);
   });
 
-  test("keep_awake needs exactly one of hours/forever, and only it takes them", async () => {
+  test("keep_awake needs hours, and only it takes them", async () => {
     const { call, fake } = await setup();
     for (const args of [
       { action: "keep_awake" },
-      { action: "keep_awake", hours: 2, forever: true },
       { action: "pause", hours: 2 },
     ]) {
       const res = await call("sandbox_lifecycle", { id: "s", ...args });

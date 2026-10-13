@@ -288,41 +288,29 @@ export function registerSandbox(program: Command, ctx: Ctx): void {
         "running), within the server's limit",
     )
     .option("--for <duration>", "how long, e.g. 90m, 8h, 2d")
-    .option("--forever", "with no end, if the server allows it")
     .option("--off", "stop keeping it awake")
-    .action(
-      async (
-        id: string,
-        opts: { for?: string; forever?: boolean; off?: boolean },
-      ) => {
-        const picked = [opts.for !== undefined, opts.forever, opts.off];
-        if (picked.filter(Boolean).length !== 1) {
-          fail("keep-awake takes one of --for <duration>, --forever or --off");
-        }
-        let keepAwakeUntil: string | null = null;
-        if (opts.forever) {
-          // KEEP_AWAKE_FOREVER (@atelier/spec sandbox-activity.ts).
-          keepAwakeUntil = "forever";
-        } else if (opts.for !== undefined) {
-          const ms = parseDuration(opts.for);
-          if (!ms) fail(`invalid duration '${opts.for}' (e.g. 90m, 8h, 2d)`);
-          keepAwakeUntil = new Date(Date.now() + ms).toISOString();
-        }
-        await ctx
-          .api()
-          .v1.sandboxes({ id })
-          .patch({ keepAwakeUntil })
-          .then(unwrap);
-        if (keepAwakeUntil === null) {
-          line(`${id} can be paused when idle again`);
-        } else if (keepAwakeUntil === "forever") {
-          line(`${id} kept awake until you turn it off`);
-        } else {
-          const at = new Date(keepAwakeUntil).toLocaleString();
-          line(`${id} kept awake until ${at}`);
-        }
-      },
-    );
+    .action(async (id: string, opts: { for?: string; off?: boolean }) => {
+      if ((opts.for !== undefined) === !!opts.off) {
+        fail("keep-awake takes one of --for <duration> or --off");
+      }
+      let keepAwakeUntil: string | null = null;
+      if (opts.for !== undefined) {
+        const ms = parseDuration(opts.for);
+        if (!ms) fail(`invalid duration '${opts.for}' (e.g. 90m, 8h, 2d)`);
+        keepAwakeUntil = new Date(Date.now() + ms).toISOString();
+      }
+      await ctx
+        .api()
+        .v1.sandboxes({ id })
+        .patch({ keepAwakeUntil })
+        .then(unwrap);
+      if (keepAwakeUntil === null) {
+        line(`${id} can be paused when idle again`);
+      } else {
+        const at = new Date(keepAwakeUntil).toLocaleString();
+        line(`${id} kept awake until ${at}`);
+      }
+    });
 
   program
     .command("rm <id>")

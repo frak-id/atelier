@@ -1,20 +1,17 @@
 //! CPU time consumed by the sandbox, sampled as a cumulative counter whose
 //! deltas land in the activity buckets. Sources, best first: the
-//! container's cgroup v2 `cpu.stat`, cgroup v1 `cpuacct.usage`, then
-//! `/proc/stat` (the whole guest: in a Kata VM that *is* the sandbox; on a
-//! shared Docker host it would be the host, which is why it comes last).
+//! container's cgroup v2 `cpu.stat`, then `/proc/stat` (the whole guest: in a
+//! Kata VM that *is* the sandbox; on a shared Docker host it would be the
+//! host, which is why it comes last).
 
 const CGROUP2_CPU_STAT: &str = "/sys/fs/cgroup/cpu.stat";
-const CGROUP1_USAGE: [&str; 2] = [
-    "/sys/fs/cgroup/cpuacct/cpuacct.usage",
-    "/sys/fs/cgroup/cpu,cpuacct/cpuacct.usage",
-];
 const PROC_STAT: &str = "/proc/stat";
+/// `/proc/stat` ticks per second: 100 on every Linux the sandboxes run.
+const USER_HZ: u64 = 100;
 
 enum Source {
     Cgroup2,
-    Cgroup1(&'static str),
-    ProcStat { ticks_per_sec: u64 },
+    ProcStat,
     Unavailable,
 }
 
@@ -28,20 +25,10 @@ impl CpuSampler {
     pub fn detect() -> Self {
         let source = if read_cgroup2().is_some() {
             Source::Cgroup2
-        } else if let Some(path) = CGROUP1_USAGE
-            .into_iter()
-            .find(|p| read_cgroup1(p).is_some())
-        {
-            Source::Cgroup1(path)
+        } else if read_proc_stat().is_some() {
+            Source::ProcStat
         } else {
-            // SAFETY: sysconf has no preconditions.
-            let ticks = unsafe { libc::sysconf(libc::_SC_CLK_TCK) };
-            let ticks_per_sec = if ticks > 0 { ticks as u64 } else { 100 };
-            if read_proc_stat(ticks_per_sec).is_some() {
-                Source::ProcStat { ticks_per_sec }
-            } else {
-                Source::Unavailable
-            }
+            Source::Unavailable
         };
         let mut sampler = Self { source, last: None };
         sampler.last = sampler.read();
@@ -51,8 +38,7 @@ impl CpuSampler {
     pub fn status(&self) -> &'static str {
         match self.source {
             Source::Cgroup2 => "cgroup2",
-            Source::Cgroup1(_) => "cgroup1",
-            Source::ProcStat { .. } => "procstat",
+            Source::ProcStat => "procstat",
             Source::Unavailable => "unavailable",
         }
     }
@@ -60,8 +46,7 @@ impl CpuSampler {
     fn read(&self) -> Option<u64> {
         match self.source {
             Source::Cgroup2 => read_cgroup2(),
-            Source::Cgroup1(path) => read_cgroup1(path),
-            Source::ProcStat { ticks_per_sec } => read_proc_stat(ticks_per_sec),
+            Source::ProcStat => read_proc_stat(),
             Source::Unavailable => None,
         }
     }
@@ -79,13 +64,8 @@ fn read_cgroup2() -> Option<u64> {
     parse_cgroup2_cpu_stat(&std::fs::read_to_string(CGROUP2_CPU_STAT).ok()?)
 }
 
-fn read_cgroup1(path: &str) -> Option<u64> {
-    let ns: u64 = std::fs::read_to_string(path).ok()?.trim().parse().ok()?;
-    Some(ns / 1_000_000)
-}
-
-fn read_proc_stat(ticks_per_sec: u64) -> Option<u64> {
-    parse_proc_stat(&std::fs::read_to_string(PROC_STAT).ok()?, ticks_per_sec)
+fn read_proc_stat() -> Option<u64> {
+    parse_proc_stat(&std::fs::read_to_string(PROC_STAT).ok()?)
 }
 
 /// `usage_usec <n>` from a cgroup v2 `cpu.stat`, in ms.
@@ -98,7 +78,7 @@ fn parse_cgroup2_cpu_stat(content: &str) -> Option<u64> {
 
 /// Busy time from the aggregate `cpu` line of `/proc/stat` (user, nice,
 /// system, irq, softirq, steal; not idle/iowait), in ms.
-fn parse_proc_stat(content: &str, ticks_per_sec: u64) -> Option<u64> {
+fn parse_proc_stat(content: &str) -> Option<u64> {
     let line = content.lines().find(|l| l.starts_with("cpu "))?;
     let fields: Vec<u64> = line
         .split_whitespace()
@@ -109,7 +89,7 @@ fn parse_proc_stat(content: &str, ticks_per_sec: u64) -> Option<u64> {
         .iter()
         .map(|&i| fields.get(i).copied().unwrap_or(0))
         .sum();
-    Some(busy * 1000 / ticks_per_sec.max(1))
+    Some(busy * 1000 / USER_HZ)
 }
 
 #[cfg(test)]
@@ -128,7 +108,7 @@ mod tests {
         // user nice system idle iowait irq softirq steal
         let stat = "cpu  100 5 50 9000 40 3 2 1 0 0\ncpu0 1 2 3 4\n";
         // (100 + 5 + 50 + 3 + 2 + 1) ticks at 100/s = 1610 ms
-        assert_eq!(parse_proc_stat(stat, 100), Some(1610));
-        assert_eq!(parse_proc_stat("intr 1 2\n", 100), None);
+        assert_eq!(parse_proc_stat(stat), Some(1610));
+        assert_eq!(parse_proc_stat("intr 1 2\n"), None);
     }
 }

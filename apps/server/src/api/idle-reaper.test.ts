@@ -29,17 +29,16 @@ function harness(config: Record<string, unknown> = {}) {
   const state = {
     work: { turns: 0, permissions: 0 },
     jobActive: false,
+    opPending: false,
     /** The agent's report, or null for an agent without `/activity`. */
     report: (_now: number): AgentActivityReport | null => ({
       nowMs: clock.now,
       bootedAtMs: T0,
       bucketSeconds: 60,
-      network: "sock_diag",
+      network: "netdev",
       files: "fanotify",
       cpu: "cgroup2",
-      fileSettings: { roots: [], exclude: [] },
       buckets: [],
-      processes: [],
     }),
     /** Runs on each poll, after the report is folded in. */
     onPoll: (_id: string) => {},
@@ -47,15 +46,12 @@ function harness(config: Record<string, unknown> = {}) {
   const values: Record<string, unknown> = {
     "sandbox.idle.mode": "enforce",
     "sandbox.idle.minutes": 120,
-    "sandbox.idle.network": "both",
+    "sandbox.idle.network": true,
     "sandbox.idle.networkMinBytesPerMinute": 1000,
     "sandbox.idle.files": true,
-    "sandbox.idle.fileRoots": "/home/dev/workspace",
-    "sandbox.idle.fileExcludes": "node_modules",
     "sandbox.idle.cpu": false,
     "sandbox.idle.cpuMinMillicores": 250,
     "sandbox.idle.maxKeepAwakeHours": 24,
-    "sandbox.idle.allowKeepAwakeForever": false,
     ...config,
   };
   const policy = new IdlePolicyService({
@@ -76,20 +72,17 @@ function harness(config: Record<string, unknown> = {}) {
       const s = sandboxes.get(id);
       return s && { metadata: {}, annotations: { ...s.annotations } };
     },
-    activityRecord: (id: string) =>
-      recorder.get(id) ?? { since: recorder.startedAt, last: {} },
-    hasPendingOp: () => false,
+    activityRecord: (id: string) => recorder.read(id),
+    hasPendingOp: () => state.opPending,
     pollActivity: async (
       id: string,
       thresholds: Parameters<ActivityRecorder["ingest"]>[2],
-      settings?: { roots: string[]; exclude: string[] },
     ) => {
-      calls.push(`poll:${id}:${settings?.roots.join(",")}`);
+      calls.push(`poll:${id}`);
       const report = state.report(clock.now);
       if (report) recorder.ingest(id, report, thresholds);
       else recorder.markUnreported(id);
       state.onPoll(id);
-      return recorder.get(id);
     },
     pause: async (id: string) => {
       calls.push(`pause:${id}`);
@@ -156,8 +149,6 @@ describe("IdleReaper.tick", () => {
     expect(
       h.sandboxes.get("idle")?.annotations[SANDBOX_IDLE_PAUSED_ANNOTATION],
     ).toBe(new Date(T0 + 121 * MIN).toISOString());
-    // The operator's file filter rides each poll.
-    expect(h.calls).toContain("poll:busy:/home/dev/workspace");
   });
 
   test("observe polls but never pauses; off doesn't even poll", async () => {
@@ -174,45 +165,6 @@ describe("IdleReaper.tick", () => {
     expect(h.calls).toEqual([]);
   });
 
-  test("agent-measured traffic above the threshold keeps it awake", async () => {
-    const h = harness();
-    h.add("s");
-    h.clock.now = T0 + 300 * MIN;
-    h.state.report = (now) => ({
-      nowMs: now,
-      bootedAtMs: T0,
-      bucketSeconds: 60,
-      network: "sock_diag",
-      files: "fanotify",
-      cpu: "cgroup2",
-      fileSettings: { roots: [], exclude: [] },
-      buckets: [
-        // Heartbeats: under the threshold, don't count.
-        {
-          startMs: now - 2 * MIN,
-          inboundBytes: 400,
-          outboundBytes: 0,
-          fileWrites: 0,
-          cpuMs: 0,
-        },
-        // An LLM stream half an hour ago.
-        {
-          startMs: now - 30 * MIN,
-          inboundBytes: 0,
-          outboundBytes: 50_000,
-          fileWrites: 0,
-          cpuMs: 0,
-        },
-      ],
-      processes: [],
-    });
-    await h.reaper.tick();
-    expect(h.calls.some((c) => c.startsWith("pause:"))).toBe(false);
-    expect(h.reaper.evaluate("s")?.lastActiveAt).toBe(
-      T0 + 300 * MIN - 29 * MIN,
-    );
-  });
-
   test("someone coming back between the two polls cancels the pause", async () => {
     const h = harness();
     h.add("s");
@@ -226,7 +178,7 @@ describe("IdleReaper.tick", () => {
     expect(h.sandboxes.get("s")?.status).toBe("running");
   });
 
-  test("a pending permission, a turn, a job or keep-awake holds it", async () => {
+  test("a pending permission, a turn, a job, an op or keep-awake holds it", async () => {
     const holds: ((h: ReturnType<typeof harness>) => void)[] = [
       (h) => {
         h.state.work = { turns: 0, permissions: 1 };
@@ -236,6 +188,9 @@ describe("IdleReaper.tick", () => {
       },
       (h) => {
         h.state.jobActive = true;
+      },
+      (h) => {
+        h.state.opPending = true;
       },
       (h) => {
         h.sandbox("s").annotations[SANDBOX_KEEP_AWAKE_ANNOTATION] = new Date(
@@ -252,22 +207,6 @@ describe("IdleReaper.tick", () => {
       expect(h.sandboxes.get("s")?.status).toBe("running");
       expect(h.reaper.evaluate("s")?.state).toBe("blocked");
     }
-  });
-
-  test("an agent without /activity is never paused while its signals count", async () => {
-    const h = harness();
-    h.add("s");
-    h.clock.now = T0 + 300 * MIN;
-    h.state.report = () => null;
-    await h.reaper.tick();
-    expect(h.sandboxes.get("s")?.status).toBe("running");
-    expect(h.reaper.evaluate("s")?.blockers).toEqual(["agent-unreported"]);
-
-    // With only server-side signals counted, it can be judged.
-    h.values["sandbox.idle.network"] = "off";
-    h.values["sandbox.idle.files"] = false;
-    await h.reaper.tick();
-    expect(h.sandboxes.get("s")?.status).toBe("paused");
   });
 
   test("stale annotations go: an idle mark once running, an expired keep-awake", async () => {
@@ -315,7 +254,7 @@ describe("IdleReaper surfaces", () => {
     expect(rows[1]?.idle).toBeUndefined();
   });
 
-  test("the view carries the rule, the clocks and traffic by process", async () => {
+  test("the view carries the rule, the clocks and the agent's minutes", async () => {
     const h = harness();
     h.add("s");
     h.clock.now = T0 + 10 * MIN;
@@ -323,33 +262,36 @@ describe("IdleReaper surfaces", () => {
       nowMs: now,
       bootedAtMs: T0,
       bucketSeconds: 60,
-      network: "sock_diag",
-      files: "inotify",
+      network: "netdev",
+      files: "fanotify",
       cpu: "cgroup2",
-      fileSettings: { roots: [], exclude: [] },
       buckets: [
         {
           startMs: now - MIN,
-          inboundBytes: 10,
-          outboundBytes: 5000,
+          receivedBytes: 10,
+          sentBytes: 5000,
           fileWrites: 1,
           cpuMs: 3,
         },
-      ],
-      processes: [
-        { name: "git", supervised: false, inboundBytes: 0, outboundBytes: 10 },
-        { name: "acp", supervised: true, inboundBytes: 0, outboundBytes: 4990 },
       ],
     });
     await h.reaper.tick();
     const view = h.reaper.view("s");
     expect(view.state).toBe("active");
-    expect(view.counted).toContain("networkOutbound");
+    expect(view.counted).toContain("network");
+    expect(view.maxKeepAwakeHours).toBe(24);
     expect(view.signals.files).toBe(new Date(T0 + 10 * MIN).toISOString());
-    expect(view.signals.networkInbound).toBeUndefined();
-    expect(view.agent).toMatchObject({ reporting: true, files: "inotify" });
-    expect(view.minutes).toHaveLength(1);
-    expect(view.processes.map((p) => p.name)).toEqual(["acp", "git"]);
+    expect(view.signals.network).toBe(new Date(T0 + 10 * MIN).toISOString());
+    expect(view.agent).toMatchObject({ reporting: true, files: "fanotify" });
+    expect(view.minutes).toEqual([
+      {
+        start: new Date(T0 + 9 * MIN).toISOString(),
+        receivedBytes: 10,
+        sentBytes: 5000,
+        fileWrites: 1,
+        cpuMs: 3,
+      },
+    ]);
     expect(() => h.reaper.view("nope")).toThrow(NotFoundError);
   });
 

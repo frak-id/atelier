@@ -1,18 +1,8 @@
-//! Network bytes from the interface counters (`/proc/net/dev`), for guest
-//! kernels without `inet_diag`: Kata's stock guest kernel answers a
-//! sock_diag TCP dump with ENOENT, and its TCP destroy broadcasts never
-//! fire. Coarser than sock_diag:
-//!
-//! - no direction by connection: only bytes received and sent, so the agent
-//!   reports `netdev` and the server counts any traffic for either
-//!   direction (an operator's `inbound`-only rule stays awake longer, never
-//!   pauses early);
-//! - no per-process attribution;
-//! - the agent's control traffic (the server polling `/activity`, a console
-//!   tab's terminal or logs) is subtracted from the payload bytes the agent
-//!   counted on its own ports (`control.rs`); their TCP/IP headers remain.
-//!
-//! Loopback is left out, like the sock_diag path.
+//! Network bytes from the interface counters (`/proc/net/dev`): received
+//! and sent, loopback left out. The agent's control traffic (the server
+//! polling `/activity`, a console tab's terminal or logs) is subtracted from
+//! the payload bytes the agent counted on its own ports (`control.rs`);
+//! their TCP/IP headers remain.
 
 use super::NetDelta;
 
@@ -103,11 +93,7 @@ impl NetdevSampler {
             self.sent.unmatched = 0;
             return NetDelta::default();
         }
-        NetDelta {
-            inbound: received,
-            outbound: sent,
-            by_owner: vec![],
-        }
+        NetDelta { received, sent }
     }
 }
 
@@ -136,9 +122,9 @@ Inter-|   Receive                                                |  Transmit
     fn first_sample_is_a_baseline() {
         let mut s = NetdevSampler::default();
         let d = s.account((5_000_000, 9_000_000), (0, 0));
-        assert_eq!((d.inbound, d.outbound), (0, 0));
+        assert_eq!((d.received, d.sent), (0, 0));
         let d = s.account((5_100_000, 9_000_300), (0, 0));
-        assert_eq!((d.inbound, d.outbound), (100_000, 300));
+        assert_eq!((d.received, d.sent), (100_000, 300));
     }
 
     #[test]
@@ -147,7 +133,7 @@ Inter-|   Receive                                                |  Transmit
         s.account((1000, 1000), (50, 50));
         // 70 KB sent, 60 KB of it the agent's own responses.
         let d = s.account((1500, 71_000), (450, 60_050));
-        assert_eq!((d.inbound, d.outbound), (100, 10_000));
+        assert_eq!((d.received, d.sent), (100, 10_000));
     }
 
     #[test]
@@ -157,12 +143,12 @@ Inter-|   Receive                                                |  Transmit
         // A 200 KB control response counted as written, mostly not yet on
         // the wire.
         let d = s.account((0, 50_000), (0, 200_000));
-        assert_eq!(d.outbound, 0);
+        assert_eq!(d.sent, 0);
         // The rest leaves in the next sample: still the agent's.
         let d = s.account((0, 200_000), (0, 200_000));
-        assert_eq!(d.outbound, 0);
+        assert_eq!(d.sent, 0);
         let d = s.account((0, 300_000), (0, 200_000));
-        assert_eq!(d.outbound, 100_000);
+        assert_eq!(d.sent, 100_000);
     }
 
     #[test]
@@ -172,9 +158,9 @@ Inter-|   Receive                                                |  Transmit
         // 200 KB counted, 50 KB seen; 150 KB carried.
         s.account((0, 50_000), (0, 200_000));
         // Only 100 KB more on the wire: the last 50 KB of credit expires.
-        assert_eq!(s.account((0, 150_000), (0, 200_000)).outbound, 0);
+        assert_eq!(s.account((0, 150_000), (0, 200_000)).sent, 0);
         // So the next sample's traffic counts in full.
-        assert_eq!(s.account((0, 250_000), (0, 200_000)).outbound, 100_000);
+        assert_eq!(s.account((0, 250_000), (0, 200_000)).sent, 100_000);
     }
 
     #[test]
@@ -182,8 +168,8 @@ Inter-|   Receive                                                |  Transmit
         let mut s = NetdevSampler::default();
         s.account((10_000, 10_000), (0, 0));
         let d = s.account((100, 200), (0, 0));
-        assert_eq!((d.inbound, d.outbound), (0, 0));
+        assert_eq!((d.received, d.sent), (0, 0));
         let d = s.account((1100, 200), (0, 0));
-        assert_eq!(d.inbound, 1000);
+        assert_eq!(d.received, 1000);
     }
 }

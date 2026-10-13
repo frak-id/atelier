@@ -71,35 +71,31 @@ export function describeIdle(a: SandboxActivity): string {
       ? `paused after ${a.idleMinutes} min without use`
       : pc.dim("not running");
   }
-  const parts = [
+  const status =
+    a.state === "blocked"
+      ? `held: ${a.blockers
+          .map((b) =>
+            b === "keep-awake" && a.keepAwakeUntil
+              ? `kept awake for ${until(a.keepAwakeUntil)}`
+              : BLOCKERS[b],
+          )
+          .join(", ")}`
+      : idleOf(a);
+  return [
     a.lastActiveAt ? `last activity ${age(a.lastActiveAt)} ago` : "",
-  ];
-  if (a.state === "active" && a.pausesAt) {
-    parts.push(`pauses in ${until(a.pausesAt)}`);
-  } else if (a.state === "due") {
-    parts.push(
-      a.mode === "enforce"
-        ? pc.yellow("pausing now")
-        : pc.yellow("would be paused (observe mode)"),
-    );
-  } else if (a.state === "blocked") {
-    const reasons = a.blockers.map((b) =>
-      b === "keep-awake" && a.keepAwakeUntil && a.keepAwakeUntil !== "forever"
-        ? `kept awake for ${until(a.keepAwakeUntil)}`
-        : BLOCKERS[b],
-    );
-    parts.push(`held: ${reasons.join(", ")}`);
-  }
-  return parts.filter(Boolean).join(" · ");
+    status,
+  ]
+    .filter(Boolean)
+    .join(" · ");
 }
 
 /** `90m`, `8h`, `2d`, `1.5h` → milliseconds (undefined when unparseable). */
 export function parseDuration(text: string): number | undefined {
-  const match = /^(\d+(?:\.\d+)?)\s*(m|min|h|d)$/.exec(text.trim());
+  const match = /^(\d+(?:\.\d+)?)\s*(m|h|d)$/.exec(text.trim());
   if (!match) return undefined;
   const n = Number(match[1]);
-  const unit = { m: 60_000, min: 60_000, h: 3_600_000, d: 86_400_000 }[
-    match[2] as "m" | "min" | "h" | "d"
+  const unit = { m: 60_000, h: 3_600_000, d: 86_400_000 }[
+    match[2] as "m" | "h" | "d"
   ];
   return n > 0 ? n * unit : undefined;
 }

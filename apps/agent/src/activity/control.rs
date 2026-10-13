@@ -1,8 +1,7 @@
 //! Bytes the agent itself moves on its control ports (9998 config/process
 //! API, 9997 attach bridge, 7681 terminal relay): the server's traffic,
-//! never the sandbox's activity. The sock_diag sampler skips those ports by
-//! number; the interface-counter fallback (`netdev.rs`, for guest kernels
-//! without `inet_diag`) can't, so it subtracts these totals instead.
+//! never the sandbox's activity. The interface counters (`netdev.rs`) can't
+//! tell connections apart, so the network sampler subtracts these totals.
 //!
 //! Payload bytes, counted as the agent reads and writes them: the TCP/IP
 //! headers of control traffic (~66 B a packet) stay in the interface

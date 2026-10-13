@@ -128,25 +128,21 @@ console's *Server configuration* page, or lock them with their env var.
 |-----|---------|---------|
 | `sandbox.idle.mode` (`off`/`observe`/`enforce`) | `ATELIER_IDLE_MODE` | `observe` |
 | `sandbox.idle.minutes` | `ATELIER_IDLE_MINUTES` | `120` |
-| `sandbox.idle.network` (`both`/`inbound`/`outbound`/`off`) | `ATELIER_IDLE_NETWORK` | `both` |
+| `sandbox.idle.network` | `ATELIER_IDLE_NETWORK` | `true` |
 | `sandbox.idle.networkMinBytesPerMinute` | `ATELIER_IDLE_NETWORK_MIN_BYTES` | `65536` |
 | `sandbox.idle.files` | `ATELIER_IDLE_FILES` | `true` |
-| `sandbox.idle.fileRoots` | `ATELIER_IDLE_FILE_ROOTS` | `/home/dev` |
-| `sandbox.idle.fileExcludes` | `ATELIER_IDLE_FILE_EXCLUDES` | `node_modules,.git,.next,.nuxt,.turbo,.cache,dist,build,target,*.log,/home/dev/.*` |
 | `sandbox.idle.cpu` | `ATELIER_IDLE_CPU` | `false` |
 | `sandbox.idle.cpuMinMillicores` | `ATELIER_IDLE_CPU_MIN_MILLICORES` | `250` |
 | `sandbox.idle.maxKeepAwakeHours` | `ATELIER_IDLE_MAX_KEEP_AWAKE_HOURS` | `24` |
-| `sandbox.idle.allowKeepAwakeForever` | `ATELIER_IDLE_ALLOW_KEEP_AWAKE_FOREVER` | `false` |
 
-Start in `observe`: every sandbox page shows when it *would* be paused,
-its per-minute traffic and its traffic by process, so the byte threshold
-can be checked against real idle tabs before switching to `enforce`.
-Network and file signals need a sandbox image whose agent serves
-`GET /activity`; older ones are never paused while those signals count.
-On Kata's stock guest kernel (no `inet_diag`) the agent measures network
-traffic per interface (sensor `netdev`): no direction and no per-process
-breakdown, so `sandbox.idle.network` set to `inbound` or `outbound` counts
-any traffic there.
+Start in `observe`: every sandbox page shows when it *would* be paused and
+its traffic per minute, so the byte threshold can be checked against real
+idle tabs before switching to `enforce`. Network and file signals need a
+sandbox image whose agent serves `GET /activity`; older ones are never
+paused while those signals count. Network is measured per interface
+(received + sent, minus the server's own traffic to the agent); file writes
+count under `/home/dev` except build output, dependencies and the hidden
+tool state at the top of the home.
 
 ### Enable prebuilds with TopoLVM
 

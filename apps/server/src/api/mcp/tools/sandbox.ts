@@ -12,7 +12,6 @@
  */
 import {
   CreateSandboxRequestSchema,
-  KEEP_AWAKE_FOREVER,
   SANDBOX_NAME_ANNOTATION,
   SANDBOX_NAME_MAX_LENGTH,
   type SandboxIdleSummary,
@@ -295,15 +294,7 @@ export function registerSandboxTools(
             ...(name ? { name } : {}),
             createdAt: s.createdAt,
             ...(s.repos?.length ? { repos: s.repos.map((r) => r.url) } : {}),
-            ...(s.idle
-              ? {
-                  idle: {
-                    mode: s.idle.mode,
-                    state: s.idle.state,
-                    pausesAt: s.idle.pausesAt,
-                  },
-                }
-              : {}),
+            ...(s.idle ? { idle: s.idle } : {}),
           };
         })
         .sort((a, b) => b.createdAt.localeCompare(a.createdAt));
@@ -324,9 +315,8 @@ export function registerSandboxTools(
         "owned by you (your git identity), in the same org, and returns the " +
         "copy's `id` and `urls` (waits until it is up); `destroy` deletes it " +
         "permanently and irreversibly, with no confirmation; `keep_awake` " +
-        "exempts it from idle auto-pause for `hours` (0 clears it; " +
-        "`forever` only when the server allows it), within the server's " +
-        "limit, e.g. before leaving a long job running unattended. " +
+        "exempts it from idle auto-pause for `hours` (0 clears it), within " +
+        "the server's limit, e.g. before leaving a long job running unattended. " +
         "pause/resume/fork can take minutes.",
       inputSchema: {
         id: z.string().describe("Sandbox id"),
@@ -348,30 +338,23 @@ export function registerSandboxTools(
           .min(0)
           .optional()
           .describe("keep_awake only: how long, in hours (0 clears)"),
-        forever: z
-          .boolean()
-          .optional()
-          .describe("keep_awake only: with no end (if the server allows)"),
       },
     },
-    safeTool(async ({ id, action, name, hours, forever }) => {
+    safeTool(async ({ id, action, name, hours }) => {
       guard(id);
       if (action !== "fork") rejectParams({ name }, "only applies to `fork`");
       if (action !== "keep_awake") {
-        rejectParams({ hours, forever }, "only applies to `keep_awake`");
+        rejectParams({ hours }, "only applies to `keep_awake`");
       }
       switch (action) {
         case "keep_awake": {
-          if ((hours === undefined) === (forever !== true)) {
-            throw new ValidationError(
-              "keep_awake takes exactly one of `hours` or `forever: true`",
-            );
+          if (hours === undefined) {
+            throw new ValidationError("keep_awake needs `hours` (0 clears)");
           }
-          const until = forever
-            ? KEEP_AWAKE_FOREVER
-            : hours === 0
+          const until =
+            hours === 0
               ? null
-              : new Date(Date.now() + (hours ?? 0) * 3_600_000).toISOString();
+              : new Date(Date.now() + hours * 3_600_000).toISOString();
           const stored = container.idle.setKeepAwake(id, until);
           return text({ id, keepAwakeUntil: stored ?? null });
         }

@@ -95,7 +95,6 @@ const PI_URL: SandboxUrl = {
 function setup(options: { failCreate?: boolean } = {}) {
   const fake = fakeRuntime();
   /** The idle reaper's answer per sandbox. */
-  const sleepsAt = new Map<string, string>();
   const jobs = new JobService({ store: new InMemoryJobStore() });
   const created: CreateSandboxRequest[] = [];
   const lifecycle = new Lifecycle({
@@ -113,9 +112,8 @@ function setup(options: { failCreate?: boolean } = {}) {
       return { id: sandboxId };
     },
     resumeBody: async () => ({}),
-    idle: { sleepsAt: (id) => sleepsAt.get(id) },
   });
-  return { ...fake, jobs, lifecycle, created, sleepsAt };
+  return { ...fake, jobs, lifecycle, created };
 }
 
 /** Let the background (unpooled) jobs settle. */
@@ -299,19 +297,12 @@ describe("sleep, wake, delete", () => {
     expect(lifecycle.list(user.id)[0]?.phase).toBe("ready");
   });
 
-  test("idle auto-pause: when it goes to sleep, and that it did", async () => {
-    const { lifecycle, sandboxes, sleepsAt, user, id } = await readyWorkspace();
-    expect(lifecycle.list(user.id)[0]?.sleepsAt).toBeUndefined();
-    sleepsAt.set(id, "2026-10-14T12:00:00.000Z");
-    expect(lifecycle.list(user.id)[0]?.sleepsAt).toBe(
-      "2026-10-14T12:00:00.000Z",
-    );
-
+  test("idle auto-pause: that it went to sleep", async () => {
+    const { lifecycle, sandboxes, user, id } = await readyWorkspace();
     // Put to sleep by hand: no idle mark.
     await lifecycle.sleep(id, user.id);
     const [manual] = lifecycle.list(user.id);
     expect(manual?.sleptIdleAt).toBeUndefined();
-    expect(manual?.sleepsAt).toBeUndefined();
 
     const sandbox = sandboxes.get(id);
     if (!sandbox) throw new Error("no sandbox");

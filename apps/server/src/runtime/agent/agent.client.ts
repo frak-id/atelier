@@ -1,10 +1,7 @@
 import { SandboxError } from "../../shared/errors.ts";
 import { config, isMock } from "../../shared/lib/config.ts";
 import { createChildLogger } from "../../shared/lib/logger.ts";
-import type {
-  AgentActivityReport,
-  AgentActivitySettings,
-} from "../activity.ts";
+import type { AgentActivityReport } from "../activity.ts";
 import type { AgentConfig } from "../agent-config.ts";
 import type { AgentEndpoint } from "../backend/backend.types.ts";
 import { kubeClient } from "../kube/index.ts";
@@ -223,7 +220,7 @@ export class AgentClient {
 
   /**
    * The agent's last hour of measured activity (`GET /activity`: network
-   * bytes, file writes, CPU, per-process traffic). `null` when the agent
+   * bytes, file writes, CPU). `null` when the agent
    * predates the endpoint (404): an image built before idle auto-pause.
    * Throws `AgentUnavailableError` when the agent can't be reached.
    */
@@ -237,9 +234,7 @@ export class AgentClient {
         network: "unavailable",
         files: "unavailable",
         cpu: "unavailable",
-        fileSettings: { roots: [], exclude: [] },
         buckets: [],
-        processes: [],
       };
     }
     try {
@@ -252,21 +247,6 @@ export class AgentClient {
       }
       throw err;
     }
-  }
-
-  /** Replace the agent's file-activity filter (`PUT /activity/settings`).
-   * Its own endpoint, not part of `PUT /config` (deny_unknown_fields): an
-   * older agent just 404s here. */
-  async putActivitySettings(
-    sandboxId: string,
-    settings: AgentActivitySettings,
-  ): Promise<void> {
-    if (isMock()) return;
-    await this.request(sandboxId, "/activity/settings", {
-      method: "PUT",
-      body: settings,
-      timeout: 5000,
-    });
   }
 
   /**

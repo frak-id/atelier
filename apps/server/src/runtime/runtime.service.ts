@@ -61,8 +61,6 @@ import {
 import {
   ActivityRecorder,
   type ActivityThresholds,
-  type AgentActivitySettings,
-  activitySettingsToPush,
   type SandboxActivityRecord,
 } from "./activity.ts";
 import type { HookPhase, WriteFilesResult } from "./agent/index.ts";
@@ -195,9 +193,7 @@ export class RuntimeService {
   /** The sandbox's activity clocks (an empty record floored at the server's
    * start when nothing was seen yet). */
   activityRecord(id: string): SandboxActivityRecord {
-    return (
-      this.activity.get(id) ?? { since: this.activity.startedAt, last: {} }
-    );
+    return this.activity.read(id);
   }
 
   /** Whether a lifecycle op (create/pause/resume/snapshot/destroy/fork) holds
@@ -208,36 +204,21 @@ export class RuntimeService {
 
   /**
    * Poll the agent's `GET /activity` and fold it into the sandbox's clocks
-   * with `thresholds`. When `settings` differ from the agent's file filter,
-   * push them (best-effort). An older agent (404) or an unreachable one is
+   * with `thresholds`. An older agent (404) or an unreachable one is
    * recorded as not reporting; never throws.
    */
   async pollActivity(
     id: string,
     thresholds: ActivityThresholds,
-    settings?: AgentActivitySettings,
-  ): Promise<SandboxActivityRecord | undefined> {
+  ): Promise<void> {
     try {
       const report = await this.agent.activity(id);
-      if (!report) {
-        this.activity.markUnreported(id);
-      } else {
-        this.activity.ingest(id, report, thresholds);
-        const push =
-          settings && activitySettingsToPush(report.fileSettings, settings);
-        if (push) {
-          await this.agent
-            .putActivitySettings(id, push)
-            .catch((err) =>
-              log.warn({ id, err }, "pushing activity settings failed"),
-            );
-        }
-      }
+      if (report) this.activity.ingest(id, report, thresholds);
+      else this.activity.markUnreported(id);
     } catch (err) {
       log.debug({ id, err }, "activity poll failed");
       this.activity.markUnreported(id);
     }
-    return this.activity.get(id);
   }
 
   // ── prebuild ───────────────────────────────────────────────────────────

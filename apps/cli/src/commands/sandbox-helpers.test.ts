@@ -10,7 +10,7 @@ describe("parseDuration", () => {
   });
 
   test("anything else is refused", () => {
-    for (const text of ["", "8", "0h", "-1h", "8 hours", "1w"]) {
+    for (const text of ["", "8", "0h", "-1h", "8 hours", "1w", "90min"]) {
       expect(parseDuration(text)).toBeUndefined();
     }
   });

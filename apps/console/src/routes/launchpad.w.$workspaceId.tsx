@@ -5,7 +5,6 @@ import { useEffect, useState } from "react";
 import { workspaceQuery } from "@/api/queries/launchpad";
 import { WorkspaceHeader } from "@/components/launchpad/workspace-header";
 import { WorkspacePhasePanel } from "@/components/launchpad/workspace-phase-panel";
-import { WorkspaceSleepNotice } from "@/components/launchpad/workspace-sleep-notice";
 import { WorkspaceWorkbench } from "@/components/launchpad/workspace-workbench";
 import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
@@ -86,10 +85,7 @@ function WorkspacePage() {
     <div className="flex min-h-0 flex-1 flex-col">
       <WorkspaceHeader workspace={workspace} editName={editName} />
       {workspace.phase === "ready" ? (
-        <>
-          <WorkspaceSleepNotice workspace={workspace} />
-          <WorkspaceWorkbench workspace={workspace} />
-        </>
+        <WorkspaceWorkbench workspace={workspace} />
       ) : (
         <WorkspacePhasePanel workspace={workspace} />
       )}

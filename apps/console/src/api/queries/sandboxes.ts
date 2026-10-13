@@ -179,8 +179,8 @@ export function useRenameSandbox() {
   });
 }
 
-/** Keep a sandbox from being idle-paused until a time, `"forever"` (when the
- * operator allows it), or `null` to stop. */
+/** Keep a sandbox from being idle-paused until a time, or `null` to
+ * stop. */
 export function useKeepAwake() {
   const invalidate = useInvalidateSandboxes();
   return useMutation({
