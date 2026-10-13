@@ -13,6 +13,7 @@ import { JobStatus } from "@/components/job-status";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
+import { CollapsibleSection } from "@/components/ui/collapsible-section";
 import {
   Dialog,
   DialogContent,
@@ -44,20 +45,20 @@ export function ToolsetsSection({
   const toolsets = filter ? data?.filter(filter) : data;
 
   return (
-    <div className="space-y-3">
-      <div className="flex items-start justify-between gap-2">
-        <div>
-          <h2 className="text-sm font-semibold">Standalone toolsets</h2>
-          <p className="text-sm text-muted-foreground">
-            Artifacts not tied to a toolbox — one-off manual builds and private
-            captures from a live sandbox. Reference them directly in a spec.
-          </p>
-        </div>
-        <Button size="sm" onClick={() => setBuildOpen(true)}>
+    <CollapsibleSection
+      title="Standalone toolsets"
+      count={toolsets?.length}
+      actions={
+        <Button size="sm" variant="outline" onClick={() => setBuildOpen(true)}>
           <Plus />
           Build
         </Button>
-      </div>
+      }
+    >
+      <p className="mb-3 text-sm text-muted-foreground">
+        Artifacts not tied to a toolbox — one-off manual builds and private
+        captures from a live sandbox. Reference them directly in a spec.
+      </p>
       {isPending ? (
         <Skeleton className="h-16 w-full" />
       ) : isError ? (
@@ -74,7 +75,7 @@ export function ToolsetsSection({
         </div>
       )}
       <BuildToolsetDialog open={buildOpen} onOpenChange={setBuildOpen} />
-    </div>
+    </CollapsibleSection>
   );
 }
 

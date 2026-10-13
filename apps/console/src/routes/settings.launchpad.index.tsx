@@ -1,45 +1,30 @@
 import { useQuery } from "@tanstack/react-query";
 import { createFileRoute, Link } from "@tanstack/react-router";
-import { ExternalLink, Pencil, Plus, Sparkles, Trash2 } from "lucide-react";
-import { useEffect, useState } from "react";
+import { ExternalLink, Pencil, Plus, Trash2 } from "lucide-react";
+import { useState } from "react";
 import {
   type StarterRecord,
   startersQuery,
   useDeleteStarter,
 } from "@/api/queries/launchpad";
-import { organizationsListQuery } from "@/api/queries/organizations";
 import { ConfirmDialog } from "@/components/confirm-dialog";
-import { OrgOwnerSelect } from "@/components/org-owner-select";
+import {
+  OwnerScopeSection,
+  OwnerScopeSections,
+} from "@/components/owner-scope-sections";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
-import { EmptyState } from "@/components/ui/empty-state";
 import { Skeleton } from "@/components/ui/skeleton";
 import { formatRelativeTime } from "@/lib/formatters";
 import { LaunchpadIconView } from "@/lib/launchpad";
-import { pickDefaultOrgId } from "@/lib/orgs";
+import type { OwnerScope } from "@/lib/orgs";
 
 export const Route = createFileRoute("/settings/launchpad/")({
   component: LaunchpadSettingsPage,
 });
 
 function LaunchpadSettingsPage() {
-  const { data: orgs } = useQuery(organizationsListQuery());
-  const [owner, setOwner] = useState("");
-  // Default to the caller's personal org once it's loaded; the picker still
-  // lets them switch to any other org they belong to.
-  useEffect(() => {
-    if (!owner && orgs && orgs.length > 0) {
-      setOwner(`org:${pickDefaultOrgId(orgs)}`);
-    }
-  }, [orgs, owner]);
-  const {
-    data: starters,
-    isPending,
-    isError,
-    error,
-  } = useQuery({ ...startersQuery(owner), enabled: !!owner });
-
   return (
     <div className="space-y-4">
       <p className="text-sm text-muted-foreground">
@@ -52,39 +37,45 @@ function LaunchpadSettingsPage() {
         an organization, is visible to its members, and launches with that
         organization's secrets, policy and toolboxes.
       </p>
-      <div className="flex flex-col gap-3 sm:flex-row sm:items-end sm:justify-between">
-        <div className="w-full space-y-1 sm:max-w-xs">
-          <OrgOwnerSelect
-            id="starter-scope"
-            value={owner}
-            onChange={setOwner}
-          />
-        </div>
-        <Button size="sm" asChild>
+      {/* Starters always belong to an org: no `user` scope. */}
+      <OwnerScopeSections includeUser={false}>
+        {(scope) => <StartersSection key={scope.owner} scope={scope} />}
+      </OwnerScopeSections>
+    </div>
+  );
+}
+
+function StartersSection({ scope }: { scope: OwnerScope }) {
+  const { owner } = scope;
+  const {
+    data: starters,
+    isPending,
+    isError,
+    error,
+  } = useQuery(startersQuery(owner));
+
+  return (
+    <OwnerScopeSection
+      scope={scope}
+      count={starters?.length}
+      actions={
+        <Button size="sm" variant="outline" asChild>
           <Link to="/settings/launchpad/new" search={{ owner }}>
             <Plus />
             New starter
           </Link>
         </Button>
-      </div>
+      }
+    >
       {isPending ? (
         <Skeleton className="h-20 w-full" />
       ) : isError ? (
         <p className="text-sm text-destructive">{error.message}</p>
       ) : starters.length === 0 ? (
-        <EmptyState
-          icon={Sparkles}
-          title="No starters in this scope"
-          description="Prepare one: pick a prebuild, the toolboxes it needs, and the tools to open."
-          action={
-            <Button size="sm" asChild>
-              <Link to="/settings/launchpad/new" search={{ owner }}>
-                <Plus />
-                New starter
-              </Link>
-            </Button>
-          }
-        />
+        <p className="text-sm text-muted-foreground">
+          No starters yet. Prepare one: pick a prebuild, the toolboxes it needs,
+          and the tools to open.
+        </p>
       ) : (
         <div className="space-y-2">
           {starters.map((starter) => (
@@ -92,7 +83,7 @@ function LaunchpadSettingsPage() {
           ))}
         </div>
       )}
-    </div>
+    </OwnerScopeSection>
   );
 }
 

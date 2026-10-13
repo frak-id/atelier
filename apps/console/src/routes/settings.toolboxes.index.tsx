@@ -15,7 +15,6 @@ import {
   Wrench,
 } from "lucide-react";
 import { useState } from "react";
-import { organizationsListQuery } from "@/api/queries/organizations";
 import {
   type ToolboxVersionWithArtifact,
   toolboxVersionsQuery,
@@ -26,7 +25,10 @@ import {
 import { toolboxesListQuery, useDeleteToolbox } from "@/api/queries/toolboxes";
 import { toolsetsListQuery } from "@/api/queries/toolsets";
 import { ConfirmDialog } from "@/components/confirm-dialog";
-import { OwnerScopeSelect } from "@/components/owner-scope-select";
+import {
+  OwnerScopeSection,
+  OwnerScopeSections,
+} from "@/components/owner-scope-sections";
 import { ToolsetsSection } from "@/components/toolsets-section";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -41,6 +43,7 @@ import {
 } from "@/components/ui/dialog";
 import { Skeleton } from "@/components/ui/skeleton";
 import { formatRelativeTime } from "@/lib/formatters";
+import type { OwnerScope } from "@/lib/orgs";
 
 export const Route = createFileRoute("/settings/toolboxes/")({
   component: ToolboxesPage,
@@ -52,80 +55,84 @@ function toolboxArtifactName(toolbox: ToolboxConfig): string {
 }
 
 function ToolboxesPage() {
-  const [owner, setOwner] = useState("user");
+  const { data: toolsets } = useQuery(toolsetsListQuery());
+  const artifactByName = new Map(
+    (toolsets ?? []).map((toolset) => [toolset.name, toolset] as const),
+  );
+
+  return (
+    <div className="space-y-6">
+      <p className="text-sm text-muted-foreground">
+        Toolboxes are owner-scoped recipes (<code>build[]</code> +{" "}
+        <code>paths[]</code>) that, when enabled, are automatically compiled
+        into a <strong>toolset</strong> (the resulting build artifact) and
+        injected into every spawn for that user or org.
+      </p>
+      <OwnerScopeSections includeUser>
+        {(scope) => (
+          <ToolboxScopeSection
+            key={scope.owner}
+            scope={scope}
+            artifactByName={artifactByName}
+          />
+        )}
+      </OwnerScopeSections>
+      <ToolsetsSection filter={(toolset) => !toolset.name.startsWith("tb/")} />
+    </div>
+  );
+}
+
+/** One owner's toolboxes (the caller's own, or an org's). */
+function ToolboxScopeSection({
+  scope,
+  artifactByName,
+}: {
+  scope: OwnerScope;
+  artifactByName: ReadonlyMap<string, ToolsetEntry>;
+}) {
   const {
     data: toolboxes,
     isPending,
     isError,
     error,
-  } = useQuery(toolboxesListQuery(owner));
-  const { data: toolsets } = useQuery(toolsetsListQuery());
-  const { data: orgs } = useQuery(organizationsListQuery());
-  const artifactByName = new Map(
-    (toolsets ?? []).map((toolset) => [toolset.name, toolset] as const),
-  );
-  // Publish requires toolbox-owner access: always true for the personal
-  // scope, owner/admin-of-the-org for an org scope (mirrors the server's
-  // `requireToolboxOwnerAccess`).
-  const orgId = owner.startsWith("org:") ? owner.slice(4) : undefined;
-  const canManage = orgId
-    ? (orgs?.some(
-        (org) =>
-          org.id === orgId && (org.role === "owner" || org.role === "admin"),
-      ) ?? false)
-    : true;
+  } = useQuery(toolboxesListQuery(scope.owner));
 
   return (
-    <div className="space-y-6">
-      <div className="space-y-3">
-        <p className="text-sm text-muted-foreground">
-          Toolboxes are owner-scoped recipes (<code>build[]</code> +{" "}
-          <code>paths[]</code>) that, when enabled, are automatically compiled
-          into a <strong>toolset</strong> (the resulting build artifact) and
-          injected into every spawn for that user or org.
+    <OwnerScopeSection
+      scope={scope}
+      count={toolboxes?.length}
+      actions={
+        <Button size="sm" variant="outline" asChild>
+          <Link to="/settings/toolboxes/new" search={{ owner: scope.owner }}>
+            <Plus />
+            Add toolbox
+          </Link>
+        </Button>
+      }
+    >
+      {isPending ? (
+        <Skeleton className="h-16 w-full" />
+      ) : isError ? (
+        <p className="text-sm text-destructive">
+          {error instanceof Error ? error.message : "Failed to load"}
         </p>
-        <div className="flex flex-col gap-3 sm:flex-row sm:items-end sm:justify-between">
-          <div className="w-full sm:max-w-xs">
-            <OwnerScopeSelect
-              id="toolbox-scope"
-              personalLabel="My Toolboxes"
-              value={owner}
-              onChange={setOwner}
+      ) : toolboxes.length === 0 ? (
+        <p className="text-sm text-muted-foreground">No toolboxes yet.</p>
+      ) : (
+        <div className="space-y-2">
+          {toolboxes.map((toolbox) => (
+            <ToolboxRow
+              key={toolbox.id}
+              toolbox={toolbox}
+              owner={scope.owner}
+              // Publish requires toolbox-owner access (`canManage`).
+              canManage={scope.canManage}
+              artifact={artifactByName.get(toolboxArtifactName(toolbox))}
             />
-          </div>
-          <Button size="sm" asChild>
-            <Link to="/settings/toolboxes/new" search={{ owner }}>
-              <Plus />
-              Add toolbox
-            </Link>
-          </Button>
+          ))}
         </div>
-        {isPending ? (
-          <Skeleton className="h-16 w-full" />
-        ) : isError ? (
-          <p className="text-sm text-destructive">
-            {error instanceof Error ? error.message : "Failed to load"}
-          </p>
-        ) : toolboxes.length === 0 ? (
-          <p className="text-sm text-muted-foreground">
-            No toolboxes in this scope.
-          </p>
-        ) : (
-          <div className="space-y-2">
-            {toolboxes.map((toolbox) => (
-              <ToolboxRow
-                key={toolbox.id}
-                toolbox={toolbox}
-                owner={owner}
-                canManage={canManage}
-                artifact={artifactByName.get(toolboxArtifactName(toolbox))}
-              />
-            ))}
-          </div>
-        )}
-      </div>
-      <ToolsetsSection filter={(toolset) => !toolset.name.startsWith("tb/")} />
-    </div>
+      )}
+    </OwnerScopeSection>
   );
 }
 

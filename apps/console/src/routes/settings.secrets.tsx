@@ -1,15 +1,17 @@
 import { useQuery } from "@tanstack/react-query";
 import { createFileRoute } from "@tanstack/react-router";
 import { KeyRound, Loader2, Plus, Trash2 } from "lucide-react";
-import { type FormEvent, useEffect, useState } from "react";
-import { organizationsListQuery } from "@/api/queries/organizations";
+import { type FormEvent, useState } from "react";
 import {
   secretsListQuery,
   useCreateSecret,
   useDeleteSecret,
 } from "@/api/queries/secrets";
 import { ConfirmDialog } from "@/components/confirm-dialog";
-import { OrgSelect } from "@/components/org-select";
+import {
+  OwnerScopeSection,
+  OwnerScopeSections,
+} from "@/components/owner-scope-sections";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import {
@@ -23,44 +25,25 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Skeleton } from "@/components/ui/skeleton";
 import { formatRelativeTime } from "@/lib/formatters";
-import { pickDefaultOrgId } from "@/lib/orgs";
+import type { OwnerScope } from "@/lib/orgs";
 
 export const Route = createFileRoute("/settings/secrets")({
   component: SecretsPage,
 });
 
+/** Every org's secrets, personal org first. Global (org-less) secrets are
+ * server-managed and not editable from here. */
 function SecretsPage() {
-  const { data: orgs } = useQuery(organizationsListQuery());
-  const [orgId, setOrgId] = useState("");
-
-  // Default to the personal org (same pick as the spawn page). Global
-  // (org-less) secrets are server-managed and not editable from here.
-  useEffect(() => {
-    if (!orgId && orgs && orgs.length > 0) {
-      setOrgId(pickDefaultOrgId(orgs));
-    }
-  }, [orgs, orgId]);
-
   return (
-    <div className="space-y-3">
-      <div className="w-full sm:max-w-xs">
-        <OrgSelect
-          id="secret-org"
-          value={orgId}
-          onChange={setOrgId}
-          markPersonal
-        />
-      </div>
-      {orgId ? (
-        <SecretsList orgId={orgId} />
-      ) : (
-        <Skeleton className="h-16 w-full" />
-      )}
-    </div>
+    <OwnerScopeSections includeUser={false}>
+      {(scope) => <SecretsSection key={scope.owner} scope={scope} />}
+    </OwnerScopeSections>
   );
 }
 
-function SecretsList({ orgId }: { orgId: string }) {
+function SecretsSection({ scope }: { scope: OwnerScope }) {
+  // Org-only page (`includeUser={false}`): every scope has an org id.
+  const orgId = scope.orgId ?? "";
   const [createOpen, setCreateOpen] = useState(false);
   const {
     data: secrets,
@@ -70,13 +53,16 @@ function SecretsList({ orgId }: { orgId: string }) {
   } = useQuery(secretsListQuery(orgId));
 
   return (
-    <div className="space-y-3">
-      <div className="flex justify-end">
-        <Button size="sm" onClick={() => setCreateOpen(true)}>
+    <OwnerScopeSection
+      scope={scope}
+      count={secrets?.length}
+      actions={
+        <Button size="sm" variant="outline" onClick={() => setCreateOpen(true)}>
           <Plus />
           Add secret
         </Button>
-      </div>
+      }
+    >
       {isPending ? (
         <Skeleton className="h-16 w-full" />
       ) : isError ? (
@@ -84,9 +70,7 @@ function SecretsList({ orgId }: { orgId: string }) {
           {error instanceof Error ? error.message : "Failed to load"}
         </p>
       ) : secrets.length === 0 ? (
-        <p className="text-sm text-muted-foreground">
-          No secrets in this organization.
-        </p>
+        <p className="text-sm text-muted-foreground">No secrets yet.</p>
       ) : (
         <div className="space-y-2">
           {secrets.map((secret) => (
@@ -98,8 +82,9 @@ function SecretsList({ orgId }: { orgId: string }) {
         open={createOpen}
         onOpenChange={setCreateOpen}
         orgId={orgId}
+        orgName={scope.label}
       />
-    </div>
+    </OwnerScopeSection>
   );
 }
 
@@ -156,10 +141,12 @@ function AddSecretDialog({
   open,
   onOpenChange,
   orgId,
+  orgName,
 }: {
   open: boolean;
   onOpenChange: (open: boolean) => void;
   orgId: string;
+  orgName: string;
 }) {
   const createSecret = useCreateSecret();
   const [name, setName] = useState("");
@@ -195,7 +182,7 @@ function AddSecretDialog({
       <DialogContent>
         <form onSubmit={handleSubmit}>
           <DialogHeader>
-            <DialogTitle>Add secret</DialogTitle>
+            <DialogTitle>Add secret to {orgName}</DialogTitle>
           </DialogHeader>
           <div className="space-y-3 py-2">
             <div className="space-y-1">
