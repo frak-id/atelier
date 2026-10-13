@@ -96,11 +96,11 @@ describe("canAccessSandbox", () => {
     expect(canAccessSandbox(deps(), "mallory", labels)).toBe(false);
   });
 
-  test("a legacy sandbox with neither label stays open", () => {
-    expect(canAccessSandbox(deps(), "mallory", {})).toBe(true);
+  test("a sandbox with neither label is reachable by nobody", () => {
+    expect(canAccessSandbox(deps(), "mallory", {})).toBe(false);
     expect(
-      canAccessSandbox(deps(), "mallory", { metadata: {}, annotations: {} }),
-    ).toBe(true);
+      canAccessSandbox(deps(), "alice", { metadata: {}, annotations: {} }),
+    ).toBe(false);
   });
 
   test("a bypassed-auth (local/mock) server allows everything", () => {

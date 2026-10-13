@@ -1,4 +1,4 @@
-import { asc, eq, isNotNull } from "drizzle-orm";
+import { asc, eq } from "drizzle-orm";
 import { getDatabase } from "../../db/client.ts";
 import { organizations, orgMembers, users } from "../../db/schema.ts";
 import type { DirectoryUser, User } from "../../types.ts";
@@ -121,16 +121,6 @@ export class UserRepository {
       })
       .run();
     return user;
-  }
-
-  findFirstWithToken(): User | undefined {
-    const row = getDatabase()
-      .select()
-      .from(users)
-      .where(isNotNull(users.githubAccessToken))
-      .limit(1)
-      .get();
-    return row ? rowToUser(row) : undefined;
   }
 
   updatePersonalOrgId(userId: string, orgId: string): void {

@@ -68,13 +68,14 @@ beforeAll(async () => {
 
   const owner = mkUser("owner");
   const member = mkUser("member");
-  mkUser("stranger");
+  const stranger = mkUser("stranger");
   const org = control.organizationService.create("Acme", "ar-acme");
   control.orgMemberService.addMember(org.id, member.id, "member");
   labels = {
     owned: { metadata: { [OWNER]: owner.id }, annotations: { [ORG]: org.id } },
     mine: { metadata: { [OWNER]: member.id, k: "v" }, annotations: {} },
-    legacy: { metadata: {}, annotations: {} },
+    strays: { metadata: { [OWNER]: stranger.id }, annotations: {} },
+    unowned: { metadata: {}, annotations: {} },
   };
 
   const track = (_: unknown, fn: () => unknown) => fn();
@@ -253,9 +254,11 @@ describe("sandbox routes", () => {
     });
   }
 
-  test("a legacy unowned sandbox stays open to any authenticated caller", async () => {
-    const res = await request("stranger", "GET", "/v1/sandboxes/legacy");
-    expect(res.status).toBe(200);
+  test("a sandbox with no recorded owner or org is a 404 for everyone", async () => {
+    for (const who of ["stranger", "owner", "member"]) {
+      const res = await request(who, "GET", "/v1/sandboxes/unowned");
+      expect(res.status).toBe(404);
+    }
   });
 
   test("an unknown sandbox is a 404 even for a member", async () => {
@@ -447,7 +450,7 @@ describe("sandbox routes", () => {
       const res = await request("stranger", "GET", "/v1/sandboxes/owned");
       expect(res.status).toBe(200);
       const list = await request("stranger", "GET", "/v1/sandboxes");
-      expect(((await list.json()) as unknown[]).length).toBe(3);
+      expect(((await list.json()) as unknown[]).length).toBe(4);
       const snap = await request("stranger", "POST", "/v1/sandboxes", {
         source: { snapshot: "snap-owned" },
       });
@@ -476,7 +479,7 @@ describe("sandbox routes", () => {
     // The caller's own sandbox passes the guard.
     const ok = await request("stranger", "POST", path, {
       ...body,
-      sandboxId: "legacy",
+      sandboxId: "strays",
     });
     expect(ok.status).toBe(202);
     expect(calls).toEqual(["dispatch:mine"]);
@@ -491,9 +494,9 @@ describe("GET /v1/sandboxes", () => {
   }
 
   test("lists only the sandboxes the caller may reach", async () => {
-    expect(await ids("stranger")).toEqual(["legacy"]);
-    expect(await ids("owner")).toEqual(["legacy", "owned"]);
-    expect(await ids("member")).toEqual(["legacy", "mine", "owned"]);
+    expect(await ids("stranger")).toEqual(["strays"]);
+    expect(await ids("owner")).toEqual(["owned"]);
+    expect(await ids("member")).toEqual(["mine", "owned"]);
   });
 
   test("?owner=me and ?owner=<userId> filter on the creator", async () => {

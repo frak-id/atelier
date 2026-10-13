@@ -3,10 +3,7 @@
  * "list the repos I can access, and bake a prebuild for one in a click".
  *
  * Policy, not mechanism: this reads the user's own OAuth token (identity),
- * so it lives in control/. The token is ALWAYS the caller's own. It never goes
- * through `UserService.resolveGitHubToken`'s "any user with a token"
- * fallback, which is fine for cloning a repo but would list another user's
- * private repositories here.
+ * so it lives in control/. The token is ALWAYS the caller's own.
  *
  * Mock mode serves a fixed fixture so the whole flow is demoable without
  * GitHub. Local mode uses the host token `atelier local up` injects

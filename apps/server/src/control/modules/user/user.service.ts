@@ -61,11 +61,11 @@ export class UserService {
   }
 
   /**
-   * Single-tenant-friendly fallback: without a userId, falls back to any user
-   * in the table with a token. Multi-org-aware control should scope this by
-   * org membership instead (flagged as a v1 carryover, not re-solved here).
+   * The GitHub token to clone with on `userId`'s behalf: that user's own
+   * OAuth token, never anyone else's. A user without one gets `undefined`
+   * (public repos still clone; private ones fail loudly at clone time).
    */
-  resolveGitHubToken(userId?: string): string | undefined {
+  resolveGitHubToken(userId: string): string | undefined {
     // local/mock modes have no real GitHub OAuth token (the stored user's
     // token, if any, is a fake placeholder) — `atelier local up` instead
     // injects the host's own token via ATELIER_GITHUB_TOKEN. Returning
@@ -75,10 +75,6 @@ export class UserService {
     if (isAuthBypassed()) {
       return process.env.ATELIER_GITHUB_TOKEN?.trim() || undefined;
     }
-    if (userId) {
-      const token = this.getById(userId)?.githubAccessToken;
-      if (token) return token;
-    }
-    return this.userRepository.findFirstWithToken()?.githubAccessToken;
+    return this.getById(userId)?.githubAccessToken || undefined;
   }
 }

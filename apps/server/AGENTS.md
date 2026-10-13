@@ -74,8 +74,8 @@ exposes the existing capability so the GUI can offer a read-only attach.
 
 `control/sandbox-access.ts` (`canAccessSandbox`, pure) is the one rule for
 who may address a sandbox id: owner (`atelier.dev/owner-id`) or member of its
-org (`atelier.dev/org-id`); legacy unowned sandboxes and bypassed-auth modes
-are open. `api/sandbox-guard.ts` binds it: ONE `onBeforeHandle` guard per
+org (`atelier.dev/org-id`); bypassed-auth modes are open, a sandbox with
+neither label is reachable by nobody. `api/sandbox-guard.ts` binds it: ONE `onBeforeHandle` guard per
 router whose `:id` is a sandbox (`/v1` after the jobs sub-router,
 `/sessions/sandboxes/:id/{agent,terminal}`), `requireSandboxAccess` in the WS
 `open` handlers and every MCP tool taking a sandbox id, `accessibleSandboxes`

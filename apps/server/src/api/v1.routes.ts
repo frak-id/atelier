@@ -449,6 +449,7 @@ export function forkSandboxForUser(
  * credential-rotation primitive). The owner is re-resolved from the persisted
  * owner-id metadata, so it's stable regardless of who triggers the resume,
  * and fresh git files are merged over the persisted (possibly stale) ones.
+ * A sandbox with no recorded owner gets no token (never someone else's).
  * Shared by `POST /v1/sandboxes/:id/resume` and the Launchpad wake-up.
  * Throws `NotFoundError` for an unknown sandbox.
  */
@@ -465,7 +466,9 @@ export async function withFreshCredentials(
     identity: ownerUser
       ? { name: ownerUser.username, email: ownerUser.email }
       : undefined,
-    githubToken: control.userService.resolveGitHubToken(ownerId),
+    githubToken: ownerId
+      ? control.userService.resolveGitHubToken(ownerId)
+      : undefined,
   });
   return { ...body, files: [...(body.files ?? []), ...gitFiles] };
 }

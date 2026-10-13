@@ -78,7 +78,7 @@ const LABELS: Record<
   { metadata: Record<string, string>; annotations: Record<string, string> }
 > = {
   shared: { metadata: { [OWNER]: "mcp-acc-owner" }, annotations: {} },
-  legacy: { metadata: {}, annotations: {} },
+  unowned: { metadata: {}, annotations: {} },
 };
 
 function fakeContainer(): ServerContainer {
@@ -231,9 +231,9 @@ describe("MCP sandbox access", () => {
       await mcp.close();
       return res.data.map((s: { id: string }) => s.id).sort();
     };
-    expect(await idsFor(stranger)).toEqual(["legacy"]);
-    expect(await idsFor(member)).toEqual(["legacy", "shared"]);
-    expect(await idsFor(owner)).toEqual(["legacy", "shared"]);
+    expect(await idsFor(stranger)).toEqual([]);
+    expect(await idsFor(member)).toEqual(["shared"]);
+    expect(await idsFor(owner)).toEqual(["shared"]);
   });
 
   test("create_sandbox from a sandbox's snapshot needs access to that sandbox", async () => {
