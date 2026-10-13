@@ -45,6 +45,38 @@ const DEFAULT_LOG_DIR: &str = "/var/log/sandbox";
 const SHELL_USER: &str = "dev";
 const SHELL_HOME: &str = "/home/dev";
 
+/// What the console's terminal supports, for programs that can't tell from
+/// `TERM` alone. Terminal sessions are only ever rendered by the console's
+/// xterm.js (apps/console/src/components/terminal-view.tsx), so these
+/// describe it exactly. Applied before the pod-wide env, which can override
+/// any of them.
+const TERMINAL_CAPABILITIES: &[(&str, &str)] = &[
+    // xterm.js renders 24-bit SGR colour; without this hint truecolor-aware
+    // programs (pi, bat, delta, neovim, ...) fall back to the 256 palette.
+    ("COLORTERM", "truecolor"),
+    // pi turns these on only for terminals it recognises by name. xterm.js
+    // handles OSC 8 hyperlinks natively, and iTerm2 inline images through
+    // @xterm/addon-image (which has no Kitty graphics support).
+    ("PI_HYPERLINKS", "1"),
+    ("PI_IMAGE_PROTOCOL", "iterm2"),
+];
+
+/// The shell's environment in application order (a later entry wins):
+/// terminal capabilities, then the pod-wide env, then the terminal type and
+/// identity the shell must have.
+fn shell_env(pod_env: HashMap<String, String>) -> Vec<(String, String)> {
+    let capabilities = TERMINAL_CAPABILITIES
+        .iter()
+        .map(|(k, v)| (k.to_string(), v.to_string()));
+    let fixed = [
+        ("TERM", "xterm-256color"),
+        ("HOME", SHELL_HOME),
+        ("USER", SHELL_USER),
+    ]
+    .map(|(k, v)| (k.to_string(), v.to_string()));
+    capabilities.chain(pod_env).chain(fixed).collect()
+}
+
 /// The wire shape the runtime expects (`TerminalSession` in
 /// apps/server/src/runtime/agent/agent.types.ts).
 #[derive(Clone, Serialize)]
@@ -134,13 +166,10 @@ impl TerminalRegistry {
         // new session + process group (EPERM otherwise, since a group leader
         // can't setsid). The shell becomes its own group leader, so its pid is
         // the pgid we signal on delete.
-        // Pod-wide env, then terminal-friendly defaults the shell expects.
-        for (k, v) in self.store.get().map(|c| c.env.clone()).unwrap_or_default() {
-            cmd.env(k, v);
-        }
-        cmd.env("TERM", "xterm-256color");
-        cmd.env("HOME", SHELL_HOME);
-        cmd.env("USER", SHELL_USER);
+        // Terminal capabilities, pod-wide env, then what the shell expects.
+        cmd.envs(shell_env(
+            self.store.get().map(|c| c.env.clone()).unwrap_or_default(),
+        ));
         cmd.current_dir(req.workdir.as_deref().unwrap_or(SHELL_HOME));
 
         // uid drop to `dev` happens inside setup_pty's pre_exec (after TIOCSCTTY).
@@ -403,5 +432,44 @@ async fn handle_conn(stream: TcpStream, id: String, registry: Arc<TerminalRegist
     tokio::select! {
         _ = &mut out_task => in_task.abort(),
         _ = &mut in_task => out_task.abort(),
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// Resolve like `Command::envs` does: the last entry for a key wins.
+    fn resolved(pod: &[(&str, &str)]) -> HashMap<String, String> {
+        let pod_env = pod
+            .iter()
+            .map(|(k, v)| (k.to_string(), v.to_string()))
+            .collect();
+        shell_env(pod_env).into_iter().collect()
+    }
+
+    #[test]
+    fn advertises_console_terminal_capabilities() {
+        let env = resolved(&[]);
+        assert_eq!(env["COLORTERM"], "truecolor");
+        assert_eq!(env["PI_HYPERLINKS"], "1");
+        assert_eq!(env["PI_IMAGE_PROTOCOL"], "iterm2");
+        assert_eq!(env["TERM"], "xterm-256color");
+    }
+
+    #[test]
+    fn pod_env_overrides_capabilities_and_passes_through() {
+        let env = resolved(&[("PI_IMAGE_PROTOCOL", "none"), ("FOO", "bar")]);
+        assert_eq!(env["PI_IMAGE_PROTOCOL"], "none");
+        assert_eq!(env["FOO"], "bar");
+        assert_eq!(env["COLORTERM"], "truecolor");
+    }
+
+    #[test]
+    fn shell_identity_is_not_overridable() {
+        let env = resolved(&[("TERM", "dumb"), ("HOME", "/root"), ("USER", "root")]);
+        assert_eq!(env["TERM"], "xterm-256color");
+        assert_eq!(env["HOME"], SHELL_HOME);
+        assert_eq!(env["USER"], SHELL_USER);
     }
 }
