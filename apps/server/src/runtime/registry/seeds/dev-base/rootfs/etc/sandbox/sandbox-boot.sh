@@ -139,7 +139,7 @@ done
 # The image ships NO /etc/ssh/ssh_host_* (see the Dockerfile): baking them
 # in would share one host key across every sandbox AND ship the private
 # halves inside the public image. Generate fresh, per-boot keys here —
-# BEFORE starting the agent below — so `GET /ssh/host-keys` (apps/agent-v2/
+# BEFORE starting the agent below — so `GET /ssh/host-keys` (apps/agent/
 # src/ssh.rs) can report the real key as soon as the agent is reachable; the
 # server pins whatever it gets back into the sshpiper Pipe / in-server proxy
 # right after boot. `-A` only (re)generates keys that are missing, so this is

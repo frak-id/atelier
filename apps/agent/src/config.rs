@@ -1,4 +1,4 @@
-//! The v2 agent config schema — a strict *projection* of `@atelier/spec`'s
+//! The agent config schema — a strict *projection* of `@atelier/spec`'s
 //! `SandboxSpec` (packages/spec/src/sandbox-spec.ts), never a reshape.
 //!
 //! What crosses into the guest: `sandboxId`, `env`, `processes[]`, `ports[]`,
@@ -69,7 +69,7 @@ pub enum RestartPolicy {
 ///
 /// `user` is an agent-side mechanism knob (uid selection at spawn) that the
 /// spec does not type yet — the runtime defaults it; flagged upstream as a
-/// `ProcessSchema` gap (v1 hardcoded harness=dev, services=root).
+/// `ProcessSchema` gap.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct ProcessEntry {

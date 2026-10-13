@@ -15,10 +15,9 @@
 //!   `<pod IP>:<port>` (the one address the process left free) and bridge.
 //!   A tool on `0.0.0.0` is reachable already and is left alone.
 //!
-//! v1 hardcoded a single dev-port forwarder; v2 reconciles a task per
-//! `ports[]` entry against every pushed config, symmetric with the
-//! supervisor's config-watch: a re-pushed config (spec update, resume) that
-//! adds or drops a port adds or drops its task.
+//! The forwarder reconciles a task per `ports[]` entry against every pushed
+//! config, symmetric with the supervisor's config-watch: a re-pushed config
+//! (spec update, resume) that adds or drops a port adds or drops its task.
 
 use std::collections::HashMap;
 use std::net::{IpAddr, Ipv4Addr, Ipv6Addr, SocketAddr, UdpSocket};

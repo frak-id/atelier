@@ -2,7 +2,7 @@
 # Cutover gate for a Kata RuntimeClass: does atelier's sandbox pod shape work
 # on it, and does the pod memory limit really bound the VM?
 #
-#   infra/k8s/v2/kata-eval/validate.sh <runtimeClass> [rollbackClass]
+#   infra/k8s/kata-eval/validate.sh <runtimeClass> [rollbackClass]
 #
 # Runs in its own namespace ($NS, default kata-eval), deleted at the end
 # (KEEP=1 to keep it). Exit 0 only if every check passes. See README.md.

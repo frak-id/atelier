@@ -241,7 +241,7 @@ export class AgentClient {
   }
 
   /**
-   * Push the projected config into the guest agent (`PUT /config`). The v2
+   * Push the projected config into the guest agent (`PUT /config`). The
    * agent stores + validates it but does NOT autostart processes — the runtime
    * drives the phase order (postCreate -> reconcile -> postStart) explicitly.
    * Config is pushed, never ConfigMap-mounted: `env` may hold resolved secrets
@@ -350,7 +350,7 @@ export class AgentClient {
     return false;
   }
 
-  // ── v2 supervised process control (agent-v2 `/processes`) ───────────────
+  // ── Supervised process control (agent `/processes`) ──────────────────────
 
   async processList(sandboxId: string): Promise<AgentProcessListResult> {
     if (isMock()) return { processes: [] };
@@ -403,7 +403,7 @@ export class AgentClient {
   }
 
   /**
-   * Build+push a toolset artifact from declared home path-sets (agent-v2
+   * Build+push a toolset artifact from declared home path-sets (agent
    * `POST /toolsets/build`). The agent tars the paths and `oras push`es them
    * to `target` from inside the pod; the runtime never handles the bytes.
    * Returns the pushed manifest digest (`sha256:…`).
@@ -428,7 +428,7 @@ export class AgentClient {
 
   /**
    * Capture a live sandbox's declared path-sets into a toolset artifact
-   * (agent-v2 `POST /toolsets/capture`). The agent tars `paths` MINUS the
+   * (agent `POST /toolsets/capture`). The agent tars `paths` MINUS the
    * merged exclude globs, secret-scans the included files (failing unless a
    * finding is covered by `overrides`), and `oras push`es to `target` —
    * mirrors `buildToolset`'s push tail. Returns the pushed manifest digest.
@@ -457,7 +457,7 @@ export class AgentClient {
   }
 
   /**
-   * Assemble the `/home/dev` overlay before the files/env phase (agent-v2
+   * Assemble the `/home/dev` overlay before the files/env phase (agent
    * `POST /toolsets`, toolset-overlay-squashfs.md §5). `references` are full,
    * digest-pinned pull refs (`<registry>/toolsets/<name>@sha256:…`), ordered
    * — later wins (topmost overlay lower). The agent pulls each squashfs blob

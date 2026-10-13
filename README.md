@@ -48,7 +48,7 @@ Two ways to run Atelier, depending on what you have.
 
 ### Path 1 — You have a Kubernetes cluster
 
-Apply the server + console manifests under [`infra/k8s/v2`](infra/k8s/v2/README.md)
+Apply the server + console manifests under [`infra/k8s`](infra/k8s/README.md)
 (namespaces, RBAC, a config ConfigMap, a Secret for GitHub OAuth, the
 Deployment/Service/Ingress). Everything else is configured from the console on
 first connection, or via the CLI. Then open your dashboard domain, sign in with
@@ -170,7 +170,7 @@ bun run --filter @atelier/console dev  # Console: http://localhost:5174
 
 The repo is a Bun monorepo: `@atelier/server` (Bun/Elysia) and
 `@atelier/console` (React 19 / TanStack Router) apps, the in-pod
-`atelier-agent` (Rust, `apps/agent-v2`), the `atelier` host CLI (`apps/cli`),
+`atelier-agent` (Rust, `apps/agent`), the `atelier` host CLI (`apps/cli`),
 and the `@atelier/spec` / `@atelier/compose` / `@atelier/shared` packages.
 See [`AGENTS.md`](AGENTS.md) for the full layout.
 

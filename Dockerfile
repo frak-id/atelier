@@ -99,13 +99,13 @@ COPY apps/server/drizzle ./drizzle
 # via ATELIER_SEEDS_DIR.
 COPY apps/server/src/runtime/registry/seeds ./seeds
 
-# The sandbox-agent seed keeps its Rust source in apps/agent-v2 (single source
+# The sandbox-agent seed keeps its Rust source in apps/agent (single source
 # of truth); only its image.json is committed under seeds/. Copy the build
 # context in here so the deployed server can build it as a seed (in dev the
-# loader falls back to apps/agent-v2 directly via `contextFrom`).
-COPY apps/agent-v2/Dockerfile apps/agent-v2/Cargo.toml apps/agent-v2/Cargo.lock \
-     ./seeds/sandbox-agent-v2/
-COPY apps/agent-v2/src ./seeds/sandbox-agent-v2/src
+# loader falls back to apps/agent directly via `contextFrom`).
+COPY apps/agent/Dockerfile apps/agent/Cargo.toml apps/agent/Cargo.lock \
+     ./seeds/sandbox-agent/
+COPY apps/agent/src ./seeds/sandbox-agent/src
 
 ENV NODE_ENV=production \
     ATELIER_SERVER_MODE=production \
@@ -131,7 +131,7 @@ RUN mkdir -p /var/cache/nginx /tmp && \
 
 RUN rm /etc/nginx/conf.d/default.conf
 
-# Console nginx config (SPA serving + reverse proxy to the v2 server)
+# Console nginx config (SPA serving + reverse proxy to the server)
 COPY infra/nginx/console.conf /etc/nginx/conf.d/default.conf
 
 # Console static files

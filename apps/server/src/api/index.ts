@@ -1,5 +1,5 @@
 /**
- * The HTTP shell (atelier-v2 §3.1): `/v1/* → runtime` (through control's
+ * The HTTP shell (design.md §3.1): `/v1/* → runtime` (through control's
  * authn + enrichment), `/api/* → control CRUD`, `/sessions/* → sessions`,
  * `/mcp → same three`.
  */
@@ -29,7 +29,7 @@ export function createApp(container: ServerContainer) {
         path: "/swagger",
         documentation: {
           info: {
-            title: "Atelier v2 Server API",
+            title: "Atelier Server API",
             version: "0.1.0",
             description:
               "A headless sandbox runtime. /v1 is mechanism, /api is policy, " +
@@ -92,7 +92,7 @@ export function createApp(container: ServerContainer) {
     .use(createSessionsRoutes(container))
     .use(createMcpRoutes(container))
     .get("/", () => ({
-      name: "Atelier Server (v2)",
+      name: "Atelier Server",
       version: "0.1.0",
       docs: "/swagger",
     }));

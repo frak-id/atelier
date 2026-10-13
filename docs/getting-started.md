@@ -45,15 +45,15 @@ helm install cert-manager jetstack/cert-manager \
 #    the workspace volume; see docs/setup.md for the two node settings)
 helm install kata-deploy \
   oci://ghcr.io/kata-containers/kata-deploy-charts/kata-deploy \
-  -n default -f infra/k8s/v2/kata-atelier-values.yaml
+  -n default -f infra/k8s/kata-atelier-values.yaml
 
 # 5. Cluster infra atelier references by name (not bundled): a ClusterIssuer,
 #    TopoLVM + a VolumeSnapshotClass, an OCI registry (e.g. Zot) and BuildKit
 
-# 6. Atelier server + console app — see infra/k8s/v2/README.md
+# 6. Atelier server + console app — see infra/k8s/README.md
 ```
 
-The app config (`infra/k8s/v2/30-config.yaml`) needs your domain, the names of
+The app config (`infra/k8s/30-config.yaml`) needs your domain, the names of
 those cluster resources, and a Secret with your GitHub OAuth app.
 
 Full step-by-step instructions: [Setup Guide](setup.md).

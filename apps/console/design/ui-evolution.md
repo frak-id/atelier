@@ -1,6 +1,6 @@
 # Atelier Console — UI Evolution
 
-> Follow-up to the v2 redesign (`IMPLEMENTATION_PLAN.md`). Captures the next
+> Follow-up to the console redesign (`IMPLEMENTATION_PLAN.md`). Captures the next
 > wave of changes decided with the user + two oracle consultations
 > (`opus-4-8` for the harness web UI, `claude-fable-5` for the template/UX
 > reframe). Raw oracle notes: `apps/console/design/oracle-ui-evolution.md`.

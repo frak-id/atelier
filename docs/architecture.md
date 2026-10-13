@@ -30,8 +30,9 @@
 | Registry | **Zot** | Lightweight OCI registry for base images + toolsets |
 | Database | **SQLite** (Drizzle ORM) | Sandbox, control-plane, and session state |
 
-There is no build-from-UI feature — base images are built out-of-band via
-`infra/k8s/v2/deploy.sh` / BuildKit, not triggered by the server at runtime.
+Base images are built in-cluster by the server's image builder from the
+embedded seeds (`apps/server/src/runtime/registry/seeds/`), triggered from the
+console or CLI; `infra/k8s/deploy.sh` can also bootstrap them out-of-band.
 
 ---
 
@@ -42,18 +43,18 @@ atelier/
 ├── apps/
 │   ├── server/           # Server (ElysiaJS) — runtime/control/sessions/api
 │   ├── console/          # Web GUI (React + Vite)
-│   ├── cli/               # @atelier/cli — host CLI (compiled Bun binary)
-│   └── agent-v2/          # In-pod agent (Rust — lightweight, no AVX)
+│   ├── cli/              # @konfeature/atelier — host CLI (Node, npm package)
+│   ├── agent/            # In-pod agent (Rust — lightweight, no AVX)
+│   └── steery-adapter/   # Steery adapter (Rust)
 ├── packages/
-│   ├── shared/            # TypeBox schemas, config loaders (cross-app)
-│   ├── spec/               # @atelier/spec — the SandboxSpec seam contract
-│   └── compose/            # @atelier/compose — harness/preset/spec-merge SDK
+│   ├── shared/           # TypeBox schemas, config loaders (cross-app)
+│   ├── spec/             # @atelier/spec — the SandboxSpec seam contract
+│   └── compose/          # @atelier/compose — harness/preset/spec-merge SDK
 ├── infra/
-│   ├── images/             # Base image Dockerfiles (dev-base, dev-cloud)
-│   ├── nginx/               # Console nginx config (console.conf)
-│   └── k8s/v2/              # Server + console app manifests (the deploy)
+│   ├── k8s/              # Server + console app manifests (the deploy)
+│   └── nginx/            # Console nginx config (console.conf)
 └── scripts/
-    └── bump-version.ts      # Release version bump
+    └── bump-version.ts   # Release version bump
 ```
 
 ---
@@ -165,7 +166,7 @@ External traffic:
 ┌─────────────────────────────────────────────────────────────────┐
 │                     K8s Ingress                                 │
 │                                                                 │
-│  Static Routes (infra/k8s/v2-managed Ingress):                  │
+│  Static Routes (infra/k8s-managed Ingress):                  │
 │  └── {domain.dashboard}                                         │
 │      ├── /v1/*, /api/*, /sessions/*, /auth/*, /health, /swagger*│
 │      │   → server container, same pod, :4000                    │
@@ -185,7 +186,7 @@ External traffic:
 
 Server and console run as two containers in **one pod** (same origin, so the
 `sandbox_token` cookie and WS/SSE need no CORS) — see
-`infra/k8s/v2/50-deployment.yaml`.
+`infra/k8s/50-deployment.yaml`.
 
 ---
 

@@ -1,5 +1,5 @@
 /**
- * The sessions module's public interface. BOUNDARY RULE (atelier-v2 §3.1):
+ * The sessions module's public interface. BOUNDARY RULE (design.md §3.1):
  * sessions/ talks to sandboxes only through the runtime API (attach + files),
  * never a private channel — and must not import control/.
  */

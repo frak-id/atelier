@@ -1,6 +1,6 @@
 /**
  * Local-config sync manifests — "sync my local agent config into a sandbox"
- * as a CLI primitive (atelier-v2 §1 gap list; §4 `atelier sync`). Each
+ * as a CLI primitive (design.md §1 gap list; §4 `atelier sync`). Each
  * manifest lists the local paths `atelier sync <name> <sandbox>:<path>`
  * walks; the CLI diffs them against the sandbox and pushes via
  * `PATCH /v1/sandboxes/:id/files`.

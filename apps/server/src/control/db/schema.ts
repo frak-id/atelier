@@ -1,5 +1,5 @@
 /**
- * Control's tables. Per atelier-v2 §3.1: "everything identity-shaped lives
+ * Control's tables. Per design.md §3.1: "everything identity-shaped lives
  * here and ONLY here". No FK to runtime's `sandboxes`/`snapshots` tables —
  * control treats the runtime as an authenticated principal talks to, not a
  * database it joins against.

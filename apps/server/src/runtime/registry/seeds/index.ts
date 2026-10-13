@@ -2,7 +2,7 @@
  * Embedded base-image "seeds" — the server ships these Dockerfile+rootfs
  * build contexts (`apps/server/src/runtime/registry/seeds/<name>/`) so a base
  * image is no longer built out-of-band at deploy time (see
- * `infra/k8s/v2/deploy.sh`'s old `build_devbase` step): the console/CLI list
+ * `infra/k8s/deploy.sh`'s old `build_devbase` step): the console/CLI list
  * them via `GET /v1/images/templates` and trigger an in-cluster build through
  * `ImageBuilderService`, which pushes the result to the operator's own
  * registry. Users may also bring their own Dockerfile or register an
@@ -15,11 +15,11 @@
  *     seed's Dockerfile `FROM`s another seed's *resulting* image, not a
  *     public tag.
  *   - `substitutions`: registry-relative tokens baked into the Dockerfile
- *     (`FROM atelier/dev-base:latest`, `COPY --from=zot.../sandbox-agent-v2`)
- *     that must be rewritten to the operator's actual registry + a resolved
- *     digest before the build runs elsewhere. This loader only DECLARES which
- *     tokens exist; `ImageBuilderService` (not yet built — a later worker)
- *     performs the actual rewrite via `ImageRegistryService.resolveImageReference`.
+ *     (`FROM atelier/dev-base:latest`) that must be rewritten to the
+ *     operator's actual registry + a resolved digest before the build runs
+ *     elsewhere. This loader only DECLARES which tokens exist;
+ *     `ImageBuilderService` performs the rewrite via
+ *     `ImageRegistryService.resolveImageReference`.
  */
 import { existsSync, readdirSync, readFileSync, statSync } from "node:fs";
 import { dirname, join } from "node:path";
@@ -32,8 +32,8 @@ import { Value } from "@sinclair/typebox/value";
  * `COPY --from=…`) that points at ANOTHER seed's resulting image and must be
  * rewritten to the operator's registry + a resolved digest at build time.
  * `seed` names the sibling seed (which must appear in `dependsOn`). The
- * in-pod agent image is one such sibling seed (`sandbox-agent-v2`), so it
- * needs no special-cased kind. */
+ * in-pod agent is not a substitution: the base seeds take it as the
+ * `AGENT_IMAGE` build arg (config `sandbox.agentImage`). */
 const SeedSubstitutionSchema = Type.Object(
   {
     token: Type.String(),
@@ -59,7 +59,7 @@ const SeedManifestFileSchema = Type.Object(
      * directory carries no Dockerfile — the "source stays in apps/, copied in
      * at server-build time" seam (the agent seed: image.json is committed
      * here, the Rust context is COPYed in for the deployed image, and in dev
-     * this points back at `apps/agent-v2`). Ignored once a local Dockerfile
+     * this points back at `apps/agent`). Ignored once a local Dockerfile
      * is present (the copied-in / prod case). */
     contextFrom: Type.Optional(Type.String()),
   },
@@ -91,7 +91,7 @@ let cache: SeedManifest[] | undefined;
 /** A seed's build context is its own directory when that carries a Dockerfile
  * (a normal seed, or the agent seed after its Rust context was COPYed in for
  * the deployed image). Otherwise fall back to `contextFrom` (dev: the agent
- * seed borrows `apps/agent-v2`), located by walking up from SEEDS_DIR until
+ * seed borrows `apps/agent`), located by walking up from SEEDS_DIR until
  * the referenced path with a Dockerfile is found. */
 function resolveContextDir(seedDir: string, contextFrom?: string): string {
   if (existsSync(join(seedDir, "Dockerfile"))) return seedDir;

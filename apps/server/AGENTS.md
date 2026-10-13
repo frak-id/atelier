@@ -1,8 +1,8 @@
-# Atelier Server (v2)
+# Atelier Server
 
-The v2 deployable: `apps/server` ("the Atelier server", atelier-v2 §3.1).
+The server deployable: `apps/server` ("the Atelier server", design.md §3.1).
 One process, three internal modules with import boundaries enforced by
-`scripts/check-boundaries.ts`, not convention. See `docs/proposals/atelier-v2.md` §6.
+`scripts/check-boundaries.ts`, not convention. See `docs/design.md` §3.
 
 ## Structure
 
@@ -108,30 +108,25 @@ lives only in `integrations/<id>/`.
 
 See `docs/integrations/README.md`.
 
-## Known gaps (tracked, not silent)
+## Status notes & known gaps
 
-- **M2 COMPLETE — runtime fully on the v2 agent.** `runtime/agent-config.ts`
-  (`specToAgentConfig`) losslessly projects the spec onto the v2 agent
-  (`apps/agent-v2`); boot pushes config via `PUT /config` (never
-  ConfigMap-mounted) + `files/write`, then drives the phase order (postCreate
-  -> reconcile -> primary `/health` gate -> postStart). Live-ops routes
-  (process start/stop/logs/status, attach, addProcess) all target the v2
+- **Runtime runs on the in-pod agent (`apps/agent`).**
+  `runtime/agent-config.ts` (`specToAgentConfig`) losslessly projects the
+  spec onto the agent; boot pushes config via `PUT /config` (never
+  ConfigMap-mounted) + `files/write`, then drives the phase order
+  (postCreate -> reconcile -> primary `/health` gate -> postStart). Live-ops
+  routes (process start/stop/logs/status, attach, addProcess) all target the
   agent's `/processes` + unified attach bridge (:9997). The agent image is
-  built from `apps/agent-v2` (self-building multi-stage image: the release
-  workflow, or `infra/k8s/v2/deploy.sh agent` in-cluster); the
-  in-pod binary path stays `/usr/local/bin/sandbox-agent` (dev-base COPYs
-  agent-v2's `/atelier-agent` there, so `sandbox-boot.sh` is unchanged).
-  Deferred to M3/M6: `agent.operations.serviceList` + `sessions/acp` still use
-  the v1 `service*`/`acp*` client methods (migrate then delete them).
-- **Event bus / dashboard SSE** (auth-sync watcher, cliproxy refresh) are
-  v1 features not yet ported — deferred to the milestone that needs them
-  (§6 milestones 3–4), not silently dropped. Prebuild staleness *is*
-  ported: `index.ts` schedules `refreshStalePrebuilds` +
-  `pruneUnusedPrebuilds` as a `Bun.cron("*/30 * * * *")` job, gated on the
-  `prebuild.gitTracking` config and skipped in mock mode.
-- **Org resolution in `/v1/sandboxes`** is a stub (`orgId = undefined`) —
-  saved specs and secrets are org-scoped in the schema already; wiring the
-  request → org lookup is pending real multi-org product decisions.
+  built from `apps/agent` (self-building multi-stage image: the release
+  workflow, or `infra/k8s/deploy.sh agent` in-cluster); the in-pod binary
+  path stays `/usr/local/bin/sandbox-agent` (dev-base COPYs the agent's
+  `/atelier-agent` there, so `sandbox-boot.sh` is unchanged).
+- **No event bus.** The original POC's auth-sync watcher and cliproxy
+  refresh were not carried over; add them when a feature needs them.
+  Prebuild staleness is handled: `index.ts` schedules
+  `refreshStalePrebuilds` + `pruneUnusedPrebuilds` as a
+  `Bun.cron("*/30 * * * *")` job, gated on the `prebuild.gitTracking`
+  config and skipped in mock mode.
 - **Toolset tier (composed-prebuild-volumes.md) is COMPLETE end-to-end.**
   Built (`POST /v1/toolsets`) + captured (`POST /sandboxes/:id/toolsets/
   capture`) artifacts, agent materialize before files/env, `shared-binaries`

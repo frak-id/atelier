@@ -106,7 +106,7 @@ export const KubernetesConfigSchema = Type.Object(
     /** Path to kubeconfig file (ignored when running in-cluster) */
     kubeconfig: Type.String({ default: "/etc/rancher/k3s/k3s.yaml" }),
     /** Kata Containers runtime class name: the runtime-rs custom runtime from
-     * infra/k8s/v2/kata-atelier-values.yaml (guest RAM == pod memory limit) */
+     * infra/k8s/kata-atelier-values.yaml (guest RAM == pod memory limit) */
     runtimeClass: Type.String({ default: "kata-atelier-clh-rs" }),
     /** Ingress class name for dynamically created ingresses (e.g., traefik, nginx) */
     ingressClassName: Type.String({ default: "" }),
@@ -309,7 +309,7 @@ export const ImageBuilderConfigSchema = Type.Object(
      * stays selectable. `docker` is the local/remote daemon backend used by
      * `atelier local up` — it stays the schema default because it's what
      * local mode needs; Kubernetes deployments set `kind` explicitly (see
-     * `infra/k8s/v2/30-config.yaml`).
+     * `infra/k8s/30-config.yaml`).
      */
     kind: Type.Union(
       [

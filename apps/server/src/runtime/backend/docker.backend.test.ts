@@ -11,7 +11,7 @@
  *
  * OPT-IN — never runs in the normal (mock) suite. Requires a Docker daemon, the
  * agent image, and an explicit flag, and forces non-mock mode only then:
- *   docker build -t atelier-agent:local apps/agent-v2
+ *   docker build -t atelier-agent:local apps/agent
  *   ATELIER_DOCKER_IT=1 bun test src/runtime/backend/docker.backend.test.ts
  */
 

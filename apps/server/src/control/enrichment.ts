@@ -1,6 +1,6 @@
 /**
  * Bounded spec enrichment — the mutations control performs on a spec as it
- * crosses the seam (atelier-v2 §3.2):
+ * crosses the seam (design.md §3.2):
  *   (a) secret resolution — replace `{"$secret": name}` references with values;
  *   (b) org-policy injection — append operator-mandated entries (an audit
  *       process, a compliance file) from the org's policy spec;

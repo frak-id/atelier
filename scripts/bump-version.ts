@@ -1,6 +1,6 @@
 #!/usr/bin/env bun
 /**
- * Bump version across the workspace packages and the Rust agent (agent-v2).
+ * Bump version across the workspace packages and the Rust agent (`apps/agent`).
  *
  * Usage:
  *   bun run scripts/bump-version.ts patch
@@ -21,8 +21,8 @@ const PACKAGE_JSON_PATHS = [
   "apps/cli/package.json",
 ];
 
-const CARGO_TOML_PATH = "apps/agent-v2/Cargo.toml";
-const CARGO_LOCK_PATH = "apps/agent-v2/Cargo.lock";
+const CARGO_TOML_PATH = "apps/agent/Cargo.toml";
+const CARGO_LOCK_PATH = "apps/agent/Cargo.lock";
 const CARGO_CRATE_NAME = "atelier-agent";
 
 // The CLI's `--version` string is injected by esbuild at build time from

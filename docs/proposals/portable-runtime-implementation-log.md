@@ -3,7 +3,7 @@
 Live record of executing steps 1–4 of
 [`portable-runtime-backends.md`](./portable-runtime-backends.md): the
 `SandboxBackend`/`VolumeBackend` extraction, the pluggable `SshGateway`,
-dual-format prebuild artifacts, and the `Tar` blob rung in `agent-v2`.
+dual-format prebuild artifacts, and the `Tar` blob rung in `apps/agent`.
 
 This file tracks **decisions, short-circuits, oracle consultations, and
 plan-compliance notes** as they happen. Newest entries at the bottom of each
@@ -314,10 +314,10 @@ stays `sshpiper` until that spike passes on `atelier.hetzner-staging.frak.id`.
 
 ---
 
-## Step 4 — `Tar` blob rung in agent-v2 (done before step 3)
+## Step 4 — `Tar` blob rung in apps/agent (done before step 3)
 
 **Proposal target:** add a `Tar` variant to `BlobFormat` + a capability probe /
-copy fallback in `apps/agent-v2/src/toolset.rs`, so the agent no longer
+copy fallback in `apps/agent/src/toolset.rs`, so the agent no longer
 hard-errors when the guest kernel can mount neither erofs nor squashfs — the
 real portability enabler for locked-down/rootless (proposal §6-7).
 
@@ -430,7 +430,7 @@ an OCI-tar prebuild would build on, so the follow-up has its foundation.
 | 1 — SandboxBackend/VolumeBackend extraction | done | `0a77e0ff` |
 | 2 — pluggable SshGateway (sshpiper optional) | done | `242de191` |
 | 2b — in-server ssh2 listener + host-key-in-control-DB | done (k8s; live sftp/Remote-SSH spike pending) | _this change_ |
-| 4 — Tar blob rung in agent-v2 | done | `ae694560` |
+| 4 — Tar blob rung in apps/agent | done | `ae694560` |
 | 3 — dual-format prebuild seam + config | done (OCI-tar leaf deferred) | _this commit_ |
 
 **Deferred, infra-gated follow-ups** (each needs a live cluster/registry/guest to
@@ -505,7 +505,7 @@ skips it with zero config-mode contamination.
 ### SHORT-CIRCUIT — full dev-base boot (materialize) not run here
 
 A full `boot()` with real toolset materialization needs the `dev-base` sandbox
-image — whose Dockerfile `COPY --from=zot.zot.svc:5000/sandbox-agent-v2` pulls
+image — whose Dockerfile `COPY --from=zot.zot.svc:5000/sandbox-agent` pulls
 the agent from the *cluster-internal* zot registry, unreachable locally. So the
 materialize/overlay tail (proven separately on k8s) is stubbed in the IT and the
 full-image boot is the documented next validation, not a blind build. The bare
@@ -598,7 +598,7 @@ the committed code. Confirmed:
   "not yet implemented; set storage.provider=csi" message (intended, documented;
   the default never triggers it); `detect_build_format` returns `BlobFormat`
   (no hard-error). No selectable value silently mis-behaves.
-- Verification: server 45/45, agent-v2 52/52, typecheck + module-boundary clean,
+- Verification: server 45/45, apps/agent 52/52, typecheck + module-boundary clean,
   changed files biome-clean. Generated config-schema artifacts regenerated for
   the `ssh.gateway` + `storage.provider` additions (`f1f64474`).
 

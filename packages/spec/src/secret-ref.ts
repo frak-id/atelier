@@ -6,7 +6,7 @@ import { type Static, Type } from "@sinclair/typebox";
  * the runtime rejects any spec that still contains one.
  *
  * JSON-typed (not `${…}` string templating) so it is greppable and impossible
- * to half-interpolate. See atelier-v2 §2 "Secret references have one syntax".
+ * to half-interpolate. See design.md §2 "Secret references have one syntax".
  */
 export const SecretRefSchema = Type.Object(
   {

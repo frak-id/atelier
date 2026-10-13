@@ -4,7 +4,5 @@ node_modules
 *.tar.gz
 apps/cli
 !apps/cli/package.json
-infra/caddy
-infra/systemd
 sandbox.config.json
 values.production.yaml

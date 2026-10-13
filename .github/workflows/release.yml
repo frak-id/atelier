@@ -151,7 +151,7 @@ jobs:
       - name: Build and push
         uses: docker/build-push-action@v7
         with:
-          context: apps/agent-v2
+          context: apps/agent
           platforms: linux/amd64,linux/arm64
           push: true
           tags: ${{ github.ref_type == 'tag' && steps.meta-tag.outputs.tags || steps.meta-nightly.outputs.tags }}
@@ -249,8 +249,8 @@ jobs:
           body: |
             ## Installation
 
-            Kubernetes: apply the manifests under `infra/k8s/v2` (see
-            `infra/k8s/v2/README.md` for the cluster prerequisites).
+            Kubernetes: apply the manifests under `infra/k8s` (see
+            `infra/k8s/README.md` for the cluster prerequisites).
             Local single-user mode: `npx @konfeature/atelier local up`.
 
             ## Docker Images

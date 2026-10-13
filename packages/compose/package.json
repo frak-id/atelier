@@ -3,7 +3,7 @@
   "version": "0.1.0",
   "private": true,
   "type": "module",
-  "description": "The one shared client-side SDK: harness composers, presets, spec merge, sync manifests. Composition happens in the client (atelier-v2 §3).",
+  "description": "The one shared client-side SDK: harness composers, presets, spec merge, sync manifests. Composition happens in the client (design.md §3).",
   "exports": {
     ".": "./src/index.ts",
     "./harnesses/opencode": "./src/harnesses/opencode.ts"

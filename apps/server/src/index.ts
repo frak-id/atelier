@@ -1,6 +1,6 @@
 /**
- * Atelier v2 server bootstrap. One deployable, three internal modules
- * (atelier-v2 §3.1) — this file is the only place that constructs the
+ * Atelier server bootstrap. One deployable, three internal modules
+ * (design.md §3.1) — this file is the only place that constructs the
  * composition root and starts listening.
  */
 import { validateConfig } from "@frak/atelier-shared/config-loader";
@@ -116,7 +116,7 @@ app.listen(
   ({ hostname, port }) => {
     logger.info(
       { hostname, port, swagger: `http://${hostname}:${port}/swagger` },
-      "Atelier v2 server started",
+      "Atelier server started",
     );
   },
 );

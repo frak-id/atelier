@@ -1,5 +1,5 @@
 /**
- * The harness composer extension point (atelier-v2 §3: "the harness
+ * The harness composer extension point (design.md §3: "the harness
  * composers (today's `harness-adapter.ts` + `opencode-*.ts` knowledge …) →
  * files + the acp process + annotations"). The runtime has no concept of a
  * "harness" — only `@atelier/compose` and its consumers do.
@@ -8,7 +8,7 @@
  * the `acp` process (with `stdio: "bridge"`, `primary: true`), any config
  * files it needs, and an `atelier.dev/harness` annotation so the GUI can
  * render "opencode with the linear MCP" instead of "a process named acp"
- * (atelier-v2 §2 "annotations are display hints").
+ * (design.md §2 "annotations are display hints").
  */
 import type { SpecFragment } from "./spec-merge.ts";
 

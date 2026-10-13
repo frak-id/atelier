@@ -3,7 +3,7 @@
   "version": "3.0.2",
   "private": true,
   "type": "module",
-  "description": "Atelier v2 GUI — the primary product surface over @atelier/server. Tauri-ready.",
+  "description": "Atelier web GUI — the primary product surface over @atelier/server. Tauri-ready.",
   "scripts": {
     "dev": "vite",
     "build": "tsc --noEmit && vite build",

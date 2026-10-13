@@ -3,7 +3,7 @@
 ## Server Architecture
 
 `apps/server` is one deployable split into three internal modules with import
-boundaries enforced by `scripts/check-boundaries.ts` (not just convention),
+boundaries enforced by `apps/server/scripts/check-boundaries.ts` (not just convention),
 plus an HTTP shell that wires them together:
 
 | Layer | Responsibility |

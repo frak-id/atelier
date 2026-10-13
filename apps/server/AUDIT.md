@@ -1,4 +1,4 @@
-# apps/server (v2) Audit
+# apps/server Audit
 
 Full-module audit of `apps/server/src` (runtime / control / sessions / api).
 Focus areas: simplification & deduplication, performance, sandbox boot-time
@@ -127,7 +127,7 @@ will happily try to boot.
 
 > Status: S1, S2, S5, S6 ✅ done. S4 skipped (K8s watch machinery exceeds
 > complexity budget). S3 (baked-pair cache + agent-side parallel pulls)
-> still open — structural, involves agent-v2.
+> still open — structural, involves the agent (`apps/agent`).
 
 Hot path: `POST /v1/sandboxes` → toolbox resolution → `bootSandbox` →
 materialize → config/files → hooks → primary gate.
@@ -147,7 +147,7 @@ agent round-trip plus lets the agent parse config while extracting.
 
 ### S3. Toolset materialization is the dominant post-schedule cost
 2-3 `oras pull` + tar-extracts serially in-guest. Two levers:
-(a) send refs in one request (already done) but have agent-v2 pull in
+(a) send refs in one request (already done) but have the agent pull in
 parallel; (b) the deferred "rung-1 baked-pair cache" from the proposal
 (snapshot of prebuild ⊕ toolset set, keyed by both hashes) removes the
 extraction from boot entirely for repeat combos — that's the big structural

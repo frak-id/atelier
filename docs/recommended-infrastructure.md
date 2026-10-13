@@ -37,7 +37,7 @@ Bare-metal server (Debian 12)
     ├── cert-manager       → per-host TLS via a ClusterIssuer (HTTP-01)
     ├── TopoLVM            → LVM thin-provisioned PVCs + CSI snapshots
     ├── Zot + BuildKit     → OCI registry + image builds
-    └── Atelier app (infra/k8s/v2) → server + console
+    └── Atelier app (infra/k8s) → server + console
 ```
 
 ### Why single-node k3s?
@@ -80,7 +80,7 @@ Compare with per-seat SaaS dev-environment pricing and the math usually works ou
 
 The state that matters:
 
-- **Server SQLite database** — PVC for the v2 server (workspaces, tasks, settings)
+- **Server SQLite database** — PVC for the server (workspaces, tasks, settings)
 - **Zot registry** — base images (rebuildable from Dockerfiles, but backups save time)
 - **Your app config + secrets** — keep your `30-config.yaml` edits and the `atelier-v2-secrets` values in a private repo or vault
 

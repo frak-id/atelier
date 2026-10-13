@@ -19,7 +19,7 @@
 >   `whoami` + shell completion + "mint a key for me" OAuth bootstrap remain
 >   open follow-ups.
 
-Status: **plan — post-v1**. The v1 CLI (`apps/cli`) is a thin, dependency-free
+Status: **plan**. The first CLI (`apps/cli`) is a thin, dependency-free
 client over the `/v1` runtime API and the `/api` control plane. It is fully
 functional but deliberately minimal: hand-rolled arg parsing, `fetch`-based
 transport, and env-only configuration. This document captures the two
@@ -35,7 +35,7 @@ Context of today's state:
   from the environment on every invocation. There is no config file, keychain,
   or `~/.atelier/` — nothing is persisted to disk.
 
-Both are fine for v1. The items below make the CLI pleasant to adopt outside a
+Both are fine for a first cut. The items below make the CLI pleasant to adopt outside a
 pre-wired shell.
 
 ---

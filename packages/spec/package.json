@@ -3,7 +3,7 @@
   "version": "0.1.0",
   "private": true,
   "type": "module",
-  "description": "The SandboxSpec contract \u2014 the one document the Atelier v2 runtime understands.",
+  "description": "The SandboxSpec contract \u2014 the one document the Atelier runtime understands.",
   "exports": {
     ".": "./src/index.ts",
     "./sandbox": "./src/sandbox-spec.ts",

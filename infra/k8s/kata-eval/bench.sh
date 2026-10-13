@@ -2,7 +2,7 @@
 # Compare Kata RuntimeClasses: cold boot to agent-healthy, raw disk I/O (fio,
 # O_DIRECT) and a small-file workload on the home overlay.
 #
-#   infra/k8s/v2/kata-eval/bench.sh <runtimeClass> [runtimeClass...]
+#   infra/k8s/kata-eval/bench.sh <runtimeClass> [runtimeClass...]
 #
 # Classes run one at a time (the node is shared). BOOT_RUNS (default 3) cold
 # boots per class, each on a fresh PVC. Pods use MEM (default 4Gi).

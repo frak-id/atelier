@@ -118,7 +118,7 @@ byte-identical to today**.
 
 ### Patch 1 — host: virtiofsd xattrmap
 
-`infra/k8s/v2/kata-atelier-values.yaml` — extend the `atelier-clh` drop-in.
+`infra/k8s/kata-atelier-values.yaml` — extend the `atelier-clh` drop-in.
 Replace the `--xattr` line with `--xattr` + an `--xattrmap` that (a) maps the
 overlay's `trusted.overlay.` prefix to a host `user.ovl-trusted.overlay.`
 prefix in both directions, and (b) **denies** the guest direct `user.*`
@@ -161,7 +161,7 @@ Rule semantics (validated against `virtiofsd/doc/xattr-mapping.md`; rule form
 
 ### Patch 2 — guest: drop `userxattr`, add `redirect_dir=on`
 
-`apps/agent-v2/src/toolset.rs`, the overlay assembly in `materialize_inner`
+`apps/agent/src/toolset.rs`, the overlay assembly in `materialize_inner`
 (~`toolset.rs:1080-1092`). Change the mount option tail:
 
 ```diff
@@ -475,9 +475,9 @@ Also verify during the spike:
 
 ## 5. Cross-cutting findings (file-pathed)
 
-- **Root cause / where A′ lands**: `apps/agent-v2/src/toolset.rs:1086`
+- **Root cause / where A′ lands**: `apps/agent/src/toolset.rs:1086`
   (`userxattr` → `redirect_dir=on,index=off,metacopy=off`) +
-  `infra/k8s/v2/kata-atelier-values.yaml` (`virtio_fs_extra_args` +=
+  `infra/k8s/kata-atelier-values.yaml` (`virtio_fs_extra_args` +=
   `--xattrmap`).
 - **Keep `index=off`**: squashfs blobs are built `-no-exports`
   (`toolset.rs:129`), which kills file-handle decoding — enabling

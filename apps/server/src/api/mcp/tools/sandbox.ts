@@ -1,6 +1,6 @@
 /**
  * Sandbox lifecycle + live-mutation tools — the MCP mirror of `/v1/*`
- * (atelier-v2 §4: "it grows the mutation tools ... so agents drive sandboxes
+ * (design.md §4: "it grows the mutation tools ... so agents drive sandboxes
  * exactly like the CLI does"). `create_sandbox` reuses the exact enrichment
  * path `POST /v1/sandboxes` uses (`createSandboxForUser`), so an MCP-spawned
  * sandbox gets the same org secrets/policy/auto-injected toolboxes as the

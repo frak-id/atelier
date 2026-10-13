@@ -1,5 +1,5 @@
 /**
- * `/sessions/*` — the agent app-tier HTTP surface (atelier-v2 §3.1 api/
+ * `/sessions/*` — the agent app-tier HTTP surface (design.md §3.1 api/
  * table: "/sessions/* → sessions"). Thin Elysia binding over
  * `SessionService`/`TerminalService`; all mechanism lives in `sessions/`.
  */

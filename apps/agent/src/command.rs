@@ -23,7 +23,7 @@ pub struct ExecResult {
     pub stderr: String,
 }
 
-/// Apply the v2 user model to a command: `dev` drops to uid/gid 1000 with a
+/// Apply the spec's user model to a command: `dev` drops to uid/gid 1000 with a
 /// dev HOME; anything else runs as the agent's uid (root in-pod).
 pub fn apply_user(cmd: &mut Command, user: Option<&str>) {
     if user == Some("dev") {
@@ -52,8 +52,8 @@ async fn read_limited<R: tokio::io::AsyncRead + Unpin>(reader: R, max: usize) ->
 
 /// Run `command` under a login shell (`/bin/bash -l -c`), bounded by
 /// `timeout_ms` and `max_output_bytes`. `env` is layered onto the process
-/// environment (pod env + per-call additions); `user`/`workdir` follow the v2
-/// user model. Thin wrapper over `run_with_login` that preserves every
+/// environment (pod env + per-call additions); `user`/`workdir` follow the
+/// spec's user model. Thin wrapper over `run_with_login` that preserves every
 /// existing caller's behavior (exec routes, hooks, `build`/`capture`) — the
 /// login shell is the default so those callers need no change.
 pub async fn run(

@@ -1,5 +1,5 @@
 /**
- * Preset snippets (atelier-v2 §3: "the preset snippets: vscode, browser,
+ * Preset snippets (design.md §3: "the preset snippets: vscode, browser,
  * terminal — each a function returning spec pieces"). Each preset is a plain
  * function returning a `SpecFragment`; "add vscode" is appending one process
  * + one port, nothing the runtime has an opinion about.
@@ -39,7 +39,7 @@ export function vscode(options?: {
  * The in-pod terminal multiplexer. Agent-managed (the guest agent ensures it
  * itself, contributing no server-started service) — kept as a thin, non-lazy
  * declaration so a spec that wants a terminal surface can still say so; the
- * runtime's PTY attach mode is the actual mechanism (atelier-v2 §2 "One
+ * runtime's PTY attach mode is the actual mechanism (design.md §2 "One
  * supervisor, three attachment modes").
  */
 export function terminal(options?: { port?: number }): SpecFragment {

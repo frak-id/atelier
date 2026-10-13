@@ -1,4 +1,4 @@
-# Atelier Console — Implementation Plan (v2 redesign)
+# Atelier Console — Implementation Plan (console redesign)
 
 > Refines `UX_AUDIT.md` into a build plan scoped to what we're doing **now**.
 > Grounded in the real data model (`@frak/atelier-shared` `AgentSession`,

@@ -1,5 +1,5 @@
 /**
- * Client-side spec merge (atelier-v2 §3: "the spec-file merge … defined once
+ * Client-side spec merge (design.md §3: "the spec-file merge … defined once
  * here, not an open question: deep-merge, arrays merged by `name`/`path`,
  * last layer wins").
  *

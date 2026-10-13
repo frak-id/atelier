@@ -1,23 +1,23 @@
 # Two-Tier Prebuilds — Repo Snapshots + Toolset Artifacts
 
 Status: **proposal — refines the prebuild model in
-[`atelier-v2.md`](./atelier-v2.md) §2 ("Prebuild economics", "Layered
+[`design.md`](../design.md) §2 ("Prebuild economics", "Layered
 prebuilds"). Additive: keeps `prebuild()` + content-addressing for the repo
 tier; introduces a second, registry-backed artifact tier for toolsets.
 Supersedes the earlier side-mounted-volumes draft of this document.**
 
 Inputs: `apps/server/src/runtime` audit (`runtime.service.ts`, `boot.ts`,
 `kube/kube.resources.ts`), `packages/spec` (`sandbox-spec.ts`,
-`prebuild-spec.ts`), `infra/k8s/v2` (shared-binaries, zot registry config).
+`prebuild-spec.ts`), `infra/k8s` (shared-binaries, zot registry config).
 
 ---
 
 ## 0. The problem: one lineage, two axes with different physics
 
-v2 today composes expensive setup by **chaining snapshots** — a prebuild's
+Atelier today composes expensive setup by **chaining snapshots** — a prebuild's
 `source` is an image *or another snapshot ref*, so every layer bakes on top
 of the last into one root-filesystem lineage (`prebuild-spec.ts`,
-`runtime.service.ts:99`). `atelier-v2.md:277` admits the cost: genuinely
+`runtime.service.ts:99`). `design.md:277` admits the cost: genuinely
 distinct per-dev setups are O(devs) snapshots, and the real risk is
 node-locality — TopoLVM snapshots are node-local, so every baked layer is a
 node-pinned object whose "instant boot" silently regresses when its node is
@@ -67,7 +67,7 @@ Instead, give each axis the mechanism that matches its physics:
 |---|---|---|---|---|
 | **Base** — OS, system packages (`/usr`, `/etc`) | image (or one base snapshot) | image tag/digest | any node (image cache) | 1 |
 | **Repo** — clone + deps | `prebuild()` → VolumeSnapshot → CoW clone (unchanged) | `hash(base ⊕ repo@commit ⊕ build[])` | node-local (as today) | R |
-| **Toolset** — harness, MCPs, skills, prefs | **content-addressed archive in the in-cluster registry** (zot, `infra/k8s/v2/30-config.yaml:38`), **materialized by the guest agent at boot** into the real home paths | result hash (captured) or input hash (built) | **any node** — pulled from in-cluster zot (no node cache in v1, §3) | D + org toolboxes |
+| **Toolset** — harness, MCPs, skills, prefs | **content-addressed archive in the in-cluster registry** (zot, `infra/k8s/30-config.yaml:38`), **materialized by the guest agent at boot** into the real home paths | result hash (captured) or input hash (built) | **any node** — pulled from in-cluster zot (no node cache in v1, §3) | D + org toolboxes |
 
 Key properties:
 
@@ -193,7 +193,7 @@ are mostly disjoint by construction, and deterministic when not.
    `prebuild()` and its snapshot chaining stay exactly as they are — they
    remain the repo tier.
 
-3. **Agent (v2 line)** gains one capability: given `toolsets[]`, pull each
+3. **Agent** gains one capability: given `toolsets[]`, pull each
    archive **directly from the in-cluster registry** and extract into the
    home **before** the files/env phase. No node-level cache in v1 — see the
    Kata note below. Phase order becomes:
@@ -219,7 +219,7 @@ are mostly disjoint by construction, and deterministic when not.
    freebie).
 
 4. **`shared-binaries` dies.** The global RWO PVC + populate Job
-   (`infra/k8s/v2/20-shared-binaries.yaml`, `kube.resources.ts:90`) is
+   (`infra/k8s/20-shared-binaries.yaml`, `kube.resources.ts:90`) is
    replaced by an org-published **toolbox artifact** (opencode + code-server
    as a built toolset). `catalogAdd` (`runtime.service.ts:496`) survives
    with its meaning upgraded: "publish checksum-verified artifact to the
@@ -264,7 +264,7 @@ are hot enough to bake; the runtime just sees another chained `prebuild()`.
 
 Rung 2's cost is the honest price of this design: pulling from in-cluster
 zot and extracting a few hundred MB into the home PVC is seconds, not
-milliseconds — over the ~500ms overlay budget (`atelier-v2.md:260`),
+milliseconds — over the ~500ms overlay budget (`design.md:260`),
 mitigated by rung 1 for hot pairs. **Future optimization, explicitly out of
 scope for v1 of this feature:** guest-side overlayfs (toolset archives as
 read-only lowerdirs under the home upperdir — zero-copy, instant, stacks
@@ -301,8 +301,7 @@ explicit:
    `specToAgentConfig` and the boot phase order. `caches` stays as-is (it's
    the rung-3 warm-cache tier, orthogonal).
 3. **Agent: materialize.** Pull from zot, verify digest, extract into home
-   paths before the files/env phase. v2 agent line only (`atelier-v2.md` §6
-   phase 1); v1 untouched.
+   paths before the files/env phase.
 4. **Runtime: `POST /v1/toolsets` (built path only).** Reuses the prebuild
    executor scaffolding (throwaway pod, fail-fast, inflight dedup —
    `runtime.service.ts:79,118`) with an artifact-push tail instead of
@@ -355,7 +354,7 @@ delivers a user-visible win (shared-binaries gone, org toolboxes real).
   captured artifact is arbitrary bytes a dev chose to publish, materialized
   into other sandboxes *only if their spec references it*. Same
   trusted-operator model as specs containing arbitrary shell
-  (`atelier-v2.md` §7) — org toolboxes should prefer the built, reviewable
+  (`design.md` §7) — org toolboxes should prefer the built, reviewable
   `build[]` path, and captures are private-by-default.
 
 ## 8. Why this sells (long-term)
@@ -373,7 +372,7 @@ Every target persona lands on it:
 - **Non-tech user:** repo ⊕ org toolbox ⊕ vscode preset = one saved spec,
   one tap.
 
-And it aligns with §8 of `atelier-v2.md`: specs stay portable JSON (no
+And it aligns with §8 of `design.md`: specs stay portable JSON (no
 lock-in, easy adoption); the org's toolbox library and devs' captured
 toolsets become the retention gravity — above the seam, where gravity is
 supposed to live. A hosted product later is control-plane + hosted toolset

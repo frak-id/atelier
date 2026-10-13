@@ -1,5 +1,5 @@
 /**
- * Runtime-owned state. Per atelier-v2 §3.1, the runtime's tables are
+ * Runtime-owned state. Per design.md §3.1, the runtime's tables are
  * `sandboxes(id, spec, status, generated, metadata)` and
  * `snapshots(hash, parent, ref)` — with NO FK to any identity table. Callers
  * are just "authenticated principals" to it.

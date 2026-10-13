@@ -84,7 +84,7 @@ not caller-supplied). Otherwise a "version" is not substitutable for the
 recipe-built artifact and the abstraction collapses. The console passes only
 `{ sandboxId, description }`; the server resolves `paths` / `exclude` from the
 toolbox config. (User-added extra paths can come later as an explicit `paths`
-*extension* on the toolbox, then capture — not v1.)
+*extension* on the toolbox, then capture — not in the first cut.)
 
 ---
 
@@ -159,13 +159,13 @@ Capture-as-pin is fine; capture-as-the-only-story is dangerous.
 - **The durable answer is still the recipe.** Treat capture as "quick save".
   The console should nudge *version* bumps (pi X.Y.Z) toward **editing `build[]`
   with pinned package versions**, not capturing an in-sandbox `npm update`.
-  Long-term north star: "diff a capture → suggest a recipe edit". Not v1.
+  Long-term north star: "diff a capture → suggest a recipe edit". Not in the first cut.
 
 ---
 
 ## 6. Failure & UX edges
 
-- **Who can capture-for-toolbox?** v1: only the toolbox's owner (a user captures
+- **Who can capture-for-toolbox?** First cut: only the toolbox's owner (a user captures
   a user toolbox; an org admin captures an org toolbox). Trap: a user capturing
   an org toolbox and pinning it org-wide ships their personal config (and creds)
   to everyone. If a user wants to personalize an org toolbox, the existing model
@@ -183,7 +183,7 @@ Capture-as-pin is fine; capture-as-the-only-story is dangerous.
 
 ---
 
-## 7. Recommended v1 (small, corner-free)
+## 7. Recommended first cut (small, corner-free)
 
 1. **Migration**: `entity_toolbox_versions` table + `active_version_id` column
    on `entity_toolboxes`.

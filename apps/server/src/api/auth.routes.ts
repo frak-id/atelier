@@ -1,7 +1,7 @@
 /**
  * `/auth/*` — the GitHub OAuth login surface. Unauthenticated by definition
  * (it's how a caller *gets* a token): mints the `sandbox_token` JWT the rest
- * of `/v1`, `/api`, `/sessions` require (atelier-v2 PHASE0.md item 1).
+ * of `/v1`, `/api`, `/sessions` require.
  *
  * ACP/console-scoped: no cliproxy user-key bootstrap and no `/opencode/verify`
  * forward-auth route (forward-auth for tool ingresses is a separate,

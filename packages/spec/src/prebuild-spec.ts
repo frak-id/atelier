@@ -1,7 +1,7 @@
 /**
  * The prebuild spec. Prebuilds CHAIN: `source` may be an image OR another
  * snapshotRef, so a dev's expensive setup is a derived snapshot on top of the
- * workspace snapshot (atelier-v2 §2 "Layered prebuilds").
+ * workspace snapshot (design.md §2 "Layered prebuilds").
  *
  * Snapshot key = hash(source ⊕ prebuild files ⊕ build[] ⊕ repos). Runtime
  * content (files/env/processes/ports/postStart) never enters the key.

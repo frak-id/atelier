@@ -4,7 +4,7 @@ import { tanstackRouter } from "@tanstack/router-plugin/vite";
 import react from "@vitejs/plugin-react";
 import { defineConfig } from "vite";
 
-// The v2 server (apps/server) listens on :4000 in mock/dev. Proxying every
+// The server (apps/server) listens on :4000 in mock/dev. Proxying every
 // server-owned path keeps the browser origin === server origin, so the
 // httpOnly `sandbox_token` cookie and CORS are moot in dev.
 const SERVER_TARGET = "http://localhost:4000";

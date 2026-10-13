@@ -2,14 +2,14 @@ export interface AgentHealth {
   status: string;
   sandboxId?: string;
   uptime: number;
-  /** Whether a config has been pushed (v2 agent). */
+  /** Whether a config has been pushed. */
   configured?: boolean;
-  /** Whether the spec's `primary` process is ready — the sandbox health gate
-   * (v2 agent). True when there is no primary (liveness == health). */
+  /** Whether the spec's `primary` process is ready — the sandbox health gate.
+   * True when there is no primary (liveness == health). */
   healthy?: boolean;
 }
 
-/** One hook command's outcome (v2 agent `POST /hooks/{phase}`). */
+/** One hook command's outcome (agent `POST /hooks/{phase}`). */
 export interface HookResult {
   command: string;
   exitCode: number;
@@ -17,17 +17,17 @@ export interface HookResult {
   stderr: string;
 }
 
-/** Result of running a lifecycle phase's hooks in order (v2 agent). */
+/** Result of running a lifecycle phase's hooks in order. */
 export interface HookPhaseResult {
   success: boolean;
   results: HookResult[];
 }
 
-/** A lifecycle phase the runtime drives on the v2 agent. */
+/** A lifecycle phase the runtime drives on the agent. */
 export type HookPhase = "postCreate" | "postStart" | "onResume" | "envChanged";
 
-/** A supervised process's state (v2 agent `GET /processes` / `/processes/{name}`).
- * Mirrors agent-v2 `supervisor::ProcessState`. */
+/** A supervised process's state (agent `GET /processes` / `/processes/{name}`).
+ * Mirrors the agent's `supervisor::ProcessState`. */
 export interface AgentProcessState {
   name: string;
   status: "starting" | "running" | "stopped" | "error";

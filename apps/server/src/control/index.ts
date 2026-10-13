@@ -1,5 +1,5 @@
 /**
- * The control module's public interface. BOUNDARY RULE (atelier-v2 §3.1):
+ * The control module's public interface. BOUNDARY RULE (design.md §3.1):
  * control/ imports runtime/'s interface (index), never its internals; other
  * modules import control/'s interface (this barrel), never its internals.
  */

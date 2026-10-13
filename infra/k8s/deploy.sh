@@ -1,16 +1,16 @@
 #!/usr/bin/env bash
 #
-# Build + deploy the Atelier v2 stack to the hetzner-atelier k3s cluster.
+# Build + deploy the Atelier stack to the hetzner-atelier k3s cluster.
 #
 # No local Docker: images are built by the in-cluster BuildKit builder and
 # pushed to the in-cluster Zot registry (zot.zot.svc:5000). The sandbox images
 # are pinned by digest downstream, so re-pushing :latest forces a fresh pull.
 #
 # Usage:
-#   infra/k8s/v2/deploy.sh                 # build server + console, roll the deployment
-#   infra/k8s/v2/deploy.sh server console  # build only these, then roll
-#   infra/k8s/v2/deploy.sh agent dev-base  # (bootstrap) rebuild the base-image chain
-#   infra/k8s/v2/deploy.sh rollout         # just restart the deployment
+#   infra/k8s/deploy.sh                 # build server + console, roll the deployment
+#   infra/k8s/deploy.sh server console  # build only these, then roll
+#   infra/k8s/deploy.sh agent dev-base  # (bootstrap) rebuild the base-image chain
+#   infra/k8s/deploy.sh rollout         # just restart the deployment
 #
 # Targets: server  console  rollout   (or "all", the default = server+console+rollout)
 # Opt-in only: agent  dev-base — the running server now builds base images on
@@ -30,7 +30,7 @@ REGISTRY="zot.zot.svc:5000"
 DEPLOY="atelier-v2"
 BUILDER_POD="v2-builder"
 
-ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../../.." && pwd)"
+ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 cd "$ROOT"
 
 K() { kubectl --context "$CTX" "$@"; }
@@ -106,16 +106,16 @@ OUT_OPTS='push=true,registry.insecure=true,oci-mediatypes=true,image-manifest=tr
 
 # ── build steps ─────────────────────────────────────────────────────────────
 build_agent() {
-  say "Build sandbox-agent-v2:latest (apps/agent-v2)"
-  tar --exclude='target' -czf /tmp/agent-v2-ctx.tgz -C apps/agent-v2 .
+  say "Build sandbox-agent:latest (apps/agent)"
+  tar --exclude='target' -czf /tmp/agent-ctx.tgz -C apps/agent .
   K exec -n "$NS_BUILD" "$BUILDER_POD" -- mkdir -p /agent
-  K cp /tmp/agent-v2-ctx.tgz "$NS_BUILD/$BUILDER_POD:/tmp/agent.tgz"
+  K cp /tmp/agent-ctx.tgz "$NS_BUILD/$BUILDER_POD:/tmp/agent.tgz"
   K exec -n "$NS_BUILD" "$BUILDER_POD" -- sh -c "
 set -e
 cd /agent && tar xzf /tmp/agent.tgz && printf 'target\n' > .dockerignore
 $BUILDCTL build --frontend dockerfile.v0 --local context=/agent --local dockerfile=/agent \
   --opt platform=linux/amd64 \
-  --output type=image,name=$REGISTRY/sandbox-agent-v2:latest,$OUT_OPTS
+  --output type=image,name=$REGISTRY/sandbox-agent:latest,$OUT_OPTS
 "
 }
 
@@ -174,7 +174,7 @@ if $DO_ROLLOUT; then
   # re-mount the updated ConfigMap. Without this the file edits never reach the
   # cluster and the server falls back to defaults (e.g. imageBuilder.kind).
   say "Applying 30-config.yaml"
-  K apply -f "$ROOT/infra/k8s/v2/30-config.yaml"
+  K apply -f "$ROOT/infra/k8s/30-config.yaml"
 
   say "Rolling deploy/$DEPLOY"
   K rollout restart "deploy/$DEPLOY" -n "$NS_SYS"

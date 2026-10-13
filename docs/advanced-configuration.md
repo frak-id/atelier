@@ -1,8 +1,8 @@
 # Advanced Configuration
 
 Atelier deploys only the server + console app: plain Kubernetes manifests
-under **`infra/k8s/v2`** (Deployment, Service, Ingress, config ConfigMap,
-secrets, PVC, RBAC). See [`infra/k8s/v2/README.md`](../infra/k8s/v2/README.md)
+under **`infra/k8s`** (Deployment, Service, Ingress, config ConfigMap,
+secrets, PVC, RBAC). See [`infra/k8s/README.md`](../infra/k8s/README.md)
 for the full apply sequence.
 
 Cluster infra (Kata runtime, cert-manager ClusterIssuer, TopoLVM + snapshot
@@ -10,11 +10,11 @@ class, OCI registry, BuildKit, CLIProxy) is installed separately and
 referenced by name from the app config; see the [Setup Guide](setup.md#prerequisites).
 
 For app-level settings (domain, auth, ports, sandbox defaults, MCP token,
-CLIProxy wiring), edit `infra/k8s/v2/30-config.yaml` (non-secret config,
+CLIProxy wiring), edit `infra/k8s/30-config.yaml` (non-secret config,
 mounted as `/etc/atelier/sandbox.config.json`) and the `atelier-v2-secrets`
 Secret (credentials) — see the schema reference below.
 
-## App configuration (`infra/k8s/v2/30-config.yaml` + secrets)
+## App configuration (`infra/k8s/30-config.yaml` + secrets)
 
 The server reads a layered config: env vars > the mounted
 `sandbox.config.json` > built-in defaults. The full schema lives in
@@ -60,7 +60,7 @@ The server reads a layered config: env vars > the mounted
 
 Secrets (GitHub OAuth, JWT, secrets-at-rest key, MCP token, CLIProxy API key)
 are injected via env from the `atelier-v2-secrets` Secret and override the
-matching config fields — see `infra/k8s/v2/README.md` for the exact
+matching config fields — see `infra/k8s/README.md` for the exact
 `kubectl create secret` command.
 
 Resulting URL patterns:
@@ -75,7 +75,7 @@ Resulting URL patterns:
 
 ### Key environment variables (server)
 
-Set directly on the Deployment (`infra/k8s/v2/50-deployment.yaml`); these
+Set directly on the Deployment (`infra/k8s/50-deployment.yaml`); these
 override the config file.
 
 | Variable | Description |
@@ -101,7 +101,7 @@ sandboxes via the Model Context Protocol (`/mcp`). Agents authenticate with
 
 Production base images are typically built out-of-band with the cluster's
 BuildKit (`buildctl`) against a shared `buildkitd` and pushed to Zot; see
-`infra/k8s/v2/deploy.sh` and [`infra/k8s/v2/README.md`](../infra/k8s/v2/README.md#rebuild-images-in-cluster-no-local-docker).
+`infra/k8s/deploy.sh` and [`infra/k8s/README.md`](../infra/k8s/README.md#rebuild-images-in-cluster-no-local-docker).
 The server also has a server-side build API (`POST /v1/images`,
 `ImageBuilderService`) that uses the `imageBuilder.*` config — it's what the
 `kind`/`endpoint`/etc. schema below actually drives; there's just no
@@ -115,7 +115,7 @@ upstream Kaniko project. `kind=kaniko` stays selectable but is deprecated.
 
 ### Use a different OCI registry
 
-Point the app's `kubernetes.registryUrl` (in `infra/k8s/v2/30-config.yaml`) at
+Point the app's `kubernetes.registryUrl` (in `infra/k8s/30-config.yaml`) at
 the registry's `host:port` (no scheme). A plain-HTTP registry must also be a
 mirror in the node's `/etc/rancher/k3s/registries.yaml`.
 
@@ -126,7 +126,7 @@ Create a `VolumeSnapshotClass` for the `topolvm.io` driver (see
 then reference it and a Block-capable TopoLVM StorageClass:
 
 ```jsonc
-// infra/k8s/v2/30-config.yaml
+// infra/k8s/30-config.yaml
 {
   "kubernetes": {
     "storageClass": "topolvm-provisioner",

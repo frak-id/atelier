@@ -1,6 +1,6 @@
 # Atelier Console — UX & Look-and-Feel Audit
 
-> **Scope:** `apps/console` (the v2 GUI over `@atelier/server`).
+> **Scope:** `apps/console` (the GUI over `@atelier/server`).
 > **Goal:** Take the console from "functional operator panel" to a product that
 > feels premium and effortless for **two audiences at once** — developers who
 > want power and density, and product/C-level users who want to rapidly reach a

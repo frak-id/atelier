@@ -1,6 +1,6 @@
 /**
  * The `SandboxSpec` — one document, fully resolved. This is what the Atelier
- * v2 runtime accepts and the only thing it understands (atelier-v2 §2).
+ * runtime accepts and the only thing it understands (design.md §2).
  *
  * The runtime knows only mechanism, never content: no `harness`, no `mcp`, no
  * `skills`, no `tools`, no `dev`. A harness is the `acp` process + its config
@@ -64,7 +64,7 @@ export type FileEntry = Static<typeof FileSchema>;
 
 /**
  * Per-process readiness probe. The one mechanism concession — typed on purpose
- * (atelier-v2 §2). Exactly one of `port` | `http` | `cmd`.
+ * (design.md §2). Exactly one of `port` | `http` | `cmd`.
  */
 export const ReadinessSchema = Type.Union([
   Type.Object({ port: Type.Number() }, { additionalProperties: false }),
@@ -90,7 +90,7 @@ export type RestartPolicy = Static<typeof RestartPolicySchema>;
 /**
  * A supervised process. `name` is the only identity. The process model is
  * `readiness` + `primary` + `after` + `restart` + `lazy` — each maps 1:1 to an
- * accepted industry primitive (atelier-v2 §2 "standing guard").
+ * accepted industry primitive (design.md §2 "standing guard").
  */
 export const ProcessSchema = Type.Object(
   {
@@ -149,7 +149,7 @@ export const HooksSchema = Type.Object(
   {
     postCreate: Type.Optional(Type.Array(Type.String())),
     postStart: Type.Optional(Type.Array(Type.String())),
-    /** Fires on every resume — the credential-rotation primitive (atelier-v2 §2). */
+    /** Fires on every resume — the credential-rotation primitive (design.md §2). */
     onResume: Type.Optional(Type.Array(Type.String())),
     /** Fired by `PATCH /env`; user wires it to reload/SIGHUP their processes. */
     envChanged: Type.Optional(Type.Array(Type.String())),
@@ -223,7 +223,7 @@ export const SandboxSpecSchema = Type.Object(
     additionalProperties: false,
     $id: "SandboxSpec",
     description:
-      "One fully-resolved document. The only thing the v2 runtime understands.",
+      "One fully-resolved document. The only thing the runtime understands.",
   },
 );
 export type SandboxSpec = Static<typeof SandboxSpecSchema>;

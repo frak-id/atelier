@@ -29,8 +29,8 @@ grep -cE 'vmx|svm' /proc/cpuinfo # must be > 0
 
 Before installing Atelier, your cluster needs several system components.
 Atelier does not install any of them: the app config
-(`infra/k8s/v2/30-config.yaml`) references each one by name. The table in
-[`infra/k8s/v2/README.md`](../infra/k8s/v2/README.md#cluster-prerequisites-not-managed-from-this-repo)
+(`infra/k8s/30-config.yaml`) references each one by name. The table in
+[`infra/k8s/README.md`](../infra/k8s/README.md#cluster-prerequisites-not-managed-from-this-repo)
 lists which config key points at which resource.
 
 ### 1. k3s
@@ -95,7 +95,7 @@ Go-runtime `kata-atelier-clh` as a rollback:
 ```bash
 helm install kata-deploy \
   oci://ghcr.io/kata-containers/kata-deploy-charts/kata-deploy \
-  -n default -f infra/k8s/v2/kata-atelier-values.yaml
+  -n default -f infra/k8s/kata-atelier-values.yaml
 ```
 
 Verify the RuntimeClass exists and the node is labelled:
@@ -107,14 +107,14 @@ kubectl get node -L kata-deploy.katacontainers.io/default
 
 Two node settings keep the pod memory limit bounding the whole VM, and on AMD
 hosts let runtime-rs start at all. See [Constraints](constraints.md) and the
-header of `infra/k8s/v2/kata-atelier-values.yaml`:
+header of `infra/k8s/kata-atelier-values.yaml`:
 
 - If the LVM thin pool sits on a loop device over a file, attach it with
   `losetup --direct-io=on`.
 - On AMD CPUs without usable SEV (e.g. Ryzen): `options kvm_amd sev=0` in
   `/etc/modprobe.d/`, then reload `kvm_amd` or reboot.
 
-`infra/k8s/v2/kata-eval/validate.sh kata-atelier-clh-rs` checks the result.
+`infra/k8s/kata-eval/validate.sh kata-atelier-clh-rs` checks the result.
 
 ### 5. Storage and snapshots (optional — required for prebuilds)
 
@@ -164,7 +164,7 @@ EOF
 
 Then point `kubernetes.storageClass` (the TopoLVM StorageClass; it must allow
 `volumeMode: Block`) and `kubernetes.volumeSnapshotClass` at them in
-`infra/k8s/v2/30-config.yaml`.
+`infra/k8s/30-config.yaml`.
 
 ### 6. OCI registry and image builds
 
@@ -189,21 +189,21 @@ Atelier authenticates users via GitHub OAuth. Create an OAuth App at <https://gi
 
 ### 2. Deploy the server + console app
 
-Edit `infra/k8s/v2/30-config.yaml` for your domain and cluster settings (see
+Edit `infra/k8s/30-config.yaml` for your domain and cluster settings (see
 [Advanced Configuration](advanced-configuration.md#app-configuration-infrak8sv230-configyaml--secrets)),
 create the `atelier-v2-secrets` Secret (GitHub OAuth, JWT, secrets key, MCP
 token, CLIProxy key), then apply the manifests in order — full sequence in
-[`infra/k8s/v2/README.md`](../infra/k8s/v2/README.md):
+[`infra/k8s/README.md`](../infra/k8s/README.md):
 
 ```bash
-kubectl apply -f infra/k8s/v2/00-namespaces.yaml
-kubectl apply -f infra/k8s/v2/10-rbac.yaml
-kubectl apply -f infra/k8s/v2/30-config.yaml
-kubectl apply -f infra/k8s/v2/40-server-pvc.yaml
+kubectl apply -f infra/k8s/00-namespaces.yaml
+kubectl apply -f infra/k8s/10-rbac.yaml
+kubectl apply -f infra/k8s/30-config.yaml
+kubectl apply -f infra/k8s/40-server-pvc.yaml
 # create the atelier-v2-secrets Secret, then:
-kubectl apply -f infra/k8s/v2/50-deployment.yaml
-kubectl apply -f infra/k8s/v2/60-service.yaml
-kubectl apply -f infra/k8s/v2/70-ingress.yaml
+kubectl apply -f infra/k8s/50-deployment.yaml
+kubectl apply -f infra/k8s/60-service.yaml
+kubectl apply -f infra/k8s/70-ingress.yaml
 ```
 
 ### 3. Expose SSH (optional)
@@ -229,14 +229,14 @@ kubectl get certificates -n atelier-v2-system   # READY should become True
 
 ### Access the console
 
-Open the domain you set in `infra/k8s/v2/30-config.yaml` (`domain.dashboard`) and log in with GitHub.
+Open the domain you set in `infra/k8s/30-config.yaml` (`domain.dashboard`) and log in with GitHub.
 
 ### Build a base image
 
 Sandboxes boot from base images stored in the internal Zot registry. There is
 no build-from-UI feature — base images are built in-cluster with BuildKit,
 not from the console. See
-[`infra/k8s/v2/README.md`](../infra/k8s/v2/README.md#rebuild-images-in-cluster-no-local-docker)
+[`infra/k8s/README.md`](../infra/k8s/README.md#rebuild-images-in-cluster-no-local-docker)
 to build/push `dev-base` (and optionally `dev-cloud`) before spawning your
 first sandbox.
 
@@ -249,8 +249,8 @@ sandboxes spawn instantly from a snapshot.
 ## Updating
 
 Rebuild the server + console images and roll the Deployment (see
-[`infra/k8s/v2/README.md`](../infra/k8s/v2/README.md#rebuild-images-in-cluster-no-local-docker)),
-and re-apply any changed manifests under `infra/k8s/v2/`.
+[`infra/k8s/README.md`](../infra/k8s/README.md#rebuild-images-in-cluster-no-local-docker)),
+and re-apply any changed manifests under `infra/k8s/`.
 
 ## Manual TLS
 
@@ -274,7 +274,7 @@ kubectl logs -n atelier-v2-system -l app.kubernetes.io/component=server -c serve
 
 ### Sandbox pods
 
-Sandboxes run in the namespace set by `kubernetes.namespace` in `infra/k8s/v2/30-config.yaml` (e.g. `atelier-v2-sandboxes`):
+Sandboxes run in the namespace set by `kubernetes.namespace` in `infra/k8s/30-config.yaml` (e.g. `atelier-v2-sandboxes`):
 
 ```bash
 kubectl get pods -n atelier-v2-sandboxes

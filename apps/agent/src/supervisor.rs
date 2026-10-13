@@ -597,7 +597,7 @@ impl Supervisor {
 }
 
 /// Apply the uid/env for a known principal. Today only `dev` (uid 1000) is
-/// special-cased (v1 parity); anything else runs as the agent's uid (root).
+/// special-cased; anything else runs as the agent's uid (root).
 pub(crate) fn apply_user(cmd: &mut Command, user: &str) {
     if user == "dev" {
         cmd.uid(1000).gid(1000);

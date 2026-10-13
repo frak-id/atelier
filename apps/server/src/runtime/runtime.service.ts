@@ -1,6 +1,6 @@
 /**
  * `RuntimeService` — THE SEAM. `runtime.create(spec)` as a function signature
- * that policy code cannot reach past (atelier-v2 §3). Mechanism only: it knows
+ * that policy code cannot reach past (design.md §3). Mechanism only: it knows
  * how to boot/pause/resume/destroy, push files/env, supervise processes,
  * expose ports, run hooks, exec, and snapshot. It never parses ACP, reads a
  * harness config, or models "MCP". It imports nothing from control/ or
@@ -471,7 +471,7 @@ export class RuntimeService {
 
   /** Resolve the content key for a prebuild: source resolved to its current
    * image/snapshot, plus each repo's current remote HEAD. `env` is
-   * intentionally excluded (atelier-v2 §2): it carries build-time secrets
+   * intentionally excluded (design.md §2): it carries build-time secrets
    * (tokens) that must never enter a persisted content key, and is treated
    * as credential material rather than artifact-identifying input. */
   private async resolveContentKey(
@@ -734,7 +734,7 @@ export class RuntimeService {
     const toolsets = this.resolveSpecToolsets(spec);
     try {
       // bootSandbox pushes config + writes files[]. The fixed phase order
-      // (atelier-v2 §6): files/env -> postCreate -> processes -> postStart.
+      // (design.md §6): files/env -> postCreate -> processes -> postStart.
       progress("booting pod…");
       const boot = await this.backend.boot(
         id,
@@ -1141,7 +1141,7 @@ export class RuntimeService {
   /**
    * Re-export env to future process spawns and fire the `envChanged` hook.
    * Does NOT mutate a running process's environment (stated honestly,
-   * atelier-v2 §2 "Runtime API").
+   * design.md §2 "Runtime API").
    */
   async patchEnv(id: string, env: PatchEnvRequest): Promise<void> {
     const record = this.require(id);
@@ -1150,7 +1150,7 @@ export class RuntimeService {
     // Re-push so future process spawns see the new env, then fire envChanged
     // (the agent runs it with the updated pod env). Persist the spec only after
     // the push succeeds, so the store never claims env the agent didn't get.
-    // Does not mutate running processes' env (stated honestly, atelier-v2 §2).
+    // Does not mutate running processes' env (stated honestly, design.md §2).
     await this.agent.putConfig(id, specToAgentConfig(id, nextSpec));
     this.sandboxes.update(id, {
       spec: this.withStoredAnnotations(id, nextSpec),
@@ -1223,7 +1223,7 @@ export class RuntimeService {
   }
 
   /**
-   * Resolve the WS attach URL for a process's unified bridge (agent-v2
+   * Resolve the WS attach URL for a process's unified bridge (agent
    * attach.rs on :9997). The process is already supervised, so attach just
    * joins its live stdio/PTY stream — `rw` takes the single-writer slot, `ro`
    * fans out read-only. Requires the process to declare `stdio: bridge` or

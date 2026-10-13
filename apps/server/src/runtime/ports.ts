@@ -2,7 +2,7 @@
  * Ingress construction from a spec's `ports[]`. Mechanism only: a port entry
  * becomes an Ingress routed at `{name}-{sandboxId}.{baseDomain}`. `auth:
  * "forward"` attaches the operator's forward-auth annotations. No service
- * types, no protocols, no LB config (atelier-v2 §2 "ports stay thin").
+ * types, no protocols, no LB config (design.md §2 "ports stay thin").
  */
 import type { PortEntry } from "@atelier/spec";
 import { config } from "../shared/lib/config.ts";
@@ -17,7 +17,8 @@ function sandboxDomain(): string {
   return config.domain.baseDomain;
 }
 
-/** Forward-auth annotations mandated by the operator (reused from v1 config). */
+/** Operator-mandated forward-auth annotations (the config key's name
+ * predates the generic ports model). */
 function forwardAuthAnnotations(): Record<string, string> {
   return config.kubernetes.vsCodeIngressAnnotations ?? {};
 }

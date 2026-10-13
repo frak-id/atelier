@@ -1,6 +1,6 @@
-# Atelier v2 — staging deploy (`hetzner-atelier`)
+# Atelier — staging deploy (`hetzner-atelier`)
 
-Standalone manifests for the v2 server + console under
+Standalone manifests for the server + console under
 `atelier.hetzner-staging.frak.id`. See `.notes/deploy-v2-staging.md` for the
 full feasibility write-up.
 
@@ -32,7 +32,7 @@ release in sync with it when either side changes.
 
 - `atelier-v2-system` ns: server+console Deployment, Service, Ingress, config
   ConfigMap, data PVC, RBAC (SA `atelier-v2`).
-- `atelier-v2-sandboxes` ns: v2 sandbox pods land here. opencode +
+- `atelier-v2-sandboxes` ns: sandbox pods land here. opencode +
   code-server are the `org-toolbox` built toolset artifact (published to Zot,
   materialized by the guest agent at boot into `~/.local`) — no PVC/Job
   (composed-prebuild-volumes.md §6 "kill shared-binaries").
@@ -73,16 +73,16 @@ The GitHub OAuth app's callback URL must be
 ## Apply
 
 ```sh
-kubectl --context hetzner-atelier apply -f infra/k8s/v2/00-namespaces.yaml
-kubectl --context hetzner-atelier apply -f infra/k8s/v2/10-rbac.yaml
+kubectl --context hetzner-atelier apply -f infra/k8s/00-namespaces.yaml
+kubectl --context hetzner-atelier apply -f infra/k8s/10-rbac.yaml
 # check the infra-core prerequisites above exist (at least the runtime class):
 kubectl --context hetzner-atelier get runtimeclass kata-atelier-clh-rs
-kubectl --context hetzner-atelier apply -f infra/k8s/v2/30-config.yaml
-kubectl --context hetzner-atelier apply -f infra/k8s/v2/40-server-pvc.yaml
+kubectl --context hetzner-atelier apply -f infra/k8s/30-config.yaml
+kubectl --context hetzner-atelier apply -f infra/k8s/40-server-pvc.yaml
 # create the secret (above), then:
-kubectl --context hetzner-atelier apply -f infra/k8s/v2/50-deployment.yaml
-kubectl --context hetzner-atelier apply -f infra/k8s/v2/60-service.yaml
-kubectl --context hetzner-atelier apply -f infra/k8s/v2/70-ingress.yaml
+kubectl --context hetzner-atelier apply -f infra/k8s/50-deployment.yaml
+kubectl --context hetzner-atelier apply -f infra/k8s/60-service.yaml
+kubectl --context hetzner-atelier apply -f infra/k8s/70-ingress.yaml
 ```
 
 ## Rebuild images (in-cluster, no local docker)

@@ -7,7 +7,7 @@ import type {
 /**
  * Per-org operator-mandated spec fragment (an audit process, a compliance
  * file) appended at every seam crossing — the enforcement half of enrichment
- * (atelier-v2 §3.2). A dev hand-crafting a spec against the raw API still
+ * (design.md §3.2). A dev hand-crafting a spec against the raw API still
  * gets these, because enrichment happens server-side on every crossing.
  */
 export class OrgPolicyService {

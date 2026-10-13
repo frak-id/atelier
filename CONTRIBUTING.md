@@ -12,7 +12,7 @@ bun run --filter @atelier/server dev   # mock mode, port 4000
 ## Requirements
 
 - Bun (project runtime)
-- Rust toolchain (for `apps/agent-v2`)
+- Rust toolchain (for `apps/agent`)
 - Docker (for image builds)
 
 ## Useful commands

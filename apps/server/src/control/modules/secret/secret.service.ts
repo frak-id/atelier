@@ -1,5 +1,5 @@
 /**
- * The control secrets store (atelier-v2 §3, §7). Values, never at rest in a
+ * The control secrets store (design.md §3, §7). Values, never at rest in a
  * spec — specs hold `{"$secret": name}` references only. `resolve()` is the
  * only path that returns a plaintext value, and it's called exactly once, at
  * the seam (`enrichment.ts`).

@@ -6,7 +6,7 @@
 #     boot the clone (no reformat, data + toolset blob intact)
 #   - ssh into the guest as `dev` (what sshpiper / the in-server proxy do)
 #
-#   infra/k8s/v2/kata-eval/extended.sh <runtimeClass>
+#   infra/k8s/kata-eval/extended.sh <runtimeClass>
 #
 # Pushes two tiny artifacts to Zot under toolsets/kata-eval/probe (deleted
 # at the end when the registry allows it).

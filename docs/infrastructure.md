@@ -94,21 +94,21 @@ TopoLVM Thin Pool (LVM VG on node)
 | Sandbox Pod + Service + Ingress | `kubernetes.namespace` (app config; e.g. `atelier-v2-sandboxes`) | Per-sandbox compute + routing |
 | Workspace PVC | Sandbox namespace | Per-sandbox data volume (from VolumeSnapshot); `/data/upper` + `/data/work` back the `/home/dev` overlay |
 | VolumeSnapshot | Sandbox namespace | Prebuild snapshots (CoW clones for new PVCs) |
-| Server + Console Deployment + PVC | App system namespace (`infra/k8s/v2`, e.g. `atelier-v2-system`) | API + SPA + SQLite database |
+| Server + Console Deployment + PVC | App system namespace (`infra/k8s`, e.g. `atelier-v2-system`) | API + SPA + SQLite database |
 | OCI registry (Zot) | Cluster infra (not deployed by atelier) | Base images + toolset artifacts (`kubernetes.registryUrl`) |
 
 ## Deployment
 
 Atelier deploys only **the server + console app**: plain manifests under
-`infra/k8s/v2/`, applied with `kubectl`. See
-[`infra/k8s/v2/README.md`](../infra/k8s/v2/README.md) for the apply sequence
+`infra/k8s/`, applied with `kubectl`. See
+[`infra/k8s/README.md`](../infra/k8s/README.md) for the apply sequence
 and how to rebuild images in-cluster with BuildKit.
 
 The shared cluster infra (kata-deploy and the `kata-atelier-clh-rs` runtime,
 cert-manager + ClusterIssuers, TopoLVM + the snapshot class, Zot, BuildKit,
 CLIProxy) is **not** deployed from this repo — on hetzner-atelier infra-core
 owns it. The app config references it by name; the list is in
-`infra/k8s/v2/README.md` ("Cluster prerequisites").
+`infra/k8s/README.md` ("Cluster prerequisites").
 
 ## Resource Cleanup
 

@@ -11,13 +11,13 @@ apps/
 ├── server/       # @atelier/server — Bun/Elysia: runtime/control/sessions/api (see apps/server/AGENTS.md)
 ├── console/      # @atelier/console — React 19 SPA (Vite, TanStack Router), the web GUI
 ├── cli/          # @konfeature/atelier — host CLI (npm package, esbuild-bundled for Node)
-├── agent-v2/     # In-pod agent (`atelier-agent`, Rust, static musl scratch image)
+├── agent/        # In-pod agent (`atelier-agent`, Rust, static musl scratch image)
 └── steery-adapter/ # Steery adapter (`steery-adapter-atelier`, Rust), see docs/integrations/steery.md
 packages/
 ├── shared/       # @frak/atelier-shared — TypeBox schemas, constants, config loader
 ├── spec/         # @atelier/spec — the SandboxSpec seam contract
 └── compose/      # @atelier/compose — client-side harness/preset/spec-merge SDK
-infra/k8s/v2/     # Server + console app manifests (see infra/k8s/v2/README.md; cluster infra is NOT deployed from this repo)
+infra/k8s/        # Server + console app manifests (see infra/k8s/README.md; cluster infra is NOT deployed from this repo)
 infra/nginx/      # Console nginx config (SPA + reverse proxy to the server)
 scripts/          # bump-version.ts
 Dockerfile        # Multi-target: `server` and `console` images
@@ -30,12 +30,12 @@ Dockerfile        # Multi-target: `server` and `console` images
 | Add API route | `apps/server/src/api/` (services come from `container.ts`) |
 | Runtime/control/sessions | `apps/server/src/` (see `apps/server/AGENTS.md`) |
 | K8s/Docker backends, agent integration | `apps/server/src/runtime/` |
-| Sandbox internals | `apps/agent-v2/src/` (Rust, no Bun/Node) |
+| Sandbox internals | `apps/agent/src/` (Rust, no Bun/Node) |
 | Base images (dev-base/cloud/rust/browser) | `apps/server/src/runtime/registry/seeds/` (Dockerfile + rootfs, built by the server's image builder) |
 | Console UI | `apps/console/src/components/` + `routes/` |
 | Launchpad (non-tech surface) | `packages/spec/src/launchpad-spec.ts`, `apps/server/src/api/launchpad.{routes,lifecycle}.ts`, `apps/server/src/control/modules/launchpad/`, console `routes/launchpad.*` + `components/launchpad/` |
 | Cross-app config | `packages/shared/src/` |
-| App deploy manifests | `infra/k8s/v2/` |
+| App deploy manifests | `infra/k8s/` |
 | SandboxSpec contract | `packages/spec/src/` |
 | Harness/preset composition | `packages/compose/src/` |
 | Host CLI | `apps/cli/src/` |
@@ -52,7 +52,7 @@ bun run typecheck                     # tsc --noEmit (TypeScript 7 native, per w
 bun test                              # bun:test suite, from the repo root
 bun run knip                          # Unused files/deps/exports
 bun run --filter @atelier/server check:boundary  # Server module-boundary rules
-cd apps/agent-v2 && cargo test        # Agent tests (cargo clippy --all-targets for lint)
+cd apps/agent && cargo test           # Agent tests (cargo clippy --all-targets for lint)
 cd apps/steery-adapter && cargo test # Steery adapter tests
 ```
 

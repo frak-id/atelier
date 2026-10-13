@@ -1,5 +1,5 @@
 /**
- * `/api/*` — control CRUD (atelier-v2 §3.1 api/ table: "/api/* → control
+ * `/api/*` — control CRUD (design.md §3.1 api/ table: "/api/* → control
  * CRUD"). Identity, orgs, secrets, org policy. Thin Elysia
  * binding; all policy logic lives in `control/`.
  */

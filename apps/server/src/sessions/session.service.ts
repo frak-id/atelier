@@ -7,7 +7,7 @@
  * server registration. A sandbox without the annotation has no agent surface
  * and gets a clean error instead of a silently-wrong default.
  *
- * A privileged CLIENT of runtime (atelier-v2 §3.1): resolves connection info
+ * A privileged CLIENT of runtime (design.md §3.1): resolves connection info
  * via `RuntimeService.get()`, same data any API caller could read.
  */
 import type {

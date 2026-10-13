@@ -1,6 +1,6 @@
 #!/usr/bin/env bun
 /**
- * Enforces the atelier-v2 §3.1 module boundaries at build time, not by
+ * Enforces the design.md §3.1 module boundaries at build time, not by
  * convention:
  *   - runtime/  must not import control/ or sessions/ (it compiles alone —
  *     the future extraction seam);

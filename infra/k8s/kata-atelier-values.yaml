@@ -1,4 +1,4 @@
-# kata-deploy Helm values for Atelier v2 — what atelier needs from the Kata
+# kata-deploy Helm values for Atelier — what atelier needs from the Kata
 # runtime. Self-hosters install kata-deploy with this file (docs/setup.md).
 # On hetzner-atelier the release is owned by infra-core (Pulumi,
 # infra/hetzner/kata.ts) since the kata-deploy 4.2 upgrade and is NOT applied
@@ -12,7 +12,7 @@
 # Workspace disks are compatible both ways: a disk formatted under one mounts
 # unchanged under the other, so switching is a config flip + pause/resume.
 #
-# Guest requirements (sandbox-boot.sh + agent-v2 toolset.rs):
+# Guest requirements (sandbox-boot.sh + agent toolset.rs):
 #   - `volumeDevices` raw block PVCs honoured at their devicePath
 #     (/dev/atelier-data), i.e. virtio-blk passthrough of volumeMode: Block.
 #   - guest kernel: ext4, overlayfs (redirect_dir), loop, erofs + LZ4

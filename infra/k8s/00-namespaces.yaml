@@ -1,4 +1,4 @@
-# Atelier v2 — staging deploy on hetzner-atelier.
+# Atelier — staging deploy on hetzner-atelier.
 # System components (server + console) and a dedicated sandbox namespace.
 apiVersion: v1
 kind: Namespace

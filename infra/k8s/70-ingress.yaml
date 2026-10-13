@@ -1,4 +1,4 @@
-# Public entrypoint for the v2 console + server. Per-host TLS via
+# Public entrypoint for the console + server. Per-host TLS via
 # letsencrypt-frak (HTTP-01) — the cluster's Cloudflare token can't issue
 # frak.id wildcards, and *.hetzner-staging.frak.id already resolves to the
 # Traefik LB, so HTTP-01 works out of the box (same pattern as twenty/chat).

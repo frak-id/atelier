@@ -18,7 +18,7 @@ Booting a sandbox composes two tiers (`composed-prebuild-volumes.md` §1):
   MCPs, configs) → an OCI artifact in zot, **extracted** at boot.
 
 The extract is the slow path. `materialize()`
-(`apps/agent-v2/src/toolset.rs:411-431`) does, per toolset, sequentially:
+(`apps/agent/src/toolset.rs:411-431`) does, per toolset, sequentially:
 
 ```
 oras pull --plain-http <ref> -o "$tmp"    # gzip tarball → temp dir on PVC
@@ -169,7 +169,7 @@ preferred. **Durability (staging, kata-deploy 3.31):** kata-deploy repopulates
 `/opt/kata` on (re)install, so a hand-edit to the stock clh config reverts. The
 durable fix is a chart-managed `customRuntimes` entry (`kata-atelier-clh` =
 `baseConfig: clh` + a Kata `config.d` drop-in that sets `virtio_fs_extra_args`
-with `--xattr`) in `infra/k8s/v2/kata-atelier-values.yaml`; the server targets
+with `--xattr`) in `infra/k8s/kata-atelier-values.yaml`; the server targets
 that RuntimeClass via `30-config.yaml` (`runtimeClass: kata-atelier-clh`). This
 survives kata-deploy rolls and needs no node-level service.
 
@@ -191,7 +191,7 @@ not the K8s entrypoint — see its header).
 
 ## 4. Artifact format change (build + capture)
 
-`apps/agent-v2/src/toolset.rs` today tars + gzips + `oras push`es
+`apps/agent/src/toolset.rs` today tars + gzips + `oras push`es
 (`build()`:159-236, `capture()`:298-410) with
 `LAYER_TYPE = "…layer.v1.tar+gzip"` (`toolset.rs:13`). Change the packaging
 tail only:

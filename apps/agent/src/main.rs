@@ -1,14 +1,8 @@
-//! Atelier v2 in-pod agent (`atelier-agent`), built against the v2
+//! Atelier in-pod agent (`atelier-agent`), built against the
 //! `SandboxSpec` seam: config is *pushed* by the runtime and mutable
 //! (store.rs), processes are supervised agent-side with
 //! readiness/primary/after/restart/lazy semantics, and stdio/PTY attach share
 //! one bridge with a single-writer guard.
-//!
-//! Milestone 1 build order (atelier-v2 §6 phase 1):
-//!   1a. crate + config schema + mutable store + config push route  ← this commit
-//!   1b. supervisor (autostart, readiness probes, restart, after, lazy)
-//!   1c. unified attach bridge with single-writer guard + PTY
-//!   1d. phased hooks + N-port forwarder + exec/files routes
 
 mod attach;
 mod bridge;

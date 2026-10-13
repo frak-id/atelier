@@ -27,7 +27,7 @@ import type {
 
 const log = createChildLogger("runtime-backend-kube");
 
-/** WS attach-bridge port the agent listens on (agent-v2 `attach::ATTACH_PORT`). */
+/** WS attach-bridge port the agent listens on (agent `attach::ATTACH_PORT`). */
 const ATTACH_PORT = 9997;
 
 /**

@@ -1,5 +1,5 @@
 /**
- * `/v1/*` — the whole runtime API (atelier-v2 §2 "Runtime API (the whole
+ * `/v1/*` — the whole runtime API (design.md §2 "Runtime API (the whole
  * thing)"). Every route: authenticate (control) → enrich the spec (control's
  * two seam mutations) → call `runtime.*(spec)` once. The runtime itself never
  * sees an unresolved secret or an unauthenticated caller.
@@ -220,7 +220,7 @@ export function resolveOrgId(
 
 /**
  * Shared by `POST /v1/sandboxes` and the `create_sandbox` MCP tool (the
- * "one API, three surfaces" principle, atelier-v2 §4): resolve the caller's
+ * "one API, three surfaces" principle, design.md §4): resolve the caller's
  * org, apply toolbox auto-inject + explicit selectors, run the enrichment
  * seam, merge toolbox-contributed processes/ports, and boot. Both callers
  * pass an authenticated `AuthUser` — there is exactly one enrichment path.

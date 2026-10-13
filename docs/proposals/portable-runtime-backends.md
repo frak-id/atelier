@@ -1,9 +1,9 @@
 # Portable Runtime Backends — a `SandboxBackend` Seam Below the Runtime
 
 **Status:** proposal / design note
-**Refines:** [`generic-sandbox-architecture.md`](./generic-sandbox-architecture.md)
-§4 (the mechanism/policy planes). That doc drew the **Plane 1 / Plane 2**
-seam (`runtime.create(spec)`) so policy can't reach mechanism. This doc draws
+**Refines:** [`design.md`](../design.md) §3 (the runtime/control seam). That
+doc drew the **policy / mechanism** seam (`runtime.create(spec)`) so policy
+can't reach mechanism. This doc draws
 a **second seam _below_ Plane 2** — a `SandboxBackend` port — so the runtime's
 backend-neutral logic (op-locks, content-addressed prebuild dedup, phase
 ordering, pause/resume bookkeeping, GC guards) stops being welded to
@@ -35,7 +35,7 @@ seam" — but only against _policy_. Against _infrastructure_ it is hardwired:
 - Storage _is_ CSI: `VolumeSnapshot` + `PersistentVolumeClaim.spec.dataSource`
   cloning (`snapshotPvc` runtime.service.ts:949; `buildPvc({snapshotName})`).
 - Toolset materialization _is_ a Linux-kernel mount model: erofs/squashfs
-  loop-mounts + overlayfs + `CAP_SYS_ADMIN` (`apps/agent-v2/src/toolset.rs`).
+  loop-mounts + overlayfs + `CAP_SYS_ADMIN` (`apps/agent/src/toolset.rs`).
 
 Note the transport is _already_ half-abstracted: `AgentClient` takes an
 injected kube handle (`constructor(private readonly kube = kubeClient)`,
@@ -381,7 +381,7 @@ the Linux VM Docker/Lima already runs."
    git push/pull, sftp, VS Code Remote-SSH, `-L`/`-R` port forward.
 3. **Dual-format prebuild/toolset artifacts** — `VolumeSnapshot | OCI-tar` for
    prebuilds; decouples the artifact from the storage driver (§6).
-4. **Add the `Tar` blob rung + capability probe in `agent-v2`** (§7) — no
+4. **Add the `Tar` blob rung + capability probe in `apps/agent`** (§7) — no
    runtime changes; the real portability enabler for locked-down/rootless.
 5. **Write `DockerBackend`** — the payoff. `runSandbox` = `docker run` (or a
    generated compose project) with the agent on a published port; `exposePort`
@@ -452,7 +452,7 @@ image. Fixed:
   `ssh-keygen -A` fresh on every boot, before starting the agent (per-sandbox,
   per-boot keys, nothing secret distributed).
 - The agent exposes the public half at `GET /ssh/host-keys`
-  (`apps/agent-v2/src/ssh.rs`) — the agent's HTTP control plane is the
+  (`apps/agent/src/ssh.rs`) — the agent's HTTP control plane is the
   already-authenticated channel the runtime dials, so this is sound key
   distribution, not SSH-level TOFU.
 - The runtime fetches the key right after boot/resume and PINS it: the

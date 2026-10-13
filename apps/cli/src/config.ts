@@ -14,7 +14,7 @@
  *
  * The auth is the same Bearer key any API caller uses (`atl_…`/JWT minted via
  * `POST /api-keys` or the console): the CLI is exactly as privileged as any
- * other client (atelier-v2 §4).
+ * other client (design.md §4).
  */
 import { mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { homedir } from "node:os";

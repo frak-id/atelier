@@ -4,7 +4,7 @@
  * not in spec composition).
  *
  * "opencode with these MCP servers" → files + the acp process + annotations
- * (atelier-v2 §3).
+ * (design.md §3).
  */
 import type { HarnessComposer } from "../harness.ts";
 import type { SpecFragment } from "../spec-merge.ts";
@@ -167,7 +167,7 @@ export const OPENCODE_PATHS = {
 
 /**
  * The registrable composer. Not auto-registered here — the server/CLI
- * bootstrap calls `registerHarness(opencodeHarness)` (atelier-v2 §3: harness
+ * bootstrap calls `registerHarness(opencodeHarness)` (design.md §3: harness
  * registration is client-side wiring, not runtime machinery).
  */
 export const opencodeHarness: HarnessComposer = {

@@ -1,5 +1,5 @@
 /**
- * The single source of truth for where the v2 server lives. Same-origin in
+ * The single source of truth for where the server lives. Same-origin in
  * dev (vite proxy) and in the deployed static build, so the httpOnly
  * `sandbox_token` cookie rides every request/upgrade.
  *

@@ -121,7 +121,7 @@ execution in `ImageBuilderService`, so two gaps remain:
   builds are wanted.
 
 ### ☐ C2. `capture()` staging debris leaks into the live home
-`apps/agent-v2/src/toolset.rs:172,414-451`
+`apps/agent/src/toolset.rs:172,414-451`
 `squash_and_push_script` (shared by `build` + `capture`) stages into `mktemp`
 dirs directly under `/home/dev`. The "pod/PVC torn down right after, so a failed
 ESTALE `rm` is harmless" rationale is **true for `build()`** (throwaway pod) and
@@ -136,7 +136,7 @@ and prebuild clone.
 - Correct the comment so it stops claiming universal teardown safety.
 
 ### ☐ C3. Multi-toolset boot budget is inconsistent across three layers
-`apps/agent-v2/src/toolset.rs:721-793` (per-toolset fresh 600 s each) vs
+`apps/agent/src/toolset.rs:721-793` (per-toolset fresh 600 s each) vs
 `apps/server/src/runtime/agent/agent.client.ts:424`
 (`materializeToolsets` — single 600 s for the whole call) vs
 `.../seeds/dev-base/rootfs/etc/sandbox/sandbox-boot.sh:77` (600 s total wait).
@@ -157,7 +157,7 @@ partially-assembled home — reintroducing the race the redesign closed.
 ## P2 — Performance
 
 ### ☐ P2a. Pull toolset blobs concurrently
-`apps/agent-v2/src/toolset.rs:721-793`
+`apps/agent/src/toolset.rs:721-793`
 Independent `oras pull`s are awaited sequentially; boot latency scales linearly
 with toolset count — the exact cost the redesign removed for *file* count,
 reintroduced for *toolset* count.
@@ -175,7 +175,7 @@ short-circuits both.)
 have `assertImageAvailable` and `resolveImage` share it.
 
 ### ☐ P2c. Non-login shells for root-run materialize plumbing
-`apps/agent-v2/src/toolset.rs:701,784,854,884` via `command.rs:60-72`
+`apps/agent/src/toolset.rs:701,784,854,884` via `command.rs:60-72`
 `materialize_inner` spawns 3+N `/bin/bash -l -c` procs, each sourcing
 `/etc/profile` + all `profile.d/*.sh` for pure root `mkdir`/`mount`/`find`/`rm`.
 `readiness.rs:80-86` already set the non-login precedent.
@@ -184,7 +184,7 @@ root-run scripts. Optionally merge cleanup/overlay/sweep into fewer invocations
 (pairs well with P2a's concurrency rewrite).
 
 ### ☐ P2d. Non-blocking fs in async agent paths
-`apps/agent-v2/src/toolset.rs:918,931,945-946,968,971-987`
+`apps/agent/src/toolset.rs:918,931,945-946,968,971-987`
 `persist_materialize_request`/`self_heal_home` use blocking
 `std::fs::{write,rename,read}` + `Path::exists` on tokio workers — on virtio-fs,
 the one fs this design flags as stall-prone.
@@ -211,7 +211,7 @@ Runs every 1 s during a build's log flush.
 `buildctl ${args.join(" ")}` interpolates unescaped `build-arg:${k}=${v}` into a
 shell string. Unreachable today (no caller sets `buildArgs`), but the port
 advertises the field, kaniko/docker treat it as argv, and buildkit is the
-backend wired into the live v2 deploy.
+backend wired into the live deploy.
 **Fix** Run `buildctl` as argv, or `shQuote` every interpolated value. Do this
 alongside H2.
 
@@ -237,7 +237,7 @@ spec-drift-proof — the design's original intent) or delete the column +
 accessor. Prefer deletion unless drift-proofing is wanted now.
 
 ### ☐ H5. Duplicated `chown 1000:1000` / `/data/{upper,work,toolsets}` literals
-`.../sandbox-boot.sh:22,31` vs `apps/agent-v2/src/toolset.rs:838,841`
+`.../sandbox-boot.sh:22,31` vs `apps/agent/src/toolset.rs:838,841`
 Two independently-deployed artifacts that must agree, no compile/test link.
 **Fix** Bake uid/gid + data-subdir layout into a pod env var
 (`kube.resources.ts`) read by both. Low priority — do it if either surface is
@@ -264,7 +264,7 @@ Dedup enforced in server + agent, nowhere at the schema.
 (TypeBox lacks `uniqueItems`).
 
 ### ☐ H9. Structured materialize error categories
-`apps/agent-v2/src/toolset.rs:790-796`
+`apps/agent/src/toolset.rs:790-796`
 Network vs corrupt-blob vs mount failure are indistinguishable to the runtime.
 **Fix** (optional) Prefix the error (`registry:`/`format:`/`mount:`) for
 retry/alert policy.

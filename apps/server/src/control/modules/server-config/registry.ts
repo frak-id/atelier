@@ -1,6 +1,6 @@
 /**
  * The server-config registry: the single source of truth for every runtime-
- * tunable server setting (atelier-v2 server config plane). Each entry declares
+ * tunable server setting (the server config plane). Each entry declares
  * its type, a safe hard-coded default, an env var it can be preseeded from,
  * and a validator — so the store never has to guess a value's shape and the
  * API/CLI/MCP/console surfaces all render from one description.

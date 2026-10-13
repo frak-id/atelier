@@ -1,6 +1,6 @@
 # Launchpad — a non-technical surface over Atelier
 
-> Status: **v1 implemented** on `feat/launchpad`.
+> Status: **first release implemented**.
 > Code: contract `packages/spec/src/launchpad-spec.ts` · storage
 > `apps/server/src/control/modules/launchpad/` (migration `0023_launchpad`) ·
 > seam `apps/server/src/api/launchpad.lifecycle.ts` (routes:
@@ -33,7 +33,7 @@ Two roles, two entities, one new surface.
 The home page (`/`) gets a large banner pointing non-developers to the
 Launchpad, and the header gains a Launchpad entry.
 
-### Out of scope for v1 (deliberate)
+### Out of scope for the first release (deliberate)
 
 - **No chat UI.** A starter surfaces whatever the tech team exposes: pi-web,
   opencode's web UI, a dev server, code-server. The ACP session surface stays
@@ -221,7 +221,7 @@ POST   /api/launchpad/workspaces/:id/retry      resume in place, or relaunch (sa
 DELETE /api/launchpad/workspaces/:id            destroy sandbox + row (already gone = fine)
 ```
 
-## 6. Known limits (v1)
+## 6. Known limits (first release)
 
 - **Repos are cloned at bake time with the launcher's GitHub token.** A
   starter's inline `recipe.prebuild.repos` clone exactly like a Settings →

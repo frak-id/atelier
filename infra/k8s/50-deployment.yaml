@@ -1,4 +1,4 @@
-# v2 server + console as a single 2-container pod (same origin → the
+# Server + console as a single 2-container pod (same origin → the
 # sandbox_token cookie + WS/SSE work with no CORS). Images pulled from the
 # in-cluster Zot registry (insecure, no auth) built via BuildKit.
 apiVersion: apps/v1

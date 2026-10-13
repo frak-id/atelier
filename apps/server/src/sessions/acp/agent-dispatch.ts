@@ -1,7 +1,7 @@
 /**
- * Agent-neutral ACP hub (atelier-v2 §3.1 "sessions/"). Speaks ACP JSON-RPC to
+ * Agent-neutral ACP hub (design.md §3.1 "sessions/"). Speaks ACP JSON-RPC to
  * a sandbox's harness by **attaching to the already-supervised `acp` process**
- * through the runtime's unified attach bridge (agent-v2 attach.rs on :9997) —
+ * through the runtime's unified attach bridge (agent attach.rs on :9997) —
  * not by spawning a per-session bridge subprocess. The `acp` process is
  * declared in the spec (`stdio: "bridge"`, `primary: true`, composed
  * client-side by `@atelier/compose`); the runtime boots it once and gates
@@ -60,7 +60,10 @@ import {
 
 const log = createChildLogger("agent-dispatch");
 
-/** See v1 rationale: bounds handshake calls only, never `session/prompt`. */
+/**
+ * Bounds ACP handshake calls only, never `session/prompt` (a prompt runs for
+ * as long as the agent works).
+ */
 const ACP_HANDSHAKE_TIMEOUT_MS = 30_000;
 
 /** Hard cap on `session/list` pagination (10 pages × ~50/page ballpark) so a

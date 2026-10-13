@@ -1,5 +1,5 @@
 # Server SQLite data (control users/orgs/keys/specs + runtime sandbox/snapshot
-# store), mounted at DATA_DIR=/app/data. Independent from v1's manager DB.
+# store), mounted at DATA_DIR=/app/data.
 apiVersion: v1
 kind: PersistentVolumeClaim
 metadata:

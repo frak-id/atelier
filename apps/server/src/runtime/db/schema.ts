@@ -1,5 +1,5 @@
 /**
- * Runtime's tables. Per atelier-v2 §3.1: `sandboxes(id, spec, status,
+ * Runtime's tables. Per design.md §3.1: `sandboxes(id, spec, status,
  * generated, metadata)` and `snapshots(hash, parent, ref)` — deliberately NO
  * FK to any identity table. `control/` treats the runtime as an
  * authenticated principal it talks to, not a database it joins against, and

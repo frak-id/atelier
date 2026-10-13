@@ -1,23 +1,23 @@
 /**
- * `/mcp` exposes mutation capability (atelier-v2 \u00a74: "it grows the mutation
+ * `/mcp` exposes mutation capability (design.md §4: "it grows the mutation
  * tools (create/pause/resume/rm/files/expose) so agents drive sandboxes
- * exactly like the CLI does"). One API, three surfaces \u2014 GUI (primary), CLI,
+ * exactly like the CLI does"). One API, three surfaces — GUI (primary), CLI,
  * MCP.
  *
- * Per-user identity (PHASE0.md gap #6, now closed): the bearer token is
- * resolved through `control.authService.resolveToken` \u2014 the same `atl_`
- * API-key / JWT path every other route uses \u2014 instead of a single static
+ * Per-user identity: the bearer token is resolved through
+ * `control.authService.resolveToken` — the same `atl_`
+ * API-key / JWT path every other route uses — instead of a single static
  * shared token. Each MCP session is bound to the user who initialized it;
  * every tool call closes over that resolved identity, so org-scoped
  * data (secrets, policy, toolboxes) is finally reachable from
  * MCP exactly as it is from the HTTP API.
  *
  * Sessions are kept in a map (one stateful transport per client), not a
- * single global slot \u2014 required once callers carry distinct identities: two
+ * single global slot — required once callers carry distinct identities: two
  * developers' IDEs must not evict each other's session.
  * Still STATEFUL (`sessionIdGenerator` set): a stateless-mode experiment
  * caused a ~10s timeout-then-SSE-fallback in OpenCode's MCP client during
- * the `initialize \u2192 initialized \u2192 tools/list` handshake, so every session
+ * the `initialize → initialized → tools/list` handshake, so every session
  * keeps its own long-lived transport instance.
  */
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
@@ -36,7 +36,7 @@ import { registerTaskTools } from "./tools/tasks.ts";
 const log = createChildLogger("mcp");
 
 /** Idle sessions are evicted lazily on the next request rather than via a
- * timer \u2014 this route is low-traffic enough that a background sweep isn't
+ * timer — this route is low-traffic enough that a background sweep isn't
  * worth the extra lifecycle to manage. */
 const SESSION_IDLE_MS = 30 * 60 * 1000;
 

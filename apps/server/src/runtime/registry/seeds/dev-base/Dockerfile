@@ -90,7 +90,7 @@ RUN curl -fsSL -o /tmp/oras.tar.gz "https://github.com/oras-project/oras/release
 # boot instead (per-sandbox, per-boot keys, nothing secret distributed), and
 # the agent's `GET /ssh/host-keys` lets the server pin the real key into the
 # sshpiper `Pipe` / in-server proxy — see docs/proposals/portable-runtime-
-# backends.md §5 and apps/agent-v2/src/ssh.rs.
+# backends.md §5 and apps/agent/src/ssh.rs.
 RUN usermod -l dev -d /home/dev -m node \
     && groupmod -n dev node \
     && mkdir -p /var/run/sshd \
@@ -131,7 +131,7 @@ RUN mkdir -p /var/lib/chrony && chown _chrony:_chrony /var/lib/chrony \
     && echo 'dev ALL=(root) NOPASSWD: /usr/sbin/chronyd, /usr/bin/chronyc' > /etc/sudoers.d/chrony \
     && chmod 440 /etc/sudoers.d/chrony
 RUN chmod +x /etc/sandbox/*.sh 2>/dev/null || true
-# v2 agent binary from the `agent` stage above (apps/agent-v2 ships it at
+# Agent binary from the `agent` stage above (apps/agent ships it at
 # /atelier-agent). The in-pod path stays /usr/local/bin/sandbox-agent so
 # sandbox-boot.sh is unchanged.
 COPY --from=agent /atelier-agent /usr/local/bin/sandbox-agent

@@ -1,8 +1,11 @@
-# Atelier v2 — A Headless Sandbox Runtime, Everything Else Is Content
+# Atelier — A Headless Sandbox Runtime, Everything Else Is Content
 
-Status: **proposal — v2 direction. Supersedes
-[`generic-sandbox-profiles.md`](./generic-sandbox-profiles.md) and refines
-[`generic-sandbox-architecture.md`](./generic-sandbox-architecture.md).**
+Status: **implemented.** This is the design the codebase follows; code
+comments cite its sections as `design.md §N`. It was written as the "v2"
+proposal that replaced the original POC, so the text still says **v1** for
+that POC (the old manager, dashboard and agent, all removed) and **v2** for
+this design, which is now simply Atelier. §5 and §6 describe that migration
+and are kept as history: it is complete.
 
 Inputs: full manager/runtime code audits, the three research docs in
 `docs/research/`, and a fresh prior-art survey of 10 sandbox platforms
@@ -602,7 +605,7 @@ like the CLI does. One API, three surfaces — GUI (primary), CLI, MCP.
 
 ---
 
-## 5. Mapping v1 code to v2 (what to copy, what to reshape, what to drop)
+## 5. Mapping v1 code to v2 (historical: what to copy, reshape, drop)
 
 v2 is built on a parallel track (§6), so this table reads as a
 **harvest list**, not an in-place refactor plan: the audits found ~80%
@@ -632,7 +635,7 @@ covers orchestration wants.
 
 ---
 
-## 6. Build plan: parallel track, not in-place surgery
+## 6. Build plan: parallel track, not in-place surgery (historical, done)
 
 **Decision: v2 is developed *beside* v1, not on top of it.** New
 packages and apps (`apps/server` with its three modules (§3.1) +

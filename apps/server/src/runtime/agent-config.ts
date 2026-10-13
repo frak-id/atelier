@@ -1,6 +1,6 @@
 /**
- * Project a resolved `SandboxSpec` onto the v2 guest agent's pushed config
- * (`apps/agent-v2` `AgentConfig`, config.rs). This is the seam artifact: a thin
+ * Project a resolved `SandboxSpec` onto the guest agent's pushed config
+ * (`apps/agent` `AgentConfig`, config.rs). This is the seam artifact: a thin
  * projection, never a reshape. The runtime pushes this via `PUT /config`; it is
  * never ConfigMap-mounted, because per-process `env` may carry resolved secret
  * values that must not land in etcd or a pause snapshot.
@@ -53,7 +53,7 @@ export interface AgentPort {
   port: number;
 }
 
-/** The full pushed config, mirroring `apps/agent-v2` config.rs `AgentConfig`. */
+/** The full pushed config, mirroring `apps/agent` config.rs `AgentConfig`. */
 export interface AgentConfig {
   sandboxId: string;
   env?: Record<string, string>;
