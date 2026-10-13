@@ -770,7 +770,7 @@ export class RuntimeService {
       const generated = {
         agentPassword: boot.agentPassword,
         podIp: boot.podIp,
-        sshHostKeys: boot.sshHostKeys ?? undefined,
+        sshHostKeys: boot.sshHostKeys,
       };
       this.sandboxes.update(id, {
         status: "running",
@@ -824,8 +824,8 @@ export class RuntimeService {
 
   /**
    * The sandbox's pinned sshd host public key line(s), as last reported by
-   * the agent at boot/resume — undefined when unknown (not yet booted since
-   * this feature shipped, or an old-agent sandbox that has none). A cheap,
+   * the agent at boot/resume — undefined when unknown (not booted since
+   * pinning shipped). A cheap,
    * synchronous store read (no agent round-trip): used by the in-server SSH
    * gateway (ssh/proxy.ts) to verify the upstream host key per connection,
    * so it must stay fast.
@@ -1030,7 +1030,7 @@ export class RuntimeService {
         generated: {
           agentPassword: boot.agentPassword,
           podIp: boot.podIp,
-          sshHostKeys: boot.sshHostKeys ?? undefined,
+          sshHostKeys: boot.sshHostKeys,
         },
       });
     });

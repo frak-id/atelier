@@ -28,7 +28,7 @@ export function knownHostsPattern(host: string, port: number): string {
  * (a host can have multiple algorithms); any trailing comment on the input
  * line is dropped, matching plain `known_hosts` line shape. Empty/blank
  * input lines are skipped. Returns `undefined` when no usable key lines are
- * given, so a caller can fall back to the unpinned strategy.
+ * given (the caller refuses to pin that).
  */
 export function buildKnownHostsData(
   host: string,

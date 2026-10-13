@@ -83,7 +83,7 @@ describe("buildSandboxPod fresh-volume marker (sandbox-boot.sh mkfs guard)", () 
 });
 
 describe("buildSshPipe", () => {
-  test("no knownHostsData: unpinned fallback (ignore_hostkey, no known_hosts_data)", () => {
+  test("no knownHostsData: a fresh, not-yet-pinned Pipe (ignore_hostkey)", () => {
     const pipe = buildSshPipe({
       sandboxId: "abc123",
       targetHost: "sandbox-abc123.ns.svc",

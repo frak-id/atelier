@@ -50,8 +50,8 @@ export async function startSshGateway(
       port: 22,
       // Pin against the sshd host key the agent reported at this sandbox's
       // last boot/resume, when known (a cheap in-memory store read, see
-      // RuntimeService.getSshHostKeys) — undefined falls back to the proxy's
-      // unpinned stance (old-agent sandbox, or not yet fetched).
+      // RuntimeService.getSshHostKeys). Unknown keys make the proxy refuse
+      // the upstream (see buildHostVerifier).
       hostKeys: container.runtime.getSshHostKeys(sandboxId),
     };
   };

@@ -16,13 +16,12 @@ export interface ProvisionAgentResult {
   /**
    * The sandbox's sshd host public key line(s) (OpenSSH format), fetched
    * from `GET /ssh/host-keys` — SSH host-key pinning (ssh-gateway.ts /
-   * ssh/proxy.ts). `null` when unavailable: an old agent image (404, no
-   * such endpoint) or the boot script hasn't run `ssh-keygen -A` yet
-   * (shouldn't happen — sandbox-boot.sh runs it before starting the agent —
-   * but treated the same as "old agent" defensively). Callers fall back to
-   * the unpinned strategy on `null`, never fail boot over it.
+   * ssh/proxy.ts). sandbox-boot.sh runs `ssh-keygen -A` before starting the
+   * agent, so a dev-base image always reports some; empty only for an image
+   * without sshd host keys (a bare agent image). A gateway-fronted k8s boot
+   * refuses an empty list (boot.ts).
    */
-  sshHostKeys: string[] | null;
+  sshHostKeys: string[];
 }
 
 /**

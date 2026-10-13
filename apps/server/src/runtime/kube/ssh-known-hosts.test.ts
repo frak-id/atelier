@@ -52,7 +52,7 @@ describe("buildKnownHostsData", () => {
     expect(decoded).toBe("host ssh-ed25519 AAAAC3ed");
   });
 
-  test("no usable key lines returns undefined (caller falls back unpinned)", () => {
+  test("no usable key lines returns undefined", () => {
     expect(buildKnownHostsData("host", 22, [])).toBeUndefined();
     expect(buildKnownHostsData("host", 22, ["   ", ""])).toBeUndefined();
   });

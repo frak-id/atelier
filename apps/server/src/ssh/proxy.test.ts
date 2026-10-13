@@ -99,9 +99,9 @@ async function withGateway(
   // "pod" pins the pod's OWN real host key (generated above, before the pod
   // even starts) — a match; an explicit array lets a test pin a WRONG key.
   const pinnedHostKeys =
-    options.pinnedHostKeys === "pod"
+    (options.pinnedHostKeys ?? "pod") === "pod"
       ? [podHostKey.publicKeyOpenSSH]
-      : options.pinnedHostKeys;
+      : (options.pinnedHostKeys as string[]);
 
   const gateway = await startInServerSshGateway({
     listenPort: 0,
@@ -209,17 +209,6 @@ describe("in-server ssh proxy", () => {
 });
 
 describe("in-server ssh proxy host-key pinning", () => {
-  test("no pinned key: connects (today's unpinned fallback)", async () => {
-    await withGateway(async (ctx) => {
-      const client = await connect({
-        port: ctx.port,
-        username: "sb-abc123",
-        privateKey: ctx.devKey,
-      });
-      client.end();
-    });
-  });
-
   test("pinned key matches the pod's real host key: connects", async () => {
     await withGateway(
       async (ctx) => {
@@ -244,10 +233,10 @@ describe("in-server ssh proxy host-key pinning", () => {
 // Exercising the verifier function directly is the stable, deterministic way
 // to pin its accept/reject contract.
 describe("buildHostVerifier", () => {
-  test("no pinned keys: accepts anything (today's unpinned fallback)", () => {
+  test("no pinned keys: rejects every upstream (fail closed)", () => {
     const verify = buildHostVerifier("sb-1", undefined);
-    expect(verify(Buffer.from("anything"))).toBe(true);
-    expect(buildHostVerifier("sb-1", [])(Buffer.from("anything"))).toBe(true);
+    expect(verify(Buffer.from("anything"))).toBe(false);
+    expect(buildHostVerifier("sb-1", [])(Buffer.from("anything"))).toBe(false);
   });
 
   test("pinned key: accepts an exact match, rejects everything else", () => {

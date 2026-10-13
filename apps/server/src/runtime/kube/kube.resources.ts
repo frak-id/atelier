@@ -405,8 +405,8 @@ export type SshPipeOptions = {
    * key(s) (build with `buildKnownHostsData` — ssh-known-hosts.ts).
    * Undefined at initial Pipe creation (the sandbox's sshd hasn't reported a
    * key to the agent yet) — boot patches it in once the agent does (see
-   * ssh-gateway.ts's `pinHostKey`), so every Pipe starts on the unpinned
-   * fallback and upgrades in place. */
+   * ssh-gateway.ts's `pinHostKey`) before the boot returns; a boot that
+   * can't pin fails. */
   knownHostsData?: string;
 };
 
@@ -452,12 +452,11 @@ export function buildSshPipe(options: SshPipeOptions): KubeResource {
               ignore_hostkey: false,
             }
           : {
-              // Not pinned yet (fresh Pipe, or an old-agent sandbox that
-              // never reports a key) — sshpiper >= 1.6 treats empty
+              // Not pinned yet: a fresh Pipe, created before the pod and
+              // pinned by boot once the agent reports the host key (a boot
+              // that can't pin fails). sshpiper >= 1.6 treats empty
               // `known_hosts_data` as "skip verification" regardless of this
-              // flag; kept true so an operator pinning an older sshpiperd
-              // image gets the same (unpinned) behaviour rather than a
-              // surprise rejection.
+              // flag; kept true so an older sshpiperd behaves the same.
               ignore_hostkey: true,
             }),
         ...(options.privateKeySecretName && {

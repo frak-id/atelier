@@ -74,9 +74,26 @@ describe("resolveSshGatewayBoot", () => {
   });
 });
 
-// SSH host-key pinning: `pinHostKey` upgrades the Pipe created above from its
-// unpinned fallback once the agent reports the sandbox's real host key.
+// SSH host-key pinning: `pinHostKey` pins the Pipe created above once the
+// agent reports the sandbox's real host key; boot requires one whenever a
+// gateway sits in front of sshd (`verifiesHostKey`).
 describe("resolveSshGatewayBoot pinHostKey", () => {
+  test("verifiesHostKey: only the gateway strategies require a host key", async () => {
+    for (const [strategy, expected] of [
+      ["sshpiper", true],
+      ["in-server", true],
+      ["none", false],
+    ] as const) {
+      const boot = await resolveSshGatewayBoot(ID, KEYS, strategy);
+      expect(boot.verifiesHostKey).toBe(expected);
+    }
+  });
+
+  test("sshpiper: pinning with no usable key fails instead of staying unpinned", async () => {
+    const boot = await resolveSshGatewayBoot(ID, KEYS, "sshpiper");
+    await expect(boot.pinHostKey(["  "])).rejects.toThrow(/no usable/);
+  });
+
   test("sshpiper: pinHostKey resolves (patches the Pipe; a no-op kube write under mock mode)", async () => {
     const boot = await resolveSshGatewayBoot(ID, KEYS, "sshpiper");
     await expect(

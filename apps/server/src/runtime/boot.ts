@@ -8,6 +8,7 @@
  */
 import type { SandboxSpec } from "@atelier/spec";
 import { customAlphabet } from "nanoid";
+import { isMock } from "../shared/lib/config.ts";
 import { createChildLogger } from "../shared/lib/logger.ts";
 import { defaultVolumeSize } from "../shared/lib/runtime-config.ts";
 import type { AgentClient } from "./agent/index.ts";
@@ -72,9 +73,8 @@ export interface BootOutput {
   agentPassword: string;
   podIp: string;
   /** The sandbox's sshd host public key line(s), as reported by the agent
-   * right after boot — `null` when unavailable (old agent image, or the
-   * fetch failed). See `ProvisionAgentResult` for the exact semantics. */
-  sshHostKeys: string[] | null;
+   * right after boot. See `ProvisionAgentResult` for the exact semantics. */
+  sshHostKeys: string[];
 }
 
 export async function bootSandbox(
@@ -150,21 +150,20 @@ export async function bootSandbox(
       agent,
     );
 
-    // Upgrade the Pipe created above from its unpinned fallback to the real
-    // pinned key, now that the agent has reported it. Every boot/resume
-    // refreshes the pin (host keys regenerate per boot — sandbox-boot.sh); a
-    // failed/unavailable fetch just leaves the Pipe on the unpinned fallback,
-    // so this never fails the boot (backward compat with old-agent sandboxes).
-    if (sshHostKeys && sshHostKeys.length > 0) {
-      await ssh.pinHostKey(sshHostKeys).catch((error) => {
-        log.warn(
-          {
-            sandboxId,
-            error: error instanceof Error ? error.message : String(error),
-          },
-          "Failed to pin sandbox ssh host key; SSH stays on the unpinned fallback",
+    // Pin the sandbox's real sshd host key(s) now that the agent reported
+    // them: the sshpiper Pipe created above is patched; the in-server proxy
+    // reads them off the record. Host keys regenerate every boot
+    // (sandbox-boot.sh), so every boot and resume re-pins. A gateway-fronted
+    // sandbox that can't be pinned fails the boot rather than exposing SSH
+    // unverified (mock mode has no sshd, so nothing to pin).
+    if (ssh.verifiesHostKey && !isMock()) {
+      if (sshHostKeys.length === 0) {
+        throw new Error(
+          `Sandbox ${sandboxId} reported no sshd host keys; refusing to ` +
+            "expose SSH without host-key verification",
         );
-      });
+      }
+      await ssh.pinHostKey(sshHostKeys);
     }
 
     return { podName, pvcName, agentPassword, podIp, sshHostKeys };

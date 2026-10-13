@@ -17,9 +17,8 @@ const SSH_DIR: &str = "/etc/ssh";
 
 /// The sshd host public key lines (one per algorithm `ssh-keygen -A`
 /// produced — ed25519/rsa/ecdsa), sorted by filename for a deterministic
-/// order. Empty when `/etc/ssh` has no host keys yet (fresh container,
-/// sshd/keygen hasn't run) — callers treat an empty result the same as a
-/// 404 from an old agent image: fall back to unpinned SSH.
+/// order. Empty when `/etc/ssh` has no host keys (an image without sshd):
+/// the runtime then refuses to boot the sandbox behind an SSH gateway.
 pub fn host_keys() -> Vec<String> {
     host_keys_in(SSH_DIR)
 }

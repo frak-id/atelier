@@ -21,6 +21,11 @@ import type {
 const log = createChildLogger("agent");
 
 const DEFAULT_TIMEOUT = 10000;
+
+/** Backoff before each `GET /ssh/host-keys` attempt (the agent has only just
+ * come up when boot asks). */
+const HOST_KEY_RETRY_DELAYS_MS = [0, 500, 2_000];
+
 /** Unified attach bridge (WS), separate from the HTTP control plane. */
 const ATTACH_PORT = 9997;
 /**
@@ -214,30 +219,35 @@ export class AgentClient {
 
   /**
    * Fetch the sandbox's sshd host public key line(s) (`GET /ssh/host-keys`)
-   * — SSH host-key pinning (ssh-gateway.ts / ssh/proxy.ts). Returns `null`
-   * on ANY failure, not just a 404: an old-agent sandbox (pre-pinning image)
-   * 404s, but a transient timeout looks the same to the caller ("couldn't
-   * pin this time") — both fall back to the unpinned strategy rather than
-   * failing boot, so there is no reason to distinguish them here. Logged
-   * once per call at debug (not warn): the unpinned fallback is a normal,
-   * expected steady state for any sandbox on an old image, not an error.
+   * for SSH host-key pinning (ssh-gateway.ts / ssh/proxy.ts). Retries
+   * transient failures (the agent has only just come up), then throws.
+   * Empty when the image has no sshd host keys; always empty in mock mode
+   * (no sshd).
    */
-  async getSshHostKeys(sandboxId: string): Promise<string[] | null> {
-    if (isMock()) return null;
-    try {
-      const res = await this.request<{ keys: string[] }>(
-        sandboxId,
-        "/ssh/host-keys",
-      );
-      return res.keys;
-    } catch (err) {
-      log.debug(
-        { sandboxId, err: err instanceof Error ? err.message : String(err) },
-        "Could not fetch ssh host keys; SSH stays on the unpinned fallback " +
-          "(expected for sandboxes on an old agent image)",
-      );
-      return null;
+  async getSshHostKeys(sandboxId: string): Promise<string[]> {
+    if (isMock()) return [];
+    let lastError: unknown;
+    for (const delayMs of HOST_KEY_RETRY_DELAYS_MS) {
+      if (delayMs > 0) await Bun.sleep(delayMs);
+      try {
+        const res = await this.request<{ keys: string[] }>(
+          sandboxId,
+          "/ssh/host-keys",
+        );
+        return res.keys;
+      } catch (err) {
+        lastError = err;
+        log.debug(
+          { sandboxId, err: err instanceof Error ? err.message : String(err) },
+          "ssh host-key fetch failed; retrying",
+        );
+      }
     }
+    const reason =
+      lastError instanceof Error ? lastError.message : String(lastError);
+    throw new Error(
+      `Could not fetch ssh host keys for sandbox ${sandboxId}: ${reason}`,
+    );
   }
 
   /**
