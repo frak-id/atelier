@@ -143,16 +143,29 @@ function needsPrebuild(entry: { latest?: unknown }): boolean {
   return entry.latest === undefined;
 }
 
-/** Search + filter the catalog. `showHidden` includes archived repos and
- * forks, which are hidden by default as noise for a "what do I work on" list. */
+/** Which slice of the catalog is in view, before search and state filters:
+ * `showHidden` includes archived repos and forks (hidden by default as noise
+ * for a "what do I work on" list); `owner` narrows to one GitHub account or
+ * organization ("" or omitted = every owner). */
+interface CatalogScope {
+  showHidden: boolean;
+  owner?: string;
+}
+
+function inScope(repo: CatalogRepo, scope: CatalogScope): boolean {
+  if (!scope.showHidden && (repo.archived || repo.fork)) return false;
+  return !scope.owner || repo.owner === scope.owner;
+}
+
+/** Search + filter the catalog within `scope` (see `CatalogScope`). */
 export function filterCatalog<E extends CatalogEntry<CatalogRepo, CatalogJob>>(
   entries: readonly E[],
-  options: { query: string; filter: CatalogFilter; showHidden: boolean },
+  options: CatalogScope & { query: string; filter: CatalogFilter },
 ): E[] {
   const terms = options.query.trim().toLowerCase().split(/\s+/).filter(Boolean);
   return entries.filter((entry) => {
     const { repo } = entry;
-    if (!options.showHidden && (repo.archived || repo.fork)) return false;
+    if (!inScope(repo, options)) return false;
     if (options.filter === "needs" && !needsPrebuild(entry)) return false;
     if (options.filter === "prebuilt" && needsPrebuild(entry)) return false;
     if (terms.length === 0) return true;
@@ -161,19 +174,43 @@ export function filterCatalog<E extends CatalogEntry<CatalogRepo, CatalogJob>>(
   });
 }
 
-/** Per-filter counts over the visibility-filtered (not search-filtered)
- * catalog, for the segmented control's labels. */
+/** Per-filter counts over the in-scope (not search-filtered) catalog, for
+ * the segmented control's labels. */
 export function catalogCounts(
   entries: readonly CatalogEntry<CatalogRepo, CatalogJob>[],
-  showHidden: boolean,
+  scope: CatalogScope,
 ): Record<CatalogFilter, number> {
-  const visible = entries.filter(
-    (e) => showHidden || !(e.repo.archived || e.repo.fork),
-  );
+  const visible = entries.filter((e) => inScope(e.repo, scope));
   const prebuilt = visible.filter((e) => !needsPrebuild(e)).length;
   return {
     all: visible.length,
     prebuilt,
     needs: visible.length - prebuilt,
   };
+}
+
+/**
+ * The GitHub owners (the user's own account + each org) present in the
+ * visibility-filtered catalog, with their repo counts, sorted by name — the
+ * owner filter's options. `selected` stays listed (count 0) even when
+ * hiding archived repos and forks empties it, so the filter never points at
+ * an option that vanished.
+ */
+export function catalogOwners(
+  entries: readonly CatalogEntry<CatalogRepo, CatalogJob>[],
+  options: { showHidden: boolean; selected?: string },
+): { owner: string; count: number }[] {
+  const counts = new Map<string, number>();
+  for (const { repo } of entries) {
+    if (!inScope(repo, { showHidden: options.showHidden })) continue;
+    counts.set(repo.owner, (counts.get(repo.owner) ?? 0) + 1);
+  }
+  if (options.selected && !counts.has(options.selected)) {
+    counts.set(options.selected, 0);
+  }
+  return [...counts]
+    .map(([owner, count]) => ({ owner, count }))
+    .sort((a, b) =>
+      a.owner.localeCompare(b.owner, undefined, { sensitivity: "base" }),
+    );
 }

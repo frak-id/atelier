@@ -6,6 +6,7 @@ import {
   type CatalogJob,
   type CatalogRepo,
   catalogCounts,
+  catalogOwners,
   filterCatalog,
 } from "./repo-catalog.ts";
 
@@ -196,7 +197,7 @@ describe("buildRepoCatalog", () => {
   });
 });
 
-describe("filterCatalog / catalogCounts", () => {
+describe("filterCatalog / catalogCounts / catalogOwners", () => {
   const entries = buildRepoCatalog(
     [
       repo("frak-id/atelier", { description: "Dev environments" }),
@@ -229,11 +230,48 @@ describe("filterCatalog / catalogCounts", () => {
   });
 
   test("counts ignore search but respect visibility", () => {
-    expect(catalogCounts(entries, false)).toEqual({
+    expect(catalogCounts(entries, { showHidden: false })).toEqual({
       all: 2,
       prebuilt: 1,
       needs: 1,
     });
-    expect(catalogCounts(entries, true).all).toBe(4);
+    expect(catalogCounts(entries, { showHidden: true }).all).toBe(4);
+  });
+
+  test("narrows search, filters and counts to one owner", () => {
+    const names = (owner: string, showHidden = false) =>
+      filterCatalog(entries, {
+        query: "",
+        filter: "all",
+        showHidden,
+        owner,
+      }).map((e) => e.repo.name);
+    expect(names("frak-id")).toEqual(["atelier", "wallet"]);
+    expect(names("me")).toEqual([]);
+    expect(names("me", true)).toEqual(["old", "react"]);
+    expect(names("")).toEqual(["atelier", "wallet"]);
+    expect(catalogCounts(entries, { showHidden: true, owner: "me" })).toEqual({
+      all: 2,
+      prebuilt: 0,
+      needs: 2,
+    });
+  });
+
+  test("lists owners by name with visible counts, keeping the selection", () => {
+    expect(catalogOwners(entries, { showHidden: true })).toEqual([
+      { owner: "frak-id", count: 2 },
+      { owner: "me", count: 2 },
+    ]);
+    // `me` only has an archived repo and a fork: hidden by default...
+    expect(catalogOwners(entries, { showHidden: false })).toEqual([
+      { owner: "frak-id", count: 2 },
+    ]);
+    // ...but stays selectable while it is the active filter.
+    expect(
+      catalogOwners(entries, { showHidden: false, selected: "me" }),
+    ).toEqual([
+      { owner: "frak-id", count: 2 },
+      { owner: "me", count: 0 },
+    ]);
   });
 });

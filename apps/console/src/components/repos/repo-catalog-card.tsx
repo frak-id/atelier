@@ -10,7 +10,14 @@ import {
   SearchX,
   SlidersHorizontal,
 } from "lucide-react";
-import { useEffect, useMemo, useRef, useState } from "react";
+import {
+  type RefObject,
+  useCallback,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+} from "react";
 import { useRefreshGithubRepos } from "@/api/queries/github";
 import { useRunPrebuild } from "@/api/queries/prebuilds";
 import { JobStatusBadge } from "@/components/job-status";
@@ -27,6 +34,7 @@ import { Checkbox } from "@/components/ui/checkbox";
 import { EmptyState } from "@/components/ui/empty-state";
 import { GithubIcon } from "@/components/ui/github-icon";
 import { Input } from "@/components/ui/input";
+import { NativeSelect } from "@/components/ui/native-select";
 import { SegmentedControl } from "@/components/ui/segmented-control";
 import { Skeleton } from "@/components/ui/skeleton";
 import {
@@ -43,12 +51,19 @@ import {
   activeJobForBranch,
   type CatalogFilter,
   catalogCounts,
+  catalogOwners,
   filterCatalog,
 } from "@/lib/repo-catalog";
 import { QuickPrebuildDialog } from "./quick-prebuild-dialog";
 import { RepoIdentity } from "./repo-identity";
 
+/** Rows rendered per step; more mount as the list is scrolled near its end,
+ * so a 500-repo account doesn't mount 500 rows up front. */
 const PAGE_SIZE = 50;
+/** The list box shows at most this many rows; the rest scroll. A row is
+ * ~57px tall on desktop (32px avatar + `py-2.5` + 1px divider). */
+const VISIBLE_ROWS = 10;
+const ROW_HEIGHT_PX = 57;
 
 /**
  * "Your repositories": every GitHub repo the user can access, with its
@@ -61,10 +76,14 @@ export function RepoCatalogCard() {
   const quick = useQuickPrebuild();
   const [query, setQuery] = useState("");
   const [filter, setFilter] = useState<CatalogFilter>("all");
+  // GitHub owner (the user's account or an org) to narrow to; "" = all.
+  const [owner, setOwner] = useState("");
   const [showHidden, setShowHidden] = useState(false);
   const [limit, setLimit] = useState(PAGE_SIZE);
   const [customizing, setCustomizing] = useState<string | undefined>();
   const searchRef = useRef<HTMLInputElement>(null);
+  const listRef = useRef<HTMLDivElement>(null);
+  const loadMore = useCallback(() => setLimit((n) => n + PAGE_SIZE), []);
 
   // "/" focuses the search box (unless the user is already typing somewhere).
   useEffect(() => {
@@ -84,12 +103,16 @@ export function RepoCatalogCard() {
   }, []);
 
   const visible = useMemo(
-    () => filterCatalog(catalog.entries, { query, filter, showHidden }),
-    [catalog.entries, query, filter, showHidden],
+    () => filterCatalog(catalog.entries, { query, filter, showHidden, owner }),
+    [catalog.entries, query, filter, showHidden, owner],
   );
   const counts = useMemo(
-    () => catalogCounts(catalog.entries, showHidden),
-    [catalog.entries, showHidden],
+    () => catalogCounts(catalog.entries, { showHidden, owner }),
+    [catalog.entries, showHidden, owner],
+  );
+  const owners = useMemo(
+    () => catalogOwners(catalog.entries, { showHidden, selected: owner }),
+    [catalog.entries, showHidden, owner],
   );
   // Resolve the dialog's entry from the live catalog so its status (e.g. a
   // job that just started elsewhere) stays current while it is open.
@@ -97,8 +120,10 @@ export function RepoCatalogCard() {
     (e) => e.repo.fullName === customizing,
   );
 
+  // A new result set starts back at the top of the list box.
   function resetPaging() {
     setLimit(PAGE_SIZE);
+    listRef.current?.scrollTo({ top: 0 });
   }
 
   return (
@@ -150,6 +175,25 @@ export function RepoCatalogCard() {
                 /
               </kbd>
             </div>
+            {owners.length > 1 || owner ? (
+              <div className="sm:w-48">
+                <NativeSelect
+                  value={owner}
+                  onChange={(e) => {
+                    setOwner(e.target.value);
+                    resetPaging();
+                  }}
+                  aria-label="Filter by organization"
+                >
+                  <option value="">All organizations</option>
+                  {owners.map((o) => (
+                    <option key={o.owner} value={o.owner}>
+                      {o.owner} ({o.count})
+                    </option>
+                  ))}
+                </NativeSelect>
+              </div>
+            ) : null}
             <SegmentedControl
               options={[
                 { value: "all", label: `All ${counts.all}` },
@@ -171,11 +215,16 @@ export function RepoCatalogCard() {
           catalog={catalog}
           visible={visible}
           limit={limit}
+          listRef={listRef}
+          onLoadMore={loadMore}
           query={query}
           filter={filter}
+          owner={owner}
           onClearSearch={() => {
             setQuery("");
             setFilter("all");
+            setOwner("");
+            resetPaging();
           }}
           renderRow={(entry) => (
             <RepoRow
@@ -203,20 +252,13 @@ export function RepoCatalogCard() {
               />
               Show archived repos and forks
             </label>
-            <div className="flex items-center gap-3">
-              {catalog.truncated ? (
-                <span>Showing your 500 most recently pushed repos</span>
-              ) : null}
-              {visible.length > limit ? (
-                <Button
-                  variant="outline"
-                  size="sm"
-                  onClick={() => setLimit((n) => n + PAGE_SIZE)}
-                >
-                  Show {Math.min(PAGE_SIZE, visible.length - limit)} more
-                </Button>
-              ) : null}
-            </div>
+            <span>
+              {visible.length}{" "}
+              {visible.length === 1 ? "repository" : "repositories"}
+              {catalog.truncated
+                ? " · from your 500 most recently pushed"
+                : null}
+            </span>
           </div>
         ) : null}
       </CardContent>
@@ -235,16 +277,22 @@ function CatalogBody({
   catalog,
   visible,
   limit,
+  listRef,
+  onLoadMore,
   query,
   filter,
+  owner,
   onClearSearch,
   renderRow,
 }: {
   catalog: ReturnType<typeof useRepoCatalog>;
   visible: RepoCatalogEntry[];
   limit: number;
+  listRef: RefObject<HTMLDivElement | null>;
+  onLoadMore: () => void;
   query: string;
   filter: CatalogFilter;
+  owner: string;
   onClearSearch: () => void;
   renderRow: (entry: RepoCatalogEntry) => React.ReactNode;
 }) {
@@ -296,7 +344,7 @@ function CatalogBody({
     );
   }
   if (visible.length === 0) {
-    const everyPrebuilt = filter === "needs" && !query.trim();
+    const everyPrebuilt = filter === "needs" && !query.trim() && !owner;
     return (
       <EmptyState
         icon={everyPrebuilt ? CheckCircle2 : SearchX}
@@ -321,9 +369,64 @@ function CatalogBody({
     );
   }
   return (
-    <ul className="divide-y rounded-md border">
-      {visible.slice(0, limit).map(renderRow)}
-    </ul>
+    <RepoScrollList
+      entries={visible}
+      limit={limit}
+      listRef={listRef}
+      onLoadMore={onLoadMore}
+      renderRow={renderRow}
+    />
+  );
+}
+
+/**
+ * The repo rows in a fixed-height box (at most `VISIBLE_ROWS` tall) that
+ * scrolls on its own, instead of stretching the page. Only the first `limit`
+ * rows are mounted; a sentinel after them asks for more as it nears view.
+ */
+function RepoScrollList({
+  entries,
+  limit,
+  listRef,
+  onLoadMore,
+  renderRow,
+}: {
+  entries: RepoCatalogEntry[];
+  limit: number;
+  listRef: RefObject<HTMLDivElement | null>;
+  onLoadMore: () => void;
+  renderRow: (entry: RepoCatalogEntry) => React.ReactNode;
+}) {
+  const sentinelRef = useRef<HTMLDivElement>(null);
+  const hasMore = entries.length > limit;
+  // Re-armed on every `limit` bump: a fresh observer reports the sentinel's
+  // current state, so a sentinel still in range after a load fires again.
+  // biome-ignore lint/correctness/useExhaustiveDependencies: `limit` re-arms the observer
+  useEffect(() => {
+    const root = listRef.current;
+    const sentinel = sentinelRef.current;
+    if (!hasMore || !root || !sentinel) return;
+    const observer = new IntersectionObserver(
+      (records) => {
+        if (records.some((record) => record.isIntersecting)) onLoadMore();
+      },
+      { root, rootMargin: "0px 0px 400px 0px" },
+    );
+    observer.observe(sentinel);
+    return () => observer.disconnect();
+  }, [hasMore, limit, listRef, onLoadMore]);
+
+  return (
+    <div
+      ref={listRef}
+      className="overflow-y-auto rounded-md border"
+      style={{ maxHeight: VISIBLE_ROWS * ROW_HEIGHT_PX }}
+    >
+      <ul className="divide-y" aria-label="Repositories">
+        {entries.slice(0, limit).map(renderRow)}
+      </ul>
+      {hasMore ? <div ref={sentinelRef} aria-hidden className="h-px" /> : null}
+    </div>
   );
 }
 
