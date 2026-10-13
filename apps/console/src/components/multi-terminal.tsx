@@ -7,9 +7,11 @@ import {
   useDeleteTerminalSession,
 } from "@/api/queries/terminal";
 import {
+  type TerminalProgress,
   TerminalView,
   type TerminalViewHandle,
 } from "@/components/terminal-view";
+import { StatusDot } from "@/components/ui/status-dot";
 import { cn } from "@/lib/utils";
 
 /**
@@ -17,6 +19,8 @@ import { cn } from "@/lib/utils";
  * Every session's {@link TerminalView} stays mounted (inactive ones hidden),
  * so switching tabs preserves each session's live PTY connection and
  * scrollback. Creating selects the new tab; closing a session removes it.
+ * A tab shows the progress its app reports (OSC 9;4), so a busy agent in a
+ * background tab is visible at a glance.
  */
 export function MultiTerminal({
   sandboxId,
@@ -34,6 +38,9 @@ export function MultiTerminal({
   const create = useCreateTerminalSession(sandboxId);
   const remove = useDeleteTerminalSession(sandboxId);
   const [activeId, setActiveId] = useState<string | null>(null);
+  const [progress, setProgress] = useState<Record<string, TerminalProgress>>(
+    {},
+  );
   const activeHandleRef = useRef<TerminalViewHandle | null>(null);
 
   const list = sessions ?? [];
@@ -97,10 +104,11 @@ export function MultiTerminal({
           >
             <button
               type="button"
-              className="max-w-[140px] truncate"
+              className="flex max-w-[160px] items-center gap-1.5"
               onClick={() => setActiveId(session.id)}
             >
-              {session.title || session.id}
+              <TabProgress progress={progress[session.id]} />
+              <span className="truncate">{session.title || session.id}</span>
             </button>
             <button
               type="button"
@@ -180,6 +188,9 @@ export function MultiTerminal({
                 ref={session.id === activeId ? activeHandleRef : null}
                 wsPath={`/sessions/sandboxes/${sandboxId}/terminal/sessions/${session.id}/ws`}
                 active={session.id === activeId}
+                onProgress={(next) =>
+                  setProgress((prev) => ({ ...prev, [session.id]: next }))
+                }
                 className="h-full"
               />
             </div>
@@ -188,4 +199,43 @@ export function MultiTerminal({
       </div>
     </div>
   );
+}
+
+/**
+ * A tab's OSC 9;4 progress: a spinner while working (with the percentage
+ * when the app reports one), a dot for error or paused, nothing when idle.
+ */
+function TabProgress({ progress }: { progress?: TerminalProgress }) {
+  switch (progress?.state) {
+    case 1:
+      return (
+        <span
+          className="flex shrink-0 items-center gap-1 text-xs text-muted-foreground tabular-nums"
+          title={`${progress.value}%`}
+        >
+          <Loader2 className="size-3 animate-spin" />
+          {progress.value}%
+        </span>
+      );
+    case 3:
+      return (
+        <span className="shrink-0" title="Working">
+          <Loader2 className="size-3 animate-spin text-muted-foreground" />
+        </span>
+      );
+    case 2:
+      return (
+        <span className="flex shrink-0" title="Error">
+          <StatusDot variant="danger" />
+        </span>
+      );
+    case 4:
+      return (
+        <span className="flex shrink-0" title="Paused">
+          <StatusDot variant="warning" />
+        </span>
+      );
+    default:
+      return null;
+  }
 }

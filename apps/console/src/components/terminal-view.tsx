@@ -1,8 +1,14 @@
+import { ClipboardAddon } from "@xterm/addon-clipboard";
 import { FitAddon } from "@xterm/addon-fit";
+import { ImageAddon } from "@xterm/addon-image";
+import { type IProgressState, ProgressAddon } from "@xterm/addon-progress";
+import { Unicode11Addon } from "@xterm/addon-unicode11";
+import { WebLinksAddon } from "@xterm/addon-web-links";
 import { Terminal } from "@xterm/xterm";
 import "@xterm/xterm/css/xterm.css";
 import { forwardRef, useEffect, useImperativeHandle, useRef } from "react";
 import { wsUrl } from "@/lib/api-base";
+import { createTerminalLinkHandler } from "@/lib/terminal-links";
 import { terminalTheme } from "@/lib/terminal-theme";
 import { cn } from "@/lib/utils";
 import { useTheme } from "@/providers/theme";
@@ -32,6 +38,12 @@ export interface TerminalViewHandle {
   mark: () => void;
 }
 
+/** Progress an app reports with OSC 9;4 (`state` 0 = none, 1 = percent,
+ * 2 = error, 3 = indeterminate, 4 = paused; `value` 0-100). */
+export type TerminalProgress = IProgressState;
+
+const NO_PROGRESS: TerminalProgress = { state: 0, value: 0 };
+
 /**
  * An xterm view bound to a server WS bridge. `readOnly` attaches to the
  * runtime's read-only fan-out (`?mode=ro`): it renders output and resizes for
@@ -42,6 +54,10 @@ export interface TerminalViewHandle {
  * measures 0 cols, so its fit is deferred until it becomes visible again. The
  * WebSocket and scrollback are preserved across tab switches (the view stays
  * mounted), so switching tabs never drops or reloads a session.
+ *
+ * `onProgress` reports OSC 9;4 progress (e.g. pi with
+ * `terminal.showTerminalProgress`), deduplicated and reset to none when the
+ * connection closes so a dead session never shows as busy.
  */
 export const TerminalView = forwardRef<
   TerminalViewHandle,
@@ -50,11 +66,15 @@ export const TerminalView = forwardRef<
     readOnly?: boolean;
     active?: boolean;
     className?: string;
+    onProgress?: (progress: TerminalProgress) => void;
   }
 >(function TerminalView(
-  { wsPath, readOnly = false, active = true, className },
+  { wsPath, readOnly = false, active = true, className, onProgress },
   handleRef,
 ) {
+  // Read through a ref so a new callback identity never reconnects.
+  const onProgressRef = useRef(onProgress);
+  onProgressRef.current = onProgress;
   const containerRef = useRef<HTMLDivElement>(null);
   const terminalRef = useRef<Terminal | null>(null);
   const fitRef = useRef<FitAddon | null>(null);
@@ -85,18 +105,58 @@ export const TerminalView = forwardRef<
     let reconnectTimer: ReturnType<typeof setTimeout> | undefined;
     let hasConnected = false;
 
+    // Plain-text URLs (WebLinksAddon below) and OSC 8 hyperlinks share one
+    // handler: Cmd/Ctrl+click opens http(s), hovering shows the target.
+    const links = createTerminalLinkHandler(container);
     const terminal = new Terminal({
+      linkHandler: links,
       cursorBlink: !readOnly,
       disableStdin: readOnly,
       fontSize: 13,
       fontFamily: '"Geist Mono", Menlo, Monaco, "Courier New", monospace',
       scrollback: 10_000,
       theme: terminalTheme(theme),
+      // Fullscreen TUIs (pi, vim, htop…) capture the mouse, so a plain drag
+      // goes to the app. Holding a modifier forces xterm's own selection
+      // (then Cmd/Ctrl+C copies it): Shift by default, Option on macOS only
+      // with this flag.
+      macOptionClickForcesSelection: true,
+      // `terminal.unicode` (Unicode 11 widths below) is a proposed API.
+      allowProposedApi: true,
     });
     terminalRef.current = terminal;
     const fitAddon = new FitAddon();
     fitRef.current = fitAddon;
     terminal.loadAddon(fitAddon);
+    // Emoji are 2 cells wide in modern terminals and in TUIs' own layout
+    // math (pi, Ink, ratatui); xterm's default Unicode 6 table counts them
+    // as 1, which shifts the rest of the row in fullscreen apps.
+    terminal.loadAddon(new Unicode11Addon());
+    terminal.unicode.activeVersion = "11";
+    // OSC 52: apps in the sandbox have no system clipboard, so they copy
+    // through the terminal (pi's fullscreen selection does). Only for a pane
+    // the user drives, so a read-only fan-out never touches their clipboard.
+    if (!readOnly) terminal.loadAddon(new ClipboardAddon());
+    terminal.loadAddon(new WebLinksAddon(links.activate, links));
+    // Inline images: iTerm2 protocol (what pi emits with
+    // PI_IMAGE_PROTOCOL=iterm2, set by the agent for console terminals) and
+    // SIXEL. Several panes stay mounted at once, so cap each one's decoded
+    // image cache well below the addon's 128 MB default.
+    terminal.loadAddon(new ImageAddon({ storageLimit: 32 }));
+    const progressAddon = new ProgressAddon();
+    terminal.loadAddon(progressAddon);
+    let lastProgress = NO_PROGRESS;
+    // pi re-sends its progress as a keepalive; only report changes.
+    const progressDisposable = progressAddon.onChange((progress) => {
+      if (
+        progress.state === lastProgress.state &&
+        progress.value === lastProgress.value
+      ) {
+        return;
+      }
+      lastProgress = progress;
+      onProgressRef.current?.(progress);
+    });
     terminal.open(container);
     fitAddon.fit();
 
@@ -138,6 +198,8 @@ export const TerminalView = forwardRef<
           reconnectTimer = setTimeout(connect, 500);
           return;
         }
+        // Nothing can clear a progress the app set before the link died.
+        progressAddon.progress = NO_PROGRESS;
         writeMarker(terminal, "Connection closed");
       };
       socket.onerror = () => socket.close();
@@ -172,6 +234,7 @@ export const TerminalView = forwardRef<
       observer.disconnect();
       dataDisposable?.dispose();
       resizeDisposable.dispose();
+      progressDisposable.dispose();
       wsRef.current?.close();
       wsRef.current = null;
       terminal.dispose();
