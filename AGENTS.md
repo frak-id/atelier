@@ -49,14 +49,14 @@ bun run --filter @atelier/console dev # Console on :5174, proxies API paths to :
 bun run lint                          # Biome lint
 bun run check                         # Biome lint + format, applies fixes (--write)
 bun run typecheck                     # tsc --noEmit (TypeScript 7 native, per workspace)
-bun test                              # bun:test suite, from the repo root
+bun run test                          # bun:test suite (`bun test --isolate`), repo root
 bun run knip                          # Unused files/deps/exports
 bun run --filter @atelier/server check:boundary  # Server module-boundary rules
 cd apps/agent && cargo test           # Agent tests (cargo clippy --all-targets for lint)
 cd apps/steery-adapter && cargo test # Steery adapter tests
 ```
 
-CI (`.github/workflows/ci.yml`) runs lint, check, typecheck and `bun test`.
+CI (`.github/workflows/ci.yml`) runs lint, check, typecheck and `bun run test`.
 
 ## Critical Constraints
 
@@ -92,7 +92,11 @@ CI (`.github/workflows/ci.yml`) runs lint, check, typecheck and `bun test`.
   `atelier local up`), `production` (real cluster + GitHub OAuth)
 - **Tests**: `bun:test`, colocated as `*.test.ts` next to the code under
   test (e.g. `apps/server/src/runtime/runtime.lifecycle.test.ts`). Run the
-  whole suite with `bun test` from the repo root; CI runs the same command
+  whole suite with `bun run test` from the repo root; CI runs the same command.
+  It is `bun test --isolate`: each file needs a fresh module registry, since
+  server config is read once at import and files force different
+  `ATELIER_SERVER_MODE`s. Plain `bun test` shares one registry across files
+  and fails depending on file order
 
 See each app's AGENTS.md for component-specific guidelines.
 
