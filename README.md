@@ -112,7 +112,6 @@ server to it.
 - **Secrets store** — `{"$secret": "NAME"}` references in any spec field, resolved server-side, never stored in the runtime DB
 - **GitHub OAuth** — sign in with GitHub, optionally gated to an org, with repository/branch discovery
 - **Multi-dev per sandbox** — nothing stops multiple developers (or one dev + one agent) sharing a sandbox
-- **Custom npm registry** — point every sandbox at your Verdaccio/Nexus/Artifactory proxy with one setting
 - **Config file sync** — global and per-scope config files, automatically synced into sandboxes
 
 ### The seam that keeps it simple

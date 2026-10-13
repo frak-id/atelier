@@ -46,7 +46,6 @@ The server reads a layered config: env vars > the mounted
     "ingressClassName": "traefik",
     "toolIngressClusterIssuer": "letsencrypt-prod",
     "registryUrl": "zot.zot.svc:5000",
-    "npmRegistryUrl": "",
     "storageClass": "topolvm-thin",
     "volumeSnapshotClass": "atelier-snapshots",
     "defaultVolumeSize": "20Gi"

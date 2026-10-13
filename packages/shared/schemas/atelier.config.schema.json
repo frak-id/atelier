@@ -182,10 +182,6 @@
           "default": "",
           "type": "string"
         },
-        "npmRegistryUrl": {
-          "default": "",
-          "type": "string"
-        },
         "storageClass": {
           "default": "",
           "type": "string"

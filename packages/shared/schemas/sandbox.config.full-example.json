@@ -37,7 +37,6 @@
     "ingressClassName": "",
     "toolIngressClusterIssuer": "",
     "registryUrl": "",
-    "npmRegistryUrl": "",
     "storageClass": "",
     "volumeSnapshotClass": "",
     "defaultVolumeSize": "10Gi",

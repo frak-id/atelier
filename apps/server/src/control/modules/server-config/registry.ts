@@ -91,18 +91,6 @@ function memoryMb(value: unknown): number {
   return n;
 }
 
-/** Empty (disabled) or a parseable absolute URL — for optional upstream URLs. */
-function optionalUrl(value: unknown): string {
-  const s = optionalString(value);
-  if (s === "") return "";
-  try {
-    new URL(s);
-  } catch {
-    throw new ValidationError(`invalid URL "${s}"`);
-  }
-  return s;
-}
-
 /** A Kubernetes resource quantity, e.g. `10Gi` / `512Mi` / `2G`. */
 function k8sQuantity(value: unknown): string {
   const s = requiredString(value);
@@ -154,7 +142,7 @@ const validateIdleMode = oneOf(idleModes);
  * The two first config keys (see request): prebuild git tracking + the
  * retention window for the snapshots it produces.
  */
-export const CONFIG_REGISTRY = {
+const CONFIG_REGISTRY = {
   "prebuild.gitTracking": {
     key: "prebuild.gitTracking",
     type: "boolean",
@@ -372,19 +360,6 @@ export const CONFIG_REGISTRY = {
     parseEnv: requiredString,
     validate: requiredString,
   } satisfies ConfigDef<string>,
-  "kubernetes.npmRegistryUrl": {
-    key: "kubernetes.npmRegistryUrl",
-    type: "string",
-    label: "npm registry URL",
-    description:
-      "Optional private npm registry (Verdaccio/Nexus/Artifactory) injected " +
-      "into every sandbox's npm/bun/yarn config. Empty leaves sandboxes on " +
-      "the public npm registry. Must be a full URL (https://…).",
-    envVar: "ATELIER_NPM_REGISTRY_URL",
-    default: "",
-    parseEnv: optionalUrl,
-    validate: optionalUrl,
-  } satisfies ConfigDef<string>,
   "kubernetes.defaultVolumeSize": {
     key: "kubernetes.defaultVolumeSize",
     type: "string",
@@ -558,7 +533,6 @@ export interface ConfigValues {
   "sandbox.agentImage": string;
   "sandbox.defaultVcpus": number;
   "sandbox.defaultMemoryMb": number;
-  "kubernetes.npmRegistryUrl": string;
   "kubernetes.defaultVolumeSize": string;
   "kubernetes.storageClass": string;
   "kubernetes.volumeSnapshotClass": string;

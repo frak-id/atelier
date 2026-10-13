@@ -62,13 +62,6 @@ agent's `GET /activity` (network bytes, file writes, CPU) for idle
 auto-pause; that traffic, on the agent's own ports, never counts as
 activity.
 
-## npm Registry
-
-Atelier does not bundle an npm registry. Set `kubernetes.npmRegistryUrl` to
-an external proxy (Verdaccio, Nexus, Artifactory, …) and the server injects
-`npmrc`/`bunfig`/`yarnrc` into every sandbox so npm/bun/yarn use it. Leave it
-empty to use the public npm registry.
-
 ## Network Architecture
 
 ```
