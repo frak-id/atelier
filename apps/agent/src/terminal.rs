@@ -408,13 +408,9 @@ async fn handle_conn(stream: TcpStream, id: String, registry: Arc<TerminalRegist
     let master = terminal.master.clone();
     let mut in_task = tokio::spawn(async move {
         while let Some(Ok(msg)) = source.next().await {
-            match msg {
+            let keystrokes = match msg {
                 // Bytes are keystrokes into the shell.
-                Message::Binary(b) => {
-                    if write_tx.send(Vec::from(b)).await.is_err() {
-                        break;
-                    }
-                }
+                Message::Binary(b) => Vec::from(b),
                 // Text is a resize control frame; anything else is ignored.
                 Message::Text(t) => {
                     if let Ok(frame) = serde_json::from_slice::<ResizeFrame>(t.as_bytes())
@@ -422,9 +418,13 @@ async fn handle_conn(stream: TcpStream, id: String, registry: Arc<TerminalRegist
                     {
                         set_winsize(&master, frame.cols, frame.rows);
                     }
+                    continue;
                 }
                 Message::Close(_) => break,
-                _ => {}
+                _ => continue,
+            };
+            if write_tx.send(keystrokes).await.is_err() {
+                break;
             }
         }
     });

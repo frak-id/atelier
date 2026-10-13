@@ -64,7 +64,16 @@ pub async fn run(
     env: &HashMap<String, String>,
     max_output_bytes: usize,
 ) -> ExecResult {
-    run_with_login(command, timeout_ms, user, workdir, env, max_output_bytes, true).await
+    run_with_login(
+        command,
+        timeout_ms,
+        user,
+        workdir,
+        env,
+        max_output_bytes,
+        true,
+    )
+    .await
 }
 
 /// Same as `run`, with an explicit `login` choice. `login: false` runs under

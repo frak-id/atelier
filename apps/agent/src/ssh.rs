@@ -48,10 +48,7 @@ mod tests {
     /// Isolated per-test scratch dir under the OS temp dir — `read_dir`
     /// ordering isn't guaranteed, so this also exercises the sort.
     fn scratch_dir(name: &str) -> std::path::PathBuf {
-        std::env::temp_dir().join(format!(
-            "atelier-ssh-test-{name}-{}",
-            std::process::id()
-        ))
+        std::env::temp_dir().join(format!("atelier-ssh-test-{name}-{}", std::process::id()))
     }
 
     #[test]

@@ -282,16 +282,16 @@ const DEFAULT_EXCLUDES: &[&str] = &[
 /// positives) over exhaustive — a scan that cries wolf trains devs to reach
 /// for `overrides` reflexively, defeating the gate.
 const SECRET_PATTERNS: &[&str] = &[
-    r"AKIA[0-9A-Z]{16}",                    // AWS access key id
-    r"ghp_[A-Za-z0-9]{36}",                 // GitHub personal access token
-    r"github_pat_[A-Za-z0-9_]{22,}",        // GitHub fine-grained PAT
-    r"xox[baprs]-[A-Za-z0-9-]{10,}",        // Slack token
-    r"-----BEGIN [A-Z ]*PRIVATE KEY-----",  // PEM private key
-    r"sk-[A-Za-z0-9]{20,}",                 // OpenAI/Anthropic-style secret key
-    r"sk_(live|test)_[A-Za-z0-9]{16,}",     // Stripe secret key
-    r"npm_[A-Za-z0-9]{36}",                 // npm access token
-    r"hf_[A-Za-z0-9]{20,}",                 // Hugging Face token
-    r"AIza[0-9A-Za-z_-]{35}",               // Google API key
+    r"AKIA[0-9A-Z]{16}",                   // AWS access key id
+    r"ghp_[A-Za-z0-9]{36}",                // GitHub personal access token
+    r"github_pat_[A-Za-z0-9_]{22,}",       // GitHub fine-grained PAT
+    r"xox[baprs]-[A-Za-z0-9-]{10,}",       // Slack token
+    r"-----BEGIN [A-Z ]*PRIVATE KEY-----", // PEM private key
+    r"sk-[A-Za-z0-9]{20,}",                // OpenAI/Anthropic-style secret key
+    r"sk_(live|test)_[A-Za-z0-9]{16,}",    // Stripe secret key
+    r"npm_[A-Za-z0-9]{36}",                // npm access token
+    r"hf_[A-Za-z0-9]{20,}",                // Hugging Face token
+    r"AIza[0-9A-Za-z_-]{35}",              // Google API key
 ];
 
 /// Normalize a declared path to one relative to `/home/dev`, rejecting any
@@ -482,7 +482,11 @@ fn squash_and_push_script(
     // parent dir under `$stage` first (bare top-level names dirname to `.`,
     // which `mkdir -p`/the rsync destination both accept) so nested paths
     // like `.config/pi` land at the same depth they have under `/home/dev`.
-    let quoted_paths = rels.iter().map(|r| sh_quote(r)).collect::<Vec<_>>().join(" ");
+    let quoted_paths = rels
+        .iter()
+        .map(|r| sh_quote(r))
+        .collect::<Vec<_>>()
+        .join(" ");
     let rsync_excludes = rsync_exclude_flags(excludes);
     // EXIT-trap cleanup is best-effort (`||:`): the stage lives on the
     // virtio-fs home and native `.node` files under heavy install churn can
@@ -629,7 +633,11 @@ pub async fn capture(req: CaptureRequest) -> Result<BuildResult, String> {
     }
 
     let excludes = merged_excludes(&req.exclude);
-    let quoted_paths = rels.iter().map(|r| sh_quote(r)).collect::<Vec<_>>().join(" ");
+    let quoted_paths = rels
+        .iter()
+        .map(|r| sh_quote(r))
+        .collect::<Vec<_>>()
+        .join(" ");
     let grep_excludes = excludes
         .iter()
         .map(|g| format!(" --exclude={}", sh_quote(g)))
@@ -1199,7 +1207,9 @@ pub async fn materialize(req: MaterializeRequest) -> Result<MaterializeResult, S
 /// the stall this design flags as risky (doc comment at the top of this
 /// file).
 async fn home_ready_marker_exists() -> bool {
-    tokio::fs::try_exists(HOME_READY_MARKER).await.unwrap_or(false)
+    tokio::fs::try_exists(HOME_READY_MARKER)
+        .await
+        .unwrap_or(false)
 }
 
 /// Persist the assembled toolset selection to the PVC (atomic write+rename) so
@@ -1216,7 +1226,9 @@ async fn persist_materialize_request(toolsets: &[String]) {
     };
     let tmp = format!("{MATERIALIZE_REQUEST_PATH}.tmp");
     let persisted = tokio::fs::write(&tmp, &bytes).await.is_ok()
-        && tokio::fs::rename(&tmp, MATERIALIZE_REQUEST_PATH).await.is_ok();
+        && tokio::fs::rename(&tmp, MATERIALIZE_REQUEST_PATH)
+            .await
+            .is_ok();
     if !persisted {
         eprintln!(
             "toolset: failed to persist materialize request; self-heal after a restart may no-op"
@@ -1377,31 +1389,49 @@ mod tests {
         assert!(e.starts_with("mkfs.erofs"));
         assert!(e.contains("OUT SRC"), "erofs is output-then-source: {e}");
         let s = BlobFormat::Squashfs.mkfs_cmd("OUT", "SRC");
-        assert!(s.starts_with("mksquashfs SRC OUT"), "squashfs is source-then-output: {s}");
+        assert!(
+            s.starts_with("mksquashfs SRC OUT"),
+            "squashfs is source-then-output: {s}"
+        );
         // tar archives the stage's contents into the blob, zstd-compressed,
         // with ownership/mtime normalized (stage is `dev`; flags pin it).
         let t = BlobFormat::Tar.mkfs_cmd("OUT", "SRC");
-        assert!(t.starts_with("tar --zstd"), "tar blob is a zstd archive: {t}");
-        assert!(t.contains("-cf OUT -C SRC ."), "tar is create-file OUT from SRC: {t}");
+        assert!(
+            t.starts_with("tar --zstd"),
+            "tar blob is a zstd archive: {t}"
+        );
+        assert!(
+            t.contains("-cf OUT -C SRC ."),
+            "tar is create-file OUT from SRC: {t}"
+        );
         assert!(t.contains("--owner=1000") && t.contains("--group=1000"));
     }
 
     #[test]
     fn select_build_format_falls_back_to_tar_when_no_mountable_fs() {
         // erofs preferred when present.
-        assert_eq!(select_build_format(|fs| fs == "erofs" || fs == "ext4"), BlobFormat::Erofs);
+        assert_eq!(
+            select_build_format(|fs| fs == "erofs" || fs == "ext4"),
+            BlobFormat::Erofs
+        );
         // squashfs when erofs absent.
-        assert_eq!(select_build_format(|fs| fs == "squashfs"), BlobFormat::Squashfs);
+        assert_eq!(
+            select_build_format(|fs| fs == "squashfs"),
+            BlobFormat::Squashfs
+        );
         // neither mountable RO fs -> tar (no hard-error). This is the copy
         // fallback the whole rung exists for.
         assert_eq!(select_build_format(|_| false), BlobFormat::Tar);
-        assert_eq!(select_build_format(|fs| fs == "ext4" || fs == "overlay"), BlobFormat::Tar);
+        assert_eq!(
+            select_build_format(|fs| fs == "ext4" || fs == "overlay"),
+            BlobFormat::Tar
+        );
     }
 
     #[test]
     fn sweep_keeps_blobs_by_digest_across_extensions() {
         let d = "a".repeat(64);
-        let script = sweep_stale_blobs_script(&[d.clone()]);
+        let script = sweep_stale_blobs_script(std::slice::from_ref(&d));
         assert!(script.contains("*.erofs"));
         assert!(script.contains("*.sqfs"));
         assert!(script.contains("*.tzst"));
@@ -1457,7 +1487,10 @@ mod tests {
         assert!(valid_sha256(&format!("sha256:{}g", "a".repeat(63))).is_none());
         // Uppercase hex is normalized to lowercase (ToolsetRefSchema pins [0-9a-f]).
         let upper = format!("sha256:{}", "A".repeat(64));
-        assert_eq!(valid_sha256(&upper).unwrap(), format!("sha256:{}", "a".repeat(64)));
+        assert_eq!(
+            valid_sha256(&upper).unwrap(),
+            format!("sha256:{}", "a".repeat(64))
+        );
     }
 
     #[test]
@@ -1518,7 +1551,10 @@ mod tests {
         );
         // Uppercase hex is normalized to lowercase, mirroring `valid_sha256`.
         assert_eq!(
-            digest_suffix(&format!("zot.zot.svc:5000/toolsets/pi-base@sha256:{}", hex.to_ascii_uppercase())),
+            digest_suffix(&format!(
+                "zot.zot.svc:5000/toolsets/pi-base@sha256:{}",
+                hex.to_ascii_uppercase()
+            )),
             Some(hex)
         );
     }
@@ -1531,31 +1567,44 @@ mod tests {
         // this string flows straight into root-run mkdir/mv/mount paths, so a
         // malformed digest must hard-fail rather than pass through unchecked.
         assert!(digest_suffix("zot.zot.svc:5000/toolsets/pi-base@sha256:abc123").is_none());
-        assert!(digest_suffix(&format!(
-            "zot.zot.svc:5000/toolsets/pi-base@sha256:{}g",
-            "a".repeat(63)
-        ))
-        .is_none());
-        assert!(digest_suffix(&format!(
-            "zot.zot.svc:5000/toolsets/pi-base@sha512:{}",
-            "a".repeat(128)
-        ))
-        .is_none());
+        assert!(
+            digest_suffix(&format!(
+                "zot.zot.svc:5000/toolsets/pi-base@sha256:{}g",
+                "a".repeat(63)
+            ))
+            .is_none()
+        );
+        assert!(
+            digest_suffix(&format!(
+                "zot.zot.svc:5000/toolsets/pi-base@sha512:{}",
+                "a".repeat(128)
+            ))
+            .is_none()
+        );
     }
 
     #[test]
     fn is_overridden_matches_by_suffix_across_forms() {
         let overrides = vec!["auth.json".to_string()];
-        assert!(is_overridden("/home/dev/.config/opencode/auth.json", &overrides));
+        assert!(is_overridden(
+            "/home/dev/.config/opencode/auth.json",
+            &overrides
+        ));
         assert!(is_overridden("/home/dev/auth.json", &overrides));
-        assert!(!is_overridden("/home/dev/.config/opencode/config.json", &overrides));
+        assert!(!is_overridden(
+            "/home/dev/.config/opencode/config.json",
+            &overrides
+        ));
     }
 
     #[test]
     fn is_overridden_accepts_home_relative_override_forms() {
         let overrides = vec!["~/.config/pi/auth.json".to_string()];
         assert!(is_overridden("/home/dev/.config/pi/auth.json", &overrides));
-        assert!(!is_overridden("/home/dev/.config/other/auth.json", &overrides));
+        assert!(!is_overridden(
+            "/home/dev/.config/other/auth.json",
+            &overrides
+        ));
     }
 
     #[test]
