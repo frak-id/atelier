@@ -20,7 +20,7 @@ export interface AgentModelSelection {
 }
 
 /** An ACP `session/set_config_option` assignment. */
-export interface SessionConfigAssignment {
+interface SessionConfigAssignment {
   configId: string;
   value: string;
 }

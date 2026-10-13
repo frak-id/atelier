@@ -46,7 +46,6 @@ The server reads a layered config: env vars > the mounted
     "ingressClassName": "traefik",
     "toolIngressClusterIssuer": "letsencrypt-prod",
     "registryUrl": "zot.zot.svc:5000",
-    "npmRegistryUrl": "",
     "storageClass": "topolvm-thin",
     "volumeSnapshotClass": "atelier-snapshots",
     "defaultVolumeSize": "20Gi"
@@ -116,6 +115,33 @@ needs no pre-existing daemon; `kind=docker` shells out to a Docker daemon
 Point the app's `kubernetes.registryUrl` (in `infra/k8s/30-config.yaml`) at
 the registry's `host:port` (no scheme). A plain-HTTP registry must also be a
 mirror in the node's `/etc/rancher/k3s/registries.yaml`.
+
+### Pause idle sandboxes
+
+The server pauses running sandboxes nobody uses (proposal:
+[sandbox-idle-autopause.md](proposals/sandbox-idle-autopause.md)). The rules
+are `sandbox.idle.*` keys of the server config plane: edit them on the
+console's *Server configuration* page, or lock them with their env var.
+
+| Key | Env var | Default |
+|-----|---------|---------|
+| `sandbox.idle.mode` (`off`/`observe`/`enforce`) | `ATELIER_IDLE_MODE` | `observe` |
+| `sandbox.idle.minutes` | `ATELIER_IDLE_MINUTES` | `120` |
+| `sandbox.idle.network` | `ATELIER_IDLE_NETWORK` | `true` |
+| `sandbox.idle.networkMinBytesPerMinute` | `ATELIER_IDLE_NETWORK_MIN_BYTES` | `65536` |
+| `sandbox.idle.files` | `ATELIER_IDLE_FILES` | `true` |
+| `sandbox.idle.cpu` | `ATELIER_IDLE_CPU` | `false` |
+| `sandbox.idle.cpuMinMillicores` | `ATELIER_IDLE_CPU_MIN_MILLICORES` | `250` |
+| `sandbox.idle.maxKeepAwakeHours` | `ATELIER_IDLE_MAX_KEEP_AWAKE_HOURS` | `24` |
+
+Start in `observe`: every sandbox page shows when it *would* be paused and
+its traffic per minute, so the byte threshold can be checked against real
+idle tabs before switching to `enforce`. Network and file signals need a
+sandbox image whose agent serves `GET /activity`; older ones are never
+paused while those signals count. Network is measured per interface
+(received + sent, minus the server's own traffic to the agent); file writes
+count under `/home/dev` except build output, dependencies and the hidden
+tool state at the top of the home.
 
 ### Enable prebuilds with TopoLVM
 

@@ -86,3 +86,43 @@ export function closeUpstream(ws: RelayDownstream): void {
   const upstream = getUpstream(ws);
   if (upstream?.readyState === WebSocket.OPEN) upstream.close();
 }
+
+/**
+ * Whether a client→sandbox frame is a person's input (the `console` idle
+ * signal): keystrokes, pastes, resizes. A terminal emulator also answers
+ * queries on its own (cursor position, device attributes, status, mode and
+ * OSC color reports); a TUI polling them must not keep a sandbox awake.
+ */
+export function isUserInput(message: unknown): boolean {
+  if (message instanceof Uint8Array) {
+    return message.length > 0 && !isTerminalReport(message);
+  }
+  if (typeof message === "string") return !isTerminalReport(message);
+  // Elysia parses JSON text frames (the terminal's resize messages).
+  return typeof message === "object" && message !== null;
+}
+
+const ESC = "\u001b";
+const BEL = "\u0007";
+
+/** A single escape sequence a terminal emits as a *reply*: CPR `ESC[r;cR`,
+ * DA `ESC[?…c` / `ESC[>…c`, DSR `ESC[0n`, DECRQM `ESC[?…$y`, or an
+ * OSC reply terminated by BEL or ST. */
+function isTerminalReport(frame: Uint8Array | string): boolean {
+  if (frame.length < 3 || frame.length > 64) return false;
+  const text =
+    typeof frame === "string" ? frame : new TextDecoder().decode(frame);
+  if (!text.startsWith(ESC)) return false;
+  const rest = text.slice(1);
+  if (rest.startsWith("]")) {
+    return rest.endsWith(BEL) || rest.endsWith(`${ESC}\\`);
+  }
+  if (!rest.startsWith("[")) return false;
+  const final = rest.at(-1);
+  const params = rest.slice(1, -1).replace(/^[?>]/, "");
+  if (final === "R" || final === "c" || final === "n") {
+    return /^[\d;]*$/.test(params);
+  }
+  if (final === "y") return /^[\d;]*\$$/.test(params);
+  return false;
+}

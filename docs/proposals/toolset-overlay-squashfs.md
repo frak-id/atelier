@@ -123,9 +123,9 @@ Consequences:
   (`infra/images/dev-base/Dockerfile`, last stage `mv /home/dev
   /home/skel`) is no longer required for the mount reason (skel stays as the
   lower source).
-- **The repo still lands in the writable upper.** `WORKSPACE_DIR =
-  /home/dev/workspace` (`infra.ts:7`) resolves through the overlay into
-  `/data/upper/workspace` — on the PVC, snapshottable, CoW-cloneable.
+- **The repo still lands in the writable upper.** A prebuild clones into
+  `/home/dev/<clonePath>`, which resolves through the overlay into
+  `/data/upper/<clonePath>` — on the PVC, snapshottable, CoW-cloneable.
   Repo prebuilds remain whole-PVC (`/data`) snapshots.
 - **Blobs live on the PVC**, so a pause `VolumeSnapshot` carries them (see
   §6) — resume never depends on zot.

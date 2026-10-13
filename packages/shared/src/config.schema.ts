@@ -128,12 +128,6 @@ export const KubernetesConfigSchema = Type.Object(
       default: "",
     }),
     /**
-     * Optional npm registry URL injected into every sandbox (e.g. a private
-     * Verdaccio/Nexus/Artifactory proxy). Empty string disables injection and
-     * sandboxes fall back to the public npm registry.
-     */
-    npmRegistryUrl: Type.String({ default: "" }),
-    /**
      * StorageClass for sandbox PVCs.
      * Recommend LVM thin provisioning (e.g. openebs-lvmpv) for
      * efficient disk usage. Empty string uses the cluster default.
@@ -507,7 +501,6 @@ export const ENV_VAR_MAPPING = {
   ATELIER_K8S_RUNTIME_CLASS: "kubernetes.runtimeClass",
   ATELIER_K8S_TOOL_INGRESS_ISSUER: "kubernetes.toolIngressClusterIssuer",
   ATELIER_K8S_REGISTRY_URL: "kubernetes.registryUrl",
-  ATELIER_NPM_REGISTRY_URL: "kubernetes.npmRegistryUrl",
   ATELIER_K8S_STORAGE_CLASS: "kubernetes.storageClass",
   ATELIER_K8S_VOLUME_SNAPSHOT_CLASS: "kubernetes.volumeSnapshotClass",
   ATELIER_K8S_DEFAULT_VOLUME_SIZE: "kubernetes.defaultVolumeSize",

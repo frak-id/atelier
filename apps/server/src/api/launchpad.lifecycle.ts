@@ -19,6 +19,7 @@ import {
   type ResolvedService,
   type ResumeRequest,
   resolveWorkspaceServices,
+  SANDBOX_IDLE_PAUSED_ANNOTATION,
   type SandboxSummary,
   type Starter,
   starterLaunchRequest,
@@ -56,6 +57,8 @@ export interface WorkspaceView {
   phase: Exclude<WorkspacePhase, "gone">;
   /** The latest launch/wake-up failure, when `phase` is `failed`. */
   error?: string;
+  /** When `sleeping` because nobody used it (not put to sleep by hand). */
+  sleptIdleAt?: string;
   createdAt: string;
   updatedAt: string;
 }
@@ -328,6 +331,10 @@ export class LaunchpadLifecycle {
       phase === "failed"
         ? (job?.error ?? "The workspace stopped unexpectedly.")
         : undefined;
+    const sleptIdleAt =
+      phase === "sleeping"
+        ? sandbox?.annotations?.[SANDBOX_IDLE_PAUSED_ANNOTATION]
+        : undefined;
     return {
       id: record.sandboxId,
       title: record.title,
@@ -337,6 +344,7 @@ export class LaunchpadLifecycle {
       ...(record.snapshot.icon ? { icon: record.snapshot.icon } : {}),
       phase,
       ...(error ? { error } : {}),
+      ...(sleptIdleAt ? { sleptIdleAt } : {}),
       createdAt: record.createdAt,
       updatedAt: record.updatedAt,
     };

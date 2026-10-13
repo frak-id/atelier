@@ -77,3 +77,36 @@ export function rebuildTitle(prebuild: PrebuildRecord | undefined): string {
     ? `Rebuilds all ${count} repos of this prebuild from their latest commits`
     : "Rebuild from the latest commit";
 }
+
+/** `1 h 48 min`, `12 min`, `2 d 3 h`, `<1 min`. */
+export function formatDuration(ms: number): string {
+  const minutes = Math.round(ms / 60_000);
+  if (minutes < 1) return "<1 min";
+  if (minutes < 60) return `${minutes} min`;
+  const hours = Math.floor(minutes / 60);
+  if (hours < 24) {
+    const rest = minutes % 60;
+    return rest ? `${hours} h ${rest} min` : `${hours} h`;
+  }
+  const days = Math.floor(hours / 24);
+  const rest = hours % 24;
+  return rest ? `${days} d ${rest} h` : `${days} d`;
+}
+
+/** Time from now until an ISO timestamp (never negative). */
+export function msUntil(iso: string, now = Date.now()): number {
+  return Math.max(0, new Date(iso).getTime() - now);
+}
+
+/** `512 B`, `1.5 KB`, `12 MB`. */
+export function formatBytes(bytes: number): string {
+  if (bytes < 1024) return `${bytes} B`;
+  const units = ["KB", "MB", "GB", "TB"];
+  let value = bytes / 1024;
+  let unit = 0;
+  while (value >= 1024 && unit < units.length - 1) {
+    value /= 1024;
+    unit++;
+  }
+  return `${value < 10 ? value.toFixed(1) : Math.round(value)} ${units[unit]}`;
+}

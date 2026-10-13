@@ -14,10 +14,12 @@ import {
   CreateSandboxRequestSchema,
   SANDBOX_NAME_ANNOTATION,
   SANDBOX_NAME_MAX_LENGTH,
+  type SandboxIdleSummary,
 } from "@atelier/spec";
 import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { z } from "zod";
 import type { AuthUser } from "../../../control/index.ts";
+import { ValidationError } from "../../../shared/errors.ts";
 import type { ServerContainer } from "../../container.ts";
 import {
   accessibleSandboxes,
@@ -71,6 +73,7 @@ function sandboxView(
     annotations?: Record<string, string>;
   },
   verbose = false,
+  idle?: SandboxIdleSummary,
 ) {
   const { urls, ssh } = splitUrls(state.urls, verbose);
   const name = state.annotations?.[SANDBOX_NAME_ANNOTATION];
@@ -81,6 +84,7 @@ function sandboxView(
     urls,
     ...(ssh ? { ssh } : {}),
     processes: state.processes,
+    ...(idle ? { idle } : {}),
     ...(verbose && state.metadata ? { metadata: state.metadata } : {}),
   };
 }
@@ -221,9 +225,13 @@ export function registerSandboxTools(
         "the process behind it is up), `ssh` command, and live `processes` " +
         "(their `name` is what `manage_process` takes). Check this before " +
         "`exec`: only a `running` sandbox accepts commands; `paused` or " +
-        "`error` ones need `sandbox_lifecycle` action=resume. Without " +
+        "`error` ones need `sandbox_lifecycle` action=resume. `idle` " +
+        "(running sandboxes, when the server auto-pauses idle ones): " +
+        "`state`, `lastActiveAt` and `pausesAt`, when it will be paused if " +
+        "nobody uses it (`mode: observe`: only would be); " +
+        "`sandbox_lifecycle` action=keep_awake postpones that. Without " +
         "`id`: list all sandboxes (id, status, name, repos, creation " +
-        "date), newest first, optionally filtered by `status` and " +
+        "date, idle), newest first, optionally filtered by `status` and " +
         "`metadata`; summaries only, call again with an `id` for URLs and " +
         "process health.",
       inputSchema: {
@@ -261,17 +269,21 @@ export function registerSandboxTools(
           "only filters the sandbox list (omit `id` to list)",
         );
         guard(id);
-        return text(sandboxView(await runtime.get(id), verbose));
+        return text(
+          sandboxView(
+            await runtime.get(id),
+            verbose,
+            container.idle.summary(id),
+          ),
+        );
       }
 
       rejectParams(
         { verbose },
         "only applies when reading one sandbox (pass `id`)",
       );
-      const all = accessibleSandboxes(
-        container,
-        user.id,
-        runtime.list(metadata),
+      const all = container.idle.decorate(
+        accessibleSandboxes(container, user.id, runtime.list(metadata)),
       );
       const rows = (status ? all.filter((s) => s.status === status) : all)
         .map((s) => {
@@ -282,6 +294,7 @@ export function registerSandboxTools(
             ...(name ? { name } : {}),
             createdAt: s.createdAt,
             ...(s.repos?.length ? { repos: s.repos.map((r) => r.url) } : {}),
+            ...(s.idle ? { idle: s.idle } : {}),
           };
         })
         .sort((a, b) => b.createdAt.localeCompare(a.createdAt));
@@ -301,22 +314,50 @@ export function registerSandboxTools(
         "snapshot`); `fork` snapshots it and boots an independent copy " +
         "owned by you (your git identity), in the same org, and returns the " +
         "copy's `id` and `urls` (waits until it is up); `destroy` deletes it " +
-        "permanently and irreversibly, with no confirmation. " +
+        "permanently and irreversibly, with no confirmation; `keep_awake` " +
+        "exempts it from idle auto-pause for `hours` (0 clears it), within " +
+        "the server's limit, e.g. before leaving a long job running unattended. " +
         "pause/resume/fork can take minutes.",
       inputSchema: {
         id: z.string().describe("Sandbox id"),
-        action: z.enum(["pause", "resume", "snapshot", "fork", "destroy"]),
+        action: z.enum([
+          "pause",
+          "resume",
+          "snapshot",
+          "fork",
+          "destroy",
+          "keep_awake",
+        ]),
         name: z
           .string()
           .max(SANDBOX_NAME_MAX_LENGTH)
           .optional()
           .describe("fork only: display name of the copy (default: none)"),
+        hours: z
+          .number()
+          .min(0)
+          .optional()
+          .describe("keep_awake only: how long, in hours (0 clears)"),
       },
     },
-    safeTool(async ({ id, action, name }) => {
+    safeTool(async ({ id, action, name, hours }) => {
       guard(id);
       if (action !== "fork") rejectParams({ name }, "only applies to `fork`");
+      if (action !== "keep_awake") {
+        rejectParams({ hours }, "only applies to `keep_awake`");
+      }
       switch (action) {
+        case "keep_awake": {
+          if (hours === undefined) {
+            throw new ValidationError("keep_awake needs `hours` (0 clears)");
+          }
+          const until =
+            hours === 0
+              ? null
+              : new Date(Date.now() + hours * 3_600_000).toISOString();
+          const stored = container.idle.setKeepAwake(id, until);
+          return text({ id, keepAwakeUntil: stored ?? null });
+        }
         case "fork": {
           const copy = await forkSandboxForUser(container, user, id, { name });
           return text({

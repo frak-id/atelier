@@ -264,6 +264,12 @@ class SandboxAcpConnection {
      * agents without `session/list`). */
     private readonly createdSessions: Map<string, CreatedSessionEntry>,
     private readonly notifier: PermissionNotifier | undefined,
+    /** The `agent` idle signal: a prompt starting or ending, a permission
+     * request. Not `session/update`: the attach bridge replays its output
+     * buffer to every new connection, so a reconnect (any read after the
+     * idle-TTL close) would re-deliver an old turn's updates. A live turn is
+     * covered anyway: it blocks the pause until `markBusy` ends it. */
+    private readonly touch: () => void,
   ) {}
 
   static async open(
@@ -273,6 +279,7 @@ class SandboxAcpConnection {
     emit: (event: SurfaceEvent) => void,
     createdSessions: Map<string, CreatedSessionEntry>,
     notifier: PermissionNotifier | undefined,
+    touch: () => void,
   ): Promise<SandboxAcpConnection> {
     const transport = connectAcpWebSocket(url);
     // `conn` is captured by the handlers below; it's assigned before any frame
@@ -295,6 +302,7 @@ class SandboxAcpConnection {
       emit,
       createdSessions,
       notifier,
+      touch,
     );
 
     try {
@@ -402,6 +410,7 @@ class SandboxAcpConnection {
   private handlePermission(
     request: RequestPermissionRequest,
   ): Promise<RequestPermissionResponse> {
+    this.touch();
     const id = safeNanoid();
     return new Promise<RequestPermissionResponse>((resolve) => {
       const pending: PendingPermission = {
@@ -494,6 +503,7 @@ class SandboxAcpConnection {
   }
 
   markBusy(sessionId: string, delta: number): void {
+    this.touch();
     const state = this.getOrCreateLiveState(sessionId);
     state.busyCount = Math.max(0, state.busyCount + delta);
     this.emit({ resource: "sessionStatuses" });
@@ -633,6 +643,13 @@ class SandboxAcpConnection {
     return this.liveState.get(sessionId)?.todos ?? [];
   }
 
+  /** Turns in flight and permission requests awaiting a person. */
+  work(): { turns: number; permissions: number } {
+    let turns = 0;
+    for (const state of this.liveState.values()) turns += state.busyCount;
+    return { turns, permissions: this.pendingPermissions.size };
+  }
+
   listPermissions(): AgentPermissionRequest[] {
     return [...this.pendingPermissions.values()].map((p) => ({
       id: p.id,
@@ -728,6 +745,8 @@ export class AgentDispatch {
       agentClient: AgentClient;
       /** Also asks permission prompts elsewhere (a person's phone). */
       notifier?: PermissionNotifier;
+      /** ACP traffic seen for a sandbox (the `agent` idle signal). */
+      onActivity?: (sandboxId: string) => void;
     },
   ) {}
 
@@ -807,6 +826,7 @@ export class AgentDispatch {
         (event) => this.emit(sandboxId, event),
         createdSessions,
         this.deps.notifier,
+        () => this.deps.onActivity?.(sandboxId),
       );
       this.live.set(sandboxId, conn);
       return conn;
@@ -865,6 +885,13 @@ export class AgentDispatch {
 
   permissionsFor(sandboxId: string): AgentPermissionRequest[] {
     return this.live.get(sandboxId)?.listPermissions() ?? [];
+  }
+
+  /** Server-driven ACP work on a sandbox right now: turns in flight and
+   * permission requests waiting on a person. Either one blocks an idle
+   * pause. Lazy read: no live connection means none. */
+  workFor(sandboxId: string): { turns: number; permissions: number } {
+    return this.live.get(sandboxId)?.work() ?? { turns: 0, permissions: 0 };
   }
 
   replyPermission(

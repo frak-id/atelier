@@ -107,7 +107,7 @@ interface LoginOpts {
   name?: string;
 }
 
-export async function runLogin(opts: LoginOpts): Promise<void> {
+async function runLogin(opts: LoginOpts): Promise<void> {
   ui.intro(pc.cyan("atelier login"));
   const current = loadConfig();
   const baseUrl =

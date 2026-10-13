@@ -9,8 +9,6 @@ import { cn } from "@/lib/utils";
  * persistent-feeling secondary surfaces like the job queue.
  */
 const Sheet = DialogPrimitive.Root;
-const SheetTrigger = DialogPrimitive.Trigger;
-const SheetClose = DialogPrimitive.Close;
 const SheetPortal = DialogPrimitive.Portal;
 
 const SheetOverlay = React.forwardRef<
@@ -77,25 +75,4 @@ const SheetTitle = React.forwardRef<
 ));
 SheetTitle.displayName = DialogPrimitive.Title.displayName;
 
-const SheetDescription = React.forwardRef<
-  React.ComponentRef<typeof DialogPrimitive.Description>,
-  React.ComponentPropsWithoutRef<typeof DialogPrimitive.Description>
->(({ className, ...props }, ref) => (
-  <DialogPrimitive.Description
-    ref={ref}
-    className={cn("text-sm text-muted-foreground", className)}
-    {...props}
-  />
-));
-SheetDescription.displayName = DialogPrimitive.Description.displayName;
-
-export {
-  Sheet,
-  SheetClose,
-  SheetContent,
-  SheetDescription,
-  SheetHeader,
-  SheetPortal,
-  SheetTitle,
-  SheetTrigger,
-};
+export { Sheet, SheetContent, SheetHeader, SheetTitle };

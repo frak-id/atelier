@@ -83,6 +83,21 @@ Pause/resume reuses the live PVC when it still exists (no re-clone); when the
 pod has been fully torn down it clones from the persisted pause snapshot, or
 falls back to the original source spec. `error` records are resumable too.
 
+### Idle auto-pause
+
+A running sandbox nobody uses is paused after the operator's idle time
+(`sandbox.idle.*` server config, default 120 min, `observe` mode first).
+Activity is what a person or an agent does to it: SSH and console input,
+mutating API/MCP calls, ACP turns driven through Atelier (all seen by the
+server), plus network bytes above a per-minute threshold, file writes under
+the home (where repos are cloned) and optionally CPU (measured by the in-pod
+agent, `GET /activity`). Nothing is per provider: an agent used through its
+own terminal or web UI counts through its traffic and its edits. Open-but-idle connections don't count: bytes do, not sockets.
+A turn in flight, a pending permission request, a job on the sandbox or a
+user's bounded keep-awake hold the pause. The reaper (`api/idle-reaper.ts`)
+runs every minute. See
+[proposals/sandbox-idle-autopause.md](proposals/sandbox-idle-autopause.md).
+
 ### Prebuild Flow
 
 ```
@@ -302,6 +317,9 @@ communicating with the server via TCP.
 │  │   attach                                                     │
 │  ├── Terminal WS relay (TCP:7681) — ad-hoc login shells         │
 │  ├── File system operations, command execution (/exec)          │
+│  ├── Activity measurement (GET /activity) — network bytes per   │
+│  │   minute (interface counters), file writes (fanotify), CPU   │
+│  │   (cgroup) for idle auto-pause                               │
 │  └── Toolset build/capture (content-hash artifacts pushed to Zot)│
 └─────────────────────────────────────────────────────────────────┘
 ```

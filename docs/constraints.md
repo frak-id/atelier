@@ -65,6 +65,6 @@ All infrastructure services check `isMock()` and return mock responses.
 
 Warping a local OpenCode TUI session into an Atelier sandbox lands on an empty/phantom instance. Use the console (or SSH/VSCode-Remote) instead.
 
-Cause: the TUI configures `@opencode-ai/sdk` with `directory = process.cwd()` (the user's local Mac path). The SDK injects `?directory=<local cwd>` into every GET. After proxy, the remote opencode's `WorkspaceRoutingMiddleware.defaultDirectory()` reads `?directory` first — a path that doesn't exist on the VM — and bootstraps a phantom instance disconnected from the real workspace at `/home/dev/workspace/<repo>`.
+Cause: the TUI configures `@opencode-ai/sdk` with `directory = process.cwd()` (the user's local Mac path). The SDK injects `?directory=<local cwd>` into every GET. After proxy, the remote opencode's `WorkspaceRoutingMiddleware.defaultDirectory()` reads `?directory` first — a path that doesn't exist on the VM — and bootstraps a phantom instance disconnected from the real repo clone at `/home/dev/<repo>`.
 
-The console is unaffected: it constructs the SDK without a `directory` config, so the remote falls back to its own `process.cwd()` (the workspace dir).
+The console is unaffected: it constructs the SDK without a `directory` config, so the remote falls back to its own `process.cwd()` (`/home/dev`).

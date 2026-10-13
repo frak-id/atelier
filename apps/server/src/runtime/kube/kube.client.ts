@@ -61,7 +61,7 @@ export class KubeApiError extends SandboxError {
 /** A definitive "this object does not exist" answer from the API server — the
  * ONLY error that may be read as absence. Anything else (5xx, 429 after
  * retries, transport failure, 403) means "unknown", never "absent". */
-export function isKubeNotFound(err: unknown): boolean {
+function isKubeNotFound(err: unknown): boolean {
   return err instanceof KubeApiError && err.status === 404;
 }
 

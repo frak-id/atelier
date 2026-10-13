@@ -9,7 +9,12 @@ import { createChildLogger } from "../shared/lib/logger.ts";
 import { createAuthPlugin } from "./auth.plugin.ts";
 import type { ServerContainer } from "./container.ts";
 import { requireSandboxAccess, sandboxAccessGuard } from "./sandbox-guard.ts";
-import { closeUpstream, openUpstreamRelay, relayMessage } from "./ws-relay.ts";
+import {
+  closeUpstream,
+  isUserInput,
+  openUpstreamRelay,
+  relayMessage,
+} from "./ws-relay.ts";
 
 const log = createChildLogger("sessions-routes");
 
@@ -161,6 +166,9 @@ export function createSessionsRoutes(container: ServerContainer) {
         }
       },
       message(ws, message) {
+        if (isUserInput(message)) {
+          container.runtime.touch(ws.data.params.id, "console");
+        }
         if (relayMessage(ws, message)) return;
         // Elysia auto-parses JSON text frames into objects, so control
         // messages (e.g. `{type:"resize",cols,rows}`) never arrive as a

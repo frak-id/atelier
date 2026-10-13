@@ -8,7 +8,7 @@ import { spawnDetached } from "./proc.ts";
 /** Minimal JSONC: strips `//` and block comments (string-aware), then
  * JSON.parse. Trailing commas are not supported — keep spec files valid JSON
  * apart from comments. */
-export function parseJsonc(text: string): unknown {
+function parseJsonc(text: string): unknown {
   let out = "";
   let inStr = false;
   let quote = "";

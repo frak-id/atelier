@@ -1,6 +1,7 @@
 import { SandboxError } from "../../shared/errors.ts";
 import { config, isMock } from "../../shared/lib/config.ts";
 import { createChildLogger } from "../../shared/lib/logger.ts";
+import type { AgentActivityReport } from "../activity.ts";
 import type { AgentConfig } from "../agent-config.ts";
 import type { AgentEndpoint } from "../backend/backend.types.ts";
 import { kubeClient } from "../kube/index.ts";
@@ -66,7 +67,7 @@ async function kubeEndpointResolver(
   };
 }
 
-export class AgentUnavailableError extends SandboxError {
+class AgentUnavailableError extends SandboxError {
   constructor(sandboxId: string, cause: string) {
     super(
       `Agent for sandbox ${sandboxId} is unavailable: ${cause}`,
@@ -80,7 +81,7 @@ export class AgentUnavailableError extends SandboxError {
 /** The agent answered but rejected the request (4xx) — a caller error, not
  * an availability problem: don't dress it up as a 503. Propagates the
  * agent's status code so a validation failure surfaces as one. */
-export class AgentRequestError extends SandboxError {
+class AgentRequestError extends SandboxError {
   constructor(sandboxId: string, status: number, detail: string) {
     super(
       `Agent for sandbox ${sandboxId} rejected the request: ${detail}`,
@@ -215,6 +216,37 @@ export class AgentClient {
 
   async health(sandboxId: string): Promise<AgentHealth> {
     return this.request<AgentHealth>(sandboxId, "/health");
+  }
+
+  /**
+   * The agent's last hour of measured activity (`GET /activity`: network
+   * bytes, file writes, CPU). `null` when the agent
+   * predates the endpoint (404): an image built before idle auto-pause.
+   * Throws `AgentUnavailableError` when the agent can't be reached.
+   */
+  async activity(sandboxId: string): Promise<AgentActivityReport | null> {
+    if (isMock()) {
+      const now = Date.now();
+      return {
+        nowMs: now,
+        bootedAtMs: now,
+        bucketSeconds: 60,
+        network: "unavailable",
+        files: "unavailable",
+        cpu: "unavailable",
+        buckets: [],
+      };
+    }
+    try {
+      return await this.request<AgentActivityReport>(sandboxId, "/activity", {
+        timeout: 5000,
+      });
+    } catch (err) {
+      if (err instanceof AgentRequestError && err.statusCode === 404) {
+        return null;
+      }
+      throw err;
+    }
   }
 
   /**

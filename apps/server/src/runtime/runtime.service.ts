@@ -8,6 +8,7 @@
  */
 import { createHash } from "node:crypto";
 import {
+  type ActivitySignal,
   type AddPortRequest,
   type AddProcessRequest,
   type CreateSandboxResponse,
@@ -30,6 +31,7 @@ import {
   type SandboxRepo,
   type SandboxSpec,
   type SandboxState,
+  type SandboxStatus,
   type SandboxSummary,
   type SnapshotRef,
   type ToolsetBuildRequest,
@@ -56,6 +58,11 @@ import {
   defaultImage,
   qualifyImageName,
 } from "../shared/lib/runtime-config.ts";
+import {
+  ActivityRecorder,
+  type ActivityThresholds,
+  type SandboxActivityRecord,
+} from "./activity.ts";
 import type { HookPhase, WriteFilesResult } from "./agent/index.ts";
 import { AgentClient, toFileWrites } from "./agent/index.ts";
 import { specToAgentConfig } from "./agent-config.ts";
@@ -129,6 +136,8 @@ export interface RuntimeDeps {
    * so `resolveImage` can prefer a built image's already-pinned digest over
    * re-resolving `:latest` on every spawn. */
   images?: ImageStore;
+  /** Per-sandbox activity clocks (idle auto-pause). Injectable for tests. */
+  activity?: ActivityRecorder;
 }
 
 export class RuntimeService {
@@ -139,6 +148,7 @@ export class RuntimeService {
   private readonly toolsets: ToolsetStore;
   private readonly sandboxToolsetRefs: SandboxToolsetRefStore;
   private readonly images: ImageStore;
+  private readonly activity: ActivityRecorder;
   /** De-dupes concurrent prebuild() calls for the same content hash onto one
    * execution (the temp pod name is deterministic and would collide). */
   private readonly inflightPrebuilds = new Map<string, Promise<SnapshotRef>>();
@@ -169,6 +179,46 @@ export class RuntimeService {
     this.sandboxToolsetRefs =
       deps.sandboxToolsetRefs ?? new InMemorySandboxToolsetRefStore();
     this.images = deps.images ?? new InMemoryImageStore();
+    this.activity = deps.activity ?? new ActivityRecorder();
+  }
+
+  // ── activity (idle auto-pause) ────────────────────────────────────────
+
+  /** Record that a signal was just seen for a sandbox (SSH bytes, a relayed
+   * keystroke, ACP traffic). The idle rules decide what counts. */
+  touch(id: string, signal: ActivitySignal): void {
+    this.activity.touch(id, signal);
+  }
+
+  /** The sandbox's activity clocks (an empty record floored at the server's
+   * start when nothing was seen yet). */
+  activityRecord(id: string): SandboxActivityRecord {
+    return this.activity.read(id);
+  }
+
+  /** Whether a lifecycle op (create/pause/resume/snapshot/destroy/fork) holds
+   * the sandbox's op lock right now. */
+  hasPendingOp(id: string): boolean {
+    return this.opLocks.has(id);
+  }
+
+  /**
+   * Poll the agent's `GET /activity` and fold it into the sandbox's clocks
+   * with `thresholds`. An older agent (404) or an unreachable one is
+   * recorded as not reporting; never throws.
+   */
+  async pollActivity(
+    id: string,
+    thresholds: ActivityThresholds,
+  ): Promise<void> {
+    try {
+      const report = await this.agent.activity(id);
+      if (report) this.activity.ingest(id, report, thresholds);
+      else this.activity.markUnreported(id);
+    } catch (err) {
+      log.debug({ id, err }, "activity poll failed");
+      this.activity.markUnreported(id);
+    }
   }
 
   // ── prebuild ───────────────────────────────────────────────────────────
@@ -778,6 +828,8 @@ export class RuntimeService {
         pvcName: boot.pvcName,
         generated,
       });
+      // The idle clock starts at boot, not at the first signal.
+      this.activity.touch(id, "lifecycle");
 
       return {
         id,
@@ -832,6 +884,12 @@ export class RuntimeService {
    */
   getSshHostKeys(id: string): string[] | undefined {
     return this.sandboxes.get(id)?.generated.sshHostKeys;
+  }
+
+  /** A sandbox's status, or undefined when it is unknown. A synchronous
+   * store read (the idle reaper and list decorations call it per row). */
+  getStatus(id: string): SandboxStatus | undefined {
+    return this.sandboxes.get(id)?.status;
   }
 
   /** A sandbox's opaque metadata and annotations, or undefined when it is
@@ -1015,6 +1073,7 @@ export class RuntimeService {
           sshHostKeys: boot.sshHostKeys,
         },
       });
+      this.activity.touch(id, "lifecycle");
     });
     return this.get(id);
   }
@@ -1047,6 +1106,7 @@ export class RuntimeService {
       // against the deleteToolset GC guard (§7).
       this.sandboxToolsetRefs.deleteBySandbox(id);
       this.sandboxes.delete(id);
+      this.activity.forget(id);
       log.info({ id }, "sandbox destroyed");
     });
   }
@@ -1117,6 +1177,7 @@ export class RuntimeService {
     files: PatchFilesRequest,
   ): Promise<WriteFilesResult> {
     this.require(id);
+    this.activity.touch(id, "api");
     return this.agent.writeFiles(id, toFileWrites(files));
   }
 
@@ -1127,6 +1188,7 @@ export class RuntimeService {
    */
   async patchEnv(id: string, env: PatchEnvRequest): Promise<void> {
     const record = this.require(id);
+    this.activity.touch(id, "api");
     const nextEnv = { ...(record.spec.env ?? {}), ...env };
     const nextSpec = { ...record.spec, env: nextEnv };
     // Re-push so future process spawns see the new env, then fire envChanged
@@ -1142,6 +1204,7 @@ export class RuntimeService {
 
   async exec(id: string, req: ExecRequest) {
     this.require(id);
+    this.activity.touch(id, "api");
     return this.agent.exec(id, req.command, {
       timeout: req.timeoutMs,
       workdir: req.cwd,
@@ -1156,6 +1219,7 @@ export class RuntimeService {
     action: "start" | "stop",
   ): Promise<void> {
     this.require(id);
+    this.activity.touch(id, "api");
     if (action === "start") await this.agent.processStart(id, name);
     else await this.agent.processStop(id, name);
   }
@@ -1173,6 +1237,7 @@ export class RuntimeService {
    */
   async addProcess(id: string, req: AddProcessRequest): Promise<void> {
     const record = this.require(id);
+    this.activity.touch(id, "api");
     const spec: SandboxSpec = {
       ...record.spec,
       processes: [...(record.spec.processes ?? []), req],
@@ -1186,6 +1251,7 @@ export class RuntimeService {
   /** Expose a port after boot — creates the ingress now, real mechanism. */
   async addPort(id: string, req: AddPortRequest): Promise<void> {
     const record = this.require(id);
+    this.activity.touch(id, "api");
     const portEntry: PortEntry = {
       name: req.name,
       port: req.port,
@@ -1224,6 +1290,9 @@ export class RuntimeService {
         `Process "${processName}" has no attach bridge (needs stdio: bridge or pty)`,
       );
     }
+    // A read-only watcher is not using the sandbox; what a rw attach sends
+    // is counted as `console` by the relay.
+    if (mode === "rw") this.activity.touch(id, "api");
     if (proc.lazy) await this.agent.processStart(id, processName);
     const url = await this.agent.attachUrl(id, processName, mode);
     return { url };

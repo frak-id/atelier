@@ -21,7 +21,6 @@ with it.
 | Zot | `zot.zot.svc:5000` (plain HTTP, k3s `registries.yaml` mirror) | `30-config.yaml` `kubernetes.registryUrl`, `deploy.sh` |
 | BuildKit | `tcp://buildkitd.buildkit.svc:1234` + Secret `buildkit-client-tls` | `30-config.yaml` `imageBuilder` |
 | cert-manager | ClusterIssuer `letsencrypt-frak` | `30-config.yaml` `toolIngressClusterIssuer`, `70-ingress.yaml` |
-| Verdaccio | `http://verdaccio.verdaccio.svc:4873` | `30-config.yaml` `npmRegistryUrl` |
 | Traefik | IngressClass `traefik` | `30-config.yaml`, `70-ingress.yaml` |
 
 The atelier-side requirements on the Kata runtime (what the sandbox guest

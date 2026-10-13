@@ -7,11 +7,12 @@ import { afterAll, beforeAll, describe, expect, test } from "bun:test";
 import { mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import type {
-  CreateSandboxRequest,
-  SandboxStatus,
-  SandboxUrl,
-  StarterInput,
+import {
+  type CreateSandboxRequest,
+  SANDBOX_IDLE_PAUSED_ANNOTATION,
+  type SandboxStatus,
+  type SandboxUrl,
+  type StarterInput,
 } from "@atelier/spec";
 import type { AuthUser, ControlContainer } from "../control/index.ts";
 import { InMemoryJobStore, JobService } from "../runtime/index.ts";
@@ -48,6 +49,7 @@ afterAll(async () => {
 interface FakeSandbox {
   status: SandboxStatus;
   urls: SandboxUrl[];
+  annotations?: Record<string, string>;
 }
 
 /** Just enough runtime for the lifecycle: an in-memory record map. */
@@ -64,6 +66,7 @@ function fakeRuntime() {
         id,
         status: s.status,
         createdAt: "",
+        annotations: s.annotations,
       })),
     get: async (id: string) => ({ id, ...require(id) }),
     pause: async (id: string) => {
@@ -91,6 +94,7 @@ const PI_URL: SandboxUrl = {
 
 function setup(options: { failCreate?: boolean } = {}) {
   const fake = fakeRuntime();
+  /** The idle reaper's answer per sandbox. */
   const jobs = new JobService({ store: new InMemoryJobStore() });
   const created: CreateSandboxRequest[] = [];
   const lifecycle = new Lifecycle({
@@ -291,6 +295,23 @@ describe("sleep, wake, delete", () => {
     expect(lifecycle.wake(id, user.id).phase).toBe("starting");
     await settle(jobs, latestJob(user.id, id));
     expect(lifecycle.list(user.id)[0]?.phase).toBe("ready");
+  });
+
+  test("idle auto-pause: that it went to sleep", async () => {
+    const { lifecycle, sandboxes, user, id } = await readyWorkspace();
+    // Put to sleep by hand: no idle mark.
+    await lifecycle.sleep(id, user.id);
+    const [manual] = lifecycle.list(user.id);
+    expect(manual?.sleptIdleAt).toBeUndefined();
+
+    const sandbox = sandboxes.get(id);
+    if (!sandbox) throw new Error("no sandbox");
+    sandbox.annotations = {
+      [SANDBOX_IDLE_PAUSED_ANNOTATION]: "2026-10-14T11:00:00.000Z",
+    };
+    expect(lifecycle.list(user.id)[0]?.sleptIdleAt).toBe(
+      "2026-10-14T11:00:00.000Z",
+    );
   });
 
   test("a sandbox destroyed elsewhere is pruned on read", async () => {

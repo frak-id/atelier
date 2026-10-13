@@ -1,5 +1,6 @@
 //! HTTP control plane on :9998. Surface: health, config push/read, supervised
-//! process control, phased hooks, one-shot exec, and file writes.
+//! process control, phased hooks, one-shot exec, file writes, and activity
+//! measurement (idle auto-pause).
 
 use std::collections::HashMap;
 use std::sync::Arc;
@@ -10,6 +11,7 @@ use hyper::body::Bytes;
 use hyper::{Method, Request, Response, StatusCode};
 use serde::Deserialize;
 
+use crate::activity::Activity;
 use crate::command::{self, DEFAULT_EXEC_TIMEOUT_MS};
 use crate::config::AgentConfig;
 use crate::files::{self, WriteFilesRequest};
@@ -27,6 +29,7 @@ pub async fn route(
     store: Arc<ConfigStore>,
     supervisor: Arc<Supervisor>,
     terminals: Arc<TerminalRegistry>,
+    activity: Arc<Activity>,
 ) -> Response<Full<Bytes>> {
     static START: std::sync::OnceLock<Instant> = std::sync::OnceLock::new();
     let start = *START.get_or_init(Instant::now);
@@ -61,6 +64,9 @@ pub async fn route(
             StatusCode::OK,
             serde_json::json!({ "keys": crate::ssh::host_keys() }),
         ),
+        // The last hour of measured activity, raw (the server applies the
+        // idle thresholds).
+        (&Method::GET, "/activity") => json(StatusCode::OK, activity.report()),
         (&Method::GET, "/processes") => json(
             StatusCode::OK,
             serde_json::json!({ "processes": supervisor.list().await }),

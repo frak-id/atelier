@@ -14,7 +14,6 @@ type JobsResponse = NonNullable<
   Awaited<ReturnType<typeof api.v1.jobs.get>>["data"]
 >;
 export type Job = JobsResponse[number];
-export type JobStatus = Job["status"];
 
 /** True only while a job is actually executing (not merely waiting for a
  * concurrency slot). */

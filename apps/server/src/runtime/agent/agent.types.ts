@@ -28,7 +28,7 @@ export type HookPhase = "postCreate" | "postStart" | "onResume" | "envChanged";
 
 /** A supervised process's state (agent `GET /processes` / `/processes/{name}`).
  * Mirrors the agent's `supervisor::ProcessState`. */
-export interface AgentProcessState {
+interface AgentProcessState {
   name: string;
   status: "starting" | "running" | "stopped" | "error";
   pid: number;

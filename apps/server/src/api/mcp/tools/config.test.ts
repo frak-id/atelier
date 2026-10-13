@@ -16,6 +16,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import type { PrebuildRecord, ToolboxOwner } from "@atelier/spec";
 import type { AuthUser, ControlContainer } from "../../../control/index.ts";
+import { OWNER_ID_METADATA } from "../../../shared/lib/git-attribution.ts";
 import type { ServerContainer } from "../../container.ts";
 import { connectMcp } from "./mcp.test-support.ts";
 
@@ -89,7 +90,9 @@ const PREBUILDS: PrebuildRecord[] = [
   },
 ];
 
-function fakeRuntime() {
+/** Every sandbox is owned by `ownerId`, so `capture` passes the real access
+ * rule whatever the server mode (no reliance on the mock-mode bypass). */
+function fakeRuntime(ownerId: string) {
   const toolsets = new Map<string, { private: boolean }>();
   const calls = { deleted: [] as string[], published: [] as string[] };
   const runtime = {
@@ -98,7 +101,10 @@ function fakeRuntime() {
     deletePrebuild: async (ref: string) => {
       calls.deleted.push(ref);
     },
-    getLabels: () => ({ metadata: {}, annotations: {} }),
+    getLabels: () => ({
+      metadata: { [OWNER_ID_METADATA]: ownerId },
+      annotations: {},
+    }),
     captureToolset: async () => {
       const ref = `toolsets/cap@sha256:${toolsets.size}`;
       toolsets.set(ref, { private: true });
@@ -134,7 +140,7 @@ function newOrg(name: string) {
 }
 
 async function connectAs(user: AuthUser) {
-  const fake = fakeRuntime();
+  const fake = fakeRuntime(user.id);
   const container = {
     runtime: fake.runtime,
     control,

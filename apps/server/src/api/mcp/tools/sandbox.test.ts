@@ -92,6 +92,7 @@ function fakeRuntime() {
     processActions: [] as string[],
     ports: [] as Record<string, unknown>[],
     baked: [] as Record<string, unknown>[],
+    keepAwake: [] as (string | null)[],
   };
   let bakes: unknown[] = [];
   let logText = "";
@@ -182,8 +183,17 @@ function fakeRuntime() {
     },
     defaultImage: () => "dev-base",
   };
+  const idle = {
+    decorate: <T>(rows: T[]) => rows,
+    summary: () => undefined,
+    setKeepAwake: (_id: string, value: string | null) => {
+      calls.keepAwake.push(value);
+      return value ?? undefined;
+    },
+  };
   return {
     runtime,
+    idle,
     calls,
     setBakes: (v: unknown[]) => {
       bakes = v;
@@ -215,9 +225,18 @@ function newUser(): AuthUser {
 async function setup() {
   const fake = fakeRuntime();
   const user = newUser();
+  // Ownerless sandboxes are closed to everyone (control/sandbox-access.ts):
+  // every sandbox of the fake belongs to the caller.
+  const owned = { "atelier.dev/owner-id": user.id };
+  const listed = fake.runtime.list;
+  Object.assign(fake.runtime, {
+    getLabels: () => ({ metadata: owned, annotations: {} }),
+    list: () => listed().map((row) => ({ ...row, metadata: owned })),
+  });
   const container = {
     runtime: fake.runtime,
     control,
+    idle: fake.idle,
   } as unknown as ServerContainer;
   const mcp = await connectMcp((server) => {
     registerSandboxTools(server, container, user);
@@ -469,6 +488,41 @@ describe("sandbox_lifecycle", () => {
     expect(
       (await call("sandbox_lifecycle", { id: "s", action: "destroy" })).data,
     ).toEqual({ id: "s", status: "destroyed" });
+  });
+
+  test("keep_awake sets hours ahead, or clears with 0", async () => {
+    const { call, fake } = await setup();
+    const before = Date.now();
+    const res = await call("sandbox_lifecycle", {
+      id: "s",
+      action: "keep_awake",
+      hours: 8,
+    });
+    expect(res.isError).toBe(false);
+    const until = Date.parse(String(fake.calls.keepAwake[0]));
+    expect(until - before).toBeGreaterThanOrEqual(8 * 3_600_000);
+    expect(until - before).toBeLessThan(8 * 3_600_000 + 60_000);
+    expect(res.data.keepAwakeUntil).toBe(fake.calls.keepAwake[0]);
+
+    await call("sandbox_lifecycle", {
+      id: "s",
+      action: "keep_awake",
+      hours: 0,
+    });
+    expect(fake.calls.keepAwake.slice(1)).toEqual([null]);
+  });
+
+  test("keep_awake needs hours, and only it takes them", async () => {
+    const { call, fake } = await setup();
+    for (const args of [
+      { action: "keep_awake" },
+      { action: "pause", hours: 2 },
+    ]) {
+      const res = await call("sandbox_lifecycle", { id: "s", ...args });
+      expect(res.isError).toBe(true);
+      expect(res.data.error).toBe("VALIDATION_ERROR");
+    }
+    expect(fake.calls.keepAwake).toEqual([]);
   });
 });
 

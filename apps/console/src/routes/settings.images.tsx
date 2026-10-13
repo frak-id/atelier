@@ -37,7 +37,7 @@ import {
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Skeleton } from "@/components/ui/skeleton";
-import { formatRelativeTime } from "@/lib/formatters";
+import { formatBytes, formatRelativeTime } from "@/lib/formatters";
 
 export const Route = createFileRoute("/settings/images")({
   component: ImagesPage,
@@ -66,13 +66,6 @@ function ImagesPage() {
       <UploadZipCard />
     </div>
   );
-}
-
-/** Human-readable byte size for the selected-file chip. */
-function formatBytes(bytes: number): string {
-  if (bytes < 1024) return `${bytes} B`;
-  if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`;
-  return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
 }
 
 /** Build from an uploaded zip build context (Dockerfile + accompanying

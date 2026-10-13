@@ -8,12 +8,6 @@ import type {
   AgentTodo,
 } from "@frak/atelier-shared";
 
-/** How the manager reaches a sandbox's coding agent (resolved server-side). */
-export interface AgentConnection {
-  ipAddress: string;
-  password?: string;
-}
-
 export type CreateSessionResult =
   | { sessionId: string; directory: string }
   | { error: string };

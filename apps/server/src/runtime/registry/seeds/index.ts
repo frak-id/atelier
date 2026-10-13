@@ -42,7 +42,6 @@ const SeedSubstitutionSchema = Type.Object(
   },
   { additionalProperties: false },
 );
-export type SeedSubstitution = Static<typeof SeedSubstitutionSchema>;
 
 /** On-disk shape of a seed's `image.json`. */
 const SeedManifestFileSchema = Type.Object(

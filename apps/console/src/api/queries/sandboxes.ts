@@ -52,6 +52,22 @@ export function sandboxDetailQuery(id: string) {
   });
 }
 
+/** Idle auto-pause view: the rule applied to this sandbox, its activity
+ * clocks and the last hour of agent measurements. The server refreshes it
+ * once a minute (reading it never calls the agent). */
+export function sandboxActivityQuery(id: string) {
+  return queryOptions({
+    queryKey: queryKeys.sandboxes.activity(id),
+    queryFn: async () => {
+      const { data, error } = await api.v1.sandboxes({ id }).activity.get();
+      if (error)
+        throw new Error(errorMessage(error, "Failed to load activity"));
+      return data;
+    },
+    refetchInterval: 30_000,
+  });
+}
+
 /** Only mounted while the log panel is expanded — mount/unmount gates it. */
 export function processLogsQuery(id: string, name: string) {
   return queryOptions({
@@ -158,6 +174,28 @@ export function useRenameSandbox() {
     onSuccess: (_data, { name }) => {
       invalidate();
       toast.success(name.trim() ? "Sandbox renamed" : "Sandbox name cleared");
+    },
+    onError: (error) => toast.error(error.message),
+  });
+}
+
+/** Keep a sandbox from being idle-paused until a time, or `null` to
+ * stop. */
+export function useKeepAwake() {
+  const invalidate = useInvalidateSandboxes();
+  return useMutation({
+    mutationFn: async ({ id, until }: { id: string; until: string | null }) => {
+      const { error } = await api.v1
+        .sandboxes({ id })
+        .patch({ keepAwakeUntil: until });
+      if (error)
+        throw new Error(errorMessage(error, "Failed to keep sandbox awake"));
+    },
+    onSuccess: (_data, { until }) => {
+      invalidate();
+      toast.success(
+        until ? "Sandbox kept awake" : "Sandbox can sleep when idle again",
+      );
     },
     onError: (error) => toast.error(error.message),
   });

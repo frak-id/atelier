@@ -137,7 +137,7 @@ file, then verify tools are present after `session/new`.
 │   └── NEW: ACP bridge   /acp/sessions  (WS ⇄ stdio)                          │
 │            spawns  ⇒  [ opencode acp | claude-agent-acp | pi-acp ]            │
 │                         (stdio JSON-RPC ACP agent subprocess)                 │
-│                         cwd = workspace dir, mcpServers from profile          │
+│                         cwd = /home/dev, mcpServers from profile              │
 │  Tools (from profile): editor (code-server|none), browser, dev server        │
 │  Profile materialized at boot: dotfiles, agent config, skills                │
 └──────────────────────────────────────────────────────────────────────────────┘

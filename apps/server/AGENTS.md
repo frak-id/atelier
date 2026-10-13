@@ -108,6 +108,25 @@ lives only in `integrations/<id>/`.
 
 See `docs/integrations/README.md`.
 
+## Idle auto-pause
+
+`docs/proposals/sandbox-idle-autopause.md`. One rule (the operator's
+`sandbox.idle.*` config keys; no org or user override except a bounded
+keep-awake annotation) over activity clocks, split along the boundaries:
+
+- `runtime/activity.ts`: the in-memory recorder. `runtime.touch(id, signal)`
+  (called for mutating runtime ops, create/resume, and by the callbacks
+  below) and `runtime.pollActivity` (agent `GET /activity`, thresholds passed
+  in). Not persisted: a restart floors every clock at the restart.
+- `control/modules/idle-policy/`: reads the keys, validates keep-awake, and
+  the pure `evaluateIdle`.
+- `api/idle-reaper.ts`: the `Bun.cron` every minute (index.ts), the
+  activity view, list decoration, keep-awake. It is the only place that
+  sees ACP work (`AgentDispatch.workFor`) and jobs together with the rule.
+- Signal hooks reach the runtime through callbacks wired in
+  `api/container.ts` / `ssh/index.ts` (`AgentDispatch` `onActivity`, the SSH
+  proxy's `onActivity`) or directly in api/ (`ws-relay.ts` `isUserInput`).
+
 ## Status notes & known gaps
 
 - **Runtime runs on the in-pod agent (`apps/agent`).**

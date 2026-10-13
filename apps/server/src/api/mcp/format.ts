@@ -17,7 +17,7 @@ export function text(value: unknown, isError = false) {
 
 /** Turn a thrown `SandboxError` (or any error) into a friendly tool result
  * instead of a 500-shaped MCP protocol error. */
-export function errorResult(error: unknown) {
+function errorResult(error: unknown) {
   if (error instanceof SandboxError) {
     return text({ error: error.code, message: error.message }, true);
   }

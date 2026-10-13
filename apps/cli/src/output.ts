@@ -71,6 +71,19 @@ export function printLogDelta(log: string, printed: number): number {
   return log.length;
 }
 
+/** Time left until an ISO timestamp, like `12m`, `1h40m`, `2d`; `now` once
+ * past. */
+export function until(iso: string): string {
+  const ms = new Date(iso).getTime() - Date.now();
+  if (!Number.isFinite(ms)) return "-";
+  if (ms <= 0) return "now";
+  const m = Math.ceil(ms / 60_000);
+  if (m < 60) return `${m}m`;
+  const h = Math.floor(m / 60);
+  if (h < 24) return m % 60 ? `${h}h${m % 60}m` : `${h}h`;
+  return `${Math.floor(h / 24)}d`;
+}
+
 /** Relative age like `3m`, `2h`, `5d` from an ISO timestamp. */
 export function age(iso: string): string {
   const ms = Date.now() - new Date(iso).getTime();

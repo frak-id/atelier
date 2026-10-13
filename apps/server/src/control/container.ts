@@ -14,6 +14,7 @@ import {
 } from "./enrichment.ts";
 import { GitHubRepoService } from "./github-repos.ts";
 import { ApiKeyRepository, ApiKeyService } from "./modules/api-key/index.ts";
+import { IdlePolicyService } from "./modules/idle-policy/index.ts";
 import {
   IntegrationConnectionRepository,
   IntegrationConnectionService,
@@ -82,6 +83,7 @@ export function createControlContainer() {
   const secretService = new SecretService(secretRepository);
   const orgPolicyService = new OrgPolicyService(orgPolicyRepository);
   const serverConfigService = new ServerConfigService(serverConfigRepository);
+  const idlePolicyService = new IdlePolicyService(serverConfigService);
   const toolboxService = new ToolboxService(toolboxRepository);
   const toolboxVersionService = new ToolboxVersionService(
     toolboxVersionRepository,
@@ -112,6 +114,7 @@ export function createControlContainer() {
     secretService,
     orgPolicyService,
     serverConfigService,
+    idlePolicyService,
     toolboxService,
     toolboxVersionService,
     authService,

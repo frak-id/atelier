@@ -45,6 +45,7 @@ import {
 import { OWNER_ID_METADATA } from "../shared/lib/git-attribution.ts";
 import { createChildLogger } from "../shared/lib/logger.ts";
 import { registryUrl } from "../shared/lib/runtime-config.ts";
+import { IdleReaper } from "./idle-reaper.ts";
 
 /**
  * Wire the built-in harnesses. Two independent, both OPTIONAL, extension
@@ -119,7 +120,12 @@ export function createServerContainer() {
     sleep: (ms, signal) => sleep(ms, undefined, { signal }),
     log: createChildLogger("integration-hub"),
   });
-  const dispatch = new AgentDispatch({ agentClient: agent, notifier });
+  const dispatch = new AgentDispatch({
+    agentClient: agent,
+    notifier,
+    // sessions/ only sees a callback; the idle rules live in control/.
+    onActivity: (sandboxId) => runtime.touch(sandboxId, "agent"),
+  });
   const sessions = new SessionService({
     runtime,
     // One surface for every harness: they all speak ACP over the attach
@@ -130,6 +136,14 @@ export function createServerContainer() {
   // sessions with captured replies. In-memory; see task.service.ts.
   const tasks = new AgentTaskService({ runtime, dispatch });
   const terminal = new TerminalService({ agent });
+  // Idle auto-pause: the operator's rule (control) over the runtime's
+  // activity clocks, blocked by ACP work in flight (sessions).
+  const idle = new IdleReaper({
+    runtime,
+    jobs,
+    dispatch,
+    policy: control.idlePolicyService,
+  });
   const images = new ImageBuilderService({
     store: imageStore,
     // Both read lazily so a live edit to the registry URL or builder config
@@ -171,6 +185,7 @@ export function createServerContainer() {
     tasks,
     terminal,
     images,
+    idle,
     registerHarnessDispatch,
   };
   return serverContainer;
@@ -188,6 +203,7 @@ export interface ServerContainer {
   sessions: SessionService;
   tasks: AgentTaskService;
   terminal: TerminalService;
+  idle: IdleReaper;
   registerHarnessDispatch: typeof registerHarnessDispatch;
 }
 

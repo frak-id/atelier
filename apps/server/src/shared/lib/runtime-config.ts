@@ -71,13 +71,6 @@ export function agentImage(): string {
     : config.sandbox.agentImage;
 }
 
-/** Optional private npm registry injected into sandboxes ("" = disabled). */
-export function npmRegistryUrl(): string {
-  return service
-    ? service.get("kubernetes.npmRegistryUrl")
-    : config.kubernetes.npmRegistryUrl;
-}
-
 /** Default sandbox PVC size (K8s quantity) when a request sets no disk size. */
 export function defaultVolumeSize(): string {
   return service

@@ -1,7 +1,7 @@
 # Non-secret server config, mounted at /etc/atelier/sandbox.config.json
 # (ATELIER_CONFIG default). Secrets (GitHub OAuth, JWT, secrets key, MCP
 # token) are injected via env from the atelier-v2-secrets Secret and override
-# these values. Zot/Verdaccio/TopoLVM/kata/BuildKit/cert-manager are shared
+# these values. Zot/TopoLVM/kata/BuildKit/cert-manager are shared
 # cluster infra owned by infra-core, referenced here by name only (see
 # README.md "Cluster prerequisites").
 #
@@ -54,7 +54,6 @@ data:
         "ingressClassName": "traefik",
         "toolIngressClusterIssuer": "letsencrypt-frak",
         "registryUrl": "zot.zot.svc:5000",
-        "npmRegistryUrl": "http://verdaccio.verdaccio.svc:4873",
         "storageClass": "topolvm-thin",
         "volumeSnapshotClass": "atelier-snapshots",
         "defaultVolumeSize": "20Gi"

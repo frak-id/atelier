@@ -7,6 +7,12 @@
  */
 import { afterEach, beforeAll, describe, expect, test } from "bun:test";
 import type { ServerWebSocket } from "bun";
+// Type-only (erased at runtime), so it does not load the module before the env
+// below is set.
+import type {
+  PermissionNotifier,
+  PermissionPrompt,
+} from "../permission-notifier.ts";
 
 process.env.ACP_IDLE_TTL_MS = "40";
 
@@ -17,9 +23,6 @@ let ndJsonStream: typeof import("@agentclientprotocol/sdk").ndJsonStream;
 let PROTOCOL_VERSION: typeof import("@agentclientprotocol/sdk").PROTOCOL_VERSION;
 type AgentContext = import("@agentclientprotocol/sdk").AgentContext;
 type AgentClientType = import("../../runtime/index.ts").AgentClient;
-type PermissionNotifier =
-  import("../permission-notifier.ts").PermissionNotifier;
-type PermissionPrompt = import("../permission-notifier.ts").PermissionPrompt;
 
 beforeAll(async () => {
   // ACP_IDLE_TTL_MS is read once at module load, so set it before importing.
@@ -192,6 +195,7 @@ function startFakeAgentServer(fakeAgent: FakeAcpAgent): FakeServer {
 function makeDispatch(
   fakeAgent: FakeAcpAgent,
   notifier?: PermissionNotifier,
+  onActivity?: (sandboxId: string) => void,
 ): {
   dispatch: InstanceType<typeof AgentDispatch>;
   stop: () => void;
@@ -203,6 +207,7 @@ function makeDispatch(
   const dispatch = new AgentDispatch({
     agentClient: fakeAgentClient,
     notifier,
+    onActivity,
   });
   return {
     dispatch,
@@ -338,6 +343,39 @@ describe("AgentDispatch × session/list", () => {
     await fakeAgent.emitTitle(session.sessionId, "Renamed by agent");
     const found = await dispatch.sessionFor(SANDBOX_ID, session.sessionId);
     expect(found?.title).toBe("Renamed by agent");
+  });
+
+  test("idle activity: prompts and permission requests count, updates don't", async () => {
+    const fakeAgent = new FakeAcpAgent();
+    let touches = 0;
+    const { dispatch, stop } = makeDispatch(fakeAgent, undefined, () => {
+      touches++;
+    });
+    cleanups.push(stop);
+    const settle = () => new Promise((resolve) => setTimeout(resolve, 20));
+
+    const session = await dispatch.openSession({
+      sandboxId: SANDBOX_ID,
+      cwd: "/home/dev/work",
+    });
+    // Updates arriving outside a prompt (the attach bridge replays an old
+    // turn's output on every reconnect) are not activity.
+    await fakeAgent.emitPlan(session.sessionId, [
+      { content: "old step", status: "completed", priority: "medium" },
+    ]);
+    await fakeAgent.emitTitle(session.sessionId, "Old title");
+    await settle();
+    expect(touches).toBe(0);
+
+    await session.prompt("do the thing");
+    expect(touches).toBe(2); // the turn starting and ending
+
+    const permission = fakeAgent.requestPermission(session.sessionId);
+    await settle();
+    expect(touches).toBe(3);
+    const [pending] = dispatch.permissionsFor(SANDBOX_ID);
+    dispatch.replyPermission(SANDBOX_ID, pending?.id ?? "", "once");
+    await permission;
   });
 
   test("retries once when the agent returns a null sessions on the first call", async () => {

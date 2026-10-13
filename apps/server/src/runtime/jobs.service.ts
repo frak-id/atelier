@@ -74,15 +74,6 @@ function feedSafe(result: unknown): unknown {
   return rest;
 }
 
-/** Raised by a job body when it observes its own `AbortSignal` and bails —
- * lets `JobService` record `canceled` instead of `failed`. */
-export class JobCanceledError extends Error {
-  constructor() {
-    super("Job canceled");
-    this.name = "JobCanceledError";
-  }
-}
-
 export interface JobServiceDeps {
   store?: JobStore;
   /** Max POOLED jobs in flight at once (default 4). `track` jobs bypass it.
@@ -142,6 +133,26 @@ export class JobService {
   }
 
   /**
+   * Whether a running or queued job works on `sandboxId`: its `target` (the
+   * sandbox lifecycle ops) or its `metadata.sandboxId` / `metadata.forkOf`
+   * (a toolset capture, a fork's source). The idle reaper never pauses a
+   * sandbox under one. Reads only the in-process handles, never the table.
+   */
+  hasActiveFor(sandboxId: string): boolean {
+    const ids = [...this.controllers.keys(), ...this.waiting.map((w) => w.id)];
+    return ids.some((id) => {
+      const job = this.store.get(id);
+      return (
+        job !== undefined &&
+        !isJobTerminal(job.status) &&
+        (job.target === sandboxId ||
+          job.metadata?.sandboxId === sandboxId ||
+          job.metadata?.forkOf === sandboxId)
+      );
+    });
+  }
+
+  /**
    * POOLED dispatch. Creates a `queued` row, then starts it immediately if a
    * concurrency slot is free (else it waits). Returns the row synchronously —
    * its status reflects whether it started (`running`) or is waiting
@@ -185,10 +196,9 @@ export class JobService {
       this.settle(job.id, { status: "succeeded", result: feedSafe(result) });
       return result;
     } catch (err) {
-      const canceled =
-        controller.signal.aborted || err instanceof JobCanceledError;
+      // A body that bails on its own aborted signal is a cancel, not a failure.
       this.settle(job.id, {
-        status: canceled ? "canceled" : "failed",
+        status: controller.signal.aborted ? "canceled" : "failed",
         error: err instanceof Error ? err.message : String(err),
       });
       throw err;
@@ -241,10 +251,8 @@ export class JobService {
         this.settle(id, { status: "succeeded", result: feedSafe(result) }),
       )
       .catch((err) => {
-        const canceled =
-          controller.signal.aborted || err instanceof JobCanceledError;
         this.settle(id, {
-          status: canceled ? "canceled" : "failed",
+          status: controller.signal.aborted ? "canceled" : "failed",
           error: err instanceof Error ? err.message : String(err),
         });
       });

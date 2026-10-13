@@ -20,7 +20,6 @@ import {
 } from "./proxy.ts";
 
 export type { InServerSshGateway } from "./proxy.ts";
-export { startInServerSshGateway } from "./proxy.ts";
 
 const log = createChildLogger("ssh-gateway");
 
@@ -68,6 +67,7 @@ export async function startSshGateway(
       return labels ? container.control.sandboxSshKeys(labels) : [];
     },
     resolveUpstream,
+    onActivity: (sandboxId) => container.runtime.touch(sandboxId, "ssh"),
   });
   log.info(
     { port: gateway.port, listenPort: config.domain.ssh.listenPort },
