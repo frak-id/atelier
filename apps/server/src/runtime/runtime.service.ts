@@ -67,6 +67,7 @@ import type { HookPhase, WriteFilesResult } from "./agent/index.ts";
 import { AgentClient, toFileWrites } from "./agent/index.ts";
 import { specToAgentConfig } from "./agent-config.ts";
 import { createSandboxBackend, type SandboxBackend } from "./backend/index.ts";
+import { writeBase64Files } from "./base64-files.ts";
 import type { BootOutput } from "./boot.ts";
 import { getRemoteCommitHash } from "./git-remote.ts";
 import {
@@ -1206,13 +1207,35 @@ export class RuntimeService {
 
   /** Live-push files. Returns the agent's per-file results (a file can fail
    * to write without failing the call) so callers can report them. */
+  /** Write files into a running sandbox. `encoding: "base64"` entries carry
+   * bytes (see `writeBase64Files`); the rest are text. One result per file,
+   * in request order. */
   async patchFiles(
     id: string,
     files: PatchFilesRequest,
   ): Promise<WriteFilesResult> {
     this.require(id);
     this.activity.touch(id, "api");
-    return this.agent.writeFiles(id, toFileWrites(files));
+    const isBinary = (f: PatchFilesRequest[number]) => f.encoding === "base64";
+    const text = files.filter((f) => !isBinary(f));
+    const binary = files.filter(isBinary);
+    if (binary.length === 0) {
+      return this.agent.writeFiles(id, toFileWrites(files));
+    }
+    const [written, decoded] = await Promise.all([
+      text.length > 0
+        ? this.agent.writeFiles(id, toFileWrites(text)).then((r) => r.results)
+        : [],
+      writeBase64Files(this.agent, id, binary),
+    ]);
+    let t = 0;
+    let b = 0;
+    return {
+      results: files.map((f) => {
+        const result = isBinary(f) ? decoded[b++] : written[t++];
+        return result ?? { path: f.path, success: false, error: "no result" };
+      }),
+    };
   }
 
   /**

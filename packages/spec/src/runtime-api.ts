@@ -203,6 +203,11 @@ export const PatchFilesRequestSchema = Type.Array(
     {
       path: Type.String(),
       content: Type.String(),
+      /** How `content` is encoded: `utf8` (default) is the file's text,
+       * `base64` its bytes (binary files such as images). */
+      encoding: Type.Optional(
+        Type.Union([Type.Literal("utf8"), Type.Literal("base64")]),
+      ),
       mode: Type.Optional(Type.String()),
       owner: Type.Optional(Type.String()),
     },

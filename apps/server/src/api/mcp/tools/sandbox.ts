@@ -507,14 +507,26 @@ export function registerSandboxTools(
         "how many were `written` and a `failed` list with the reason for " +
         "each file that could not be written (an error result when any " +
         "failed). Running processes are not restarted: use " +
-        "`manage_process` action=restart if they need to reload.",
+        "`manage_process` action=restart if they need to reload. Binary " +
+        "files (images, archives) go in as base64 with encoding=base64.",
       inputSchema: {
         id: z.string().describe("Sandbox id"),
         files: z
           .array(
             z.object({
               path: z.string().describe("Absolute path in the sandbox"),
-              content: z.string().describe("Full file content (UTF-8)"),
+              content: z
+                .string()
+                .describe(
+                  "Full file content: its text, or its bytes as base64 " +
+                    "with encoding=base64",
+                ),
+              encoding: z
+                .enum(["utf8", "base64"])
+                .optional()
+                .describe(
+                  "utf8 (default) or base64 (binary content, e.g. an image)",
+                ),
               mode: z
                 .string()
                 .optional()
