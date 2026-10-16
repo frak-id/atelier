@@ -303,8 +303,11 @@ rides the opencode ACP session surface) and the cliproxy key delivered as a
 
 > **Managed pi install:** since pi moved to its managed install
 > (`~/.pi/agent/bin/pi`, put on PATH only by `~/.bashrc`), `composePi()`
-> prepends `/home/dev/.pi/agent/bin` to the `PATH` above — without it pi-acp
-> fails `session/new` with "executable not found (command: pi)".
+> prepends `/home/dev/.pi/agent/bin` to the PATH — without it pi-acp fails
+> `session/new` with "executable not found (command: pi)". The prefix lives
+> in the command (`PATH="…:$PATH" exec …/pi-acp`), NOT in `env.PATH`: the
+> supervisor runs commands under `bash -l -c` and `/etc/profile` resets PATH,
+> so an `env.PATH` like the one above is silently dropped.
 
 > **`composePi()` gap:** the SDK composer emits bare `command: "pi-acp"` relying
 > on a login-shell PATH. The supervisor does **not** source a login shell, so

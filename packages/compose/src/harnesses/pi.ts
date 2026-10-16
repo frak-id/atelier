@@ -16,12 +16,14 @@
  * spawns a bare `pi`, so both dirs go on the acp process's PATH, managed
  * first. `~/.local/bin` stays either way: `pi-acp` itself lives there.
  *
- * The `acp` process is spawned directly by the supervisor (no login shell), so
- * the `~/.local/bin` PATH shim from `/etc/profile.d` is NOT sourced — the
- * command must be the ABSOLUTE binary path with an explicit `PATH`/`HOME` env
- * (verified against staging: bare `pi-acp` does not resolve). pi's live ACP
- * session surface IS wired into the server session hub (a generic
- * ACP-over-attach surface registered for `pi`, same as opencode).
+ * The supervisor runs every process command under `bash -l -c`, and Debian's
+ * `/etc/profile` RESETS `PATH` in a login shell, so a `PATH` in the process
+ * `env` never reaches the command (it was silently dropped, which is how a
+ * managed-only pi install failed `session/new` with "executable not found").
+ * The PATH is therefore prepended inside the command itself, after the
+ * profile ran. pi's live ACP session surface IS wired into the server session
+ * hub (a generic ACP-over-attach surface registered for `pi`, same as
+ * opencode).
  */
 import type { HarnessComposer } from "../harness.ts";
 import type { SpecFragment } from "../spec-merge.ts";
@@ -46,23 +48,16 @@ export function composePi(opts: ComposePiOptions = {}): SpecFragment {
     processes: [
       {
         name: "acp",
-        // Absolute path, not bare `pi-acp`: the supervisor spawns the process
-        // directly (no login shell), so the `~/.local/bin` PATH shim from
-        // /etc/profile.d is not sourced. Verified on staging — the bare
-        // command does not resolve; the absolute binary + explicit env do.
-        command: `${LOCAL_BIN}/pi-acp`,
+        // pi's bin dirs are prepended HERE, not via `env.PATH`: the command
+        // runs in a login shell whose /etc/profile resets PATH (see the file
+        // header). Managed install first so it wins over a stale npm one;
+        // absent dirs are harmless. `exec` keeps pi-acp as the supervised pid.
+        command: `PATH="${PI_MANAGED_BIN}:${LOCAL_BIN}:$PATH" exec ${LOCAL_BIN}/pi-acp`,
         cwd: HOME,
         // Run as `dev` so pi writes its data/config under ${HOME}, not root.
         user: "dev",
-        // Explicit PATH/HOME: the process runs without a login shell (the
-        // managed install only adds its bin dir via ~/.bashrc), so `pi-acp`
-        // needs pi's bin dirs on PATH to spawn `pi` — managed install first
-        // so it wins over a stale npm one; absent dirs are harmless — and
         // HOME so pi resolves ~/.pi, ~/.config/pi-cliproxyapi, etc.
-        env: {
-          PATH: `${PI_MANAGED_BIN}:${LOCAL_BIN}:/usr/local/bin:/usr/bin:/bin`,
-          HOME,
-        },
+        env: { HOME },
         stdio: "bridge",
         primary: true,
       },
