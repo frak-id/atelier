@@ -190,6 +190,13 @@
       "when": 1791799640091,
       "tag": "0026_integration_connections",
       "breakpoints": true
+    },
+    {
+      "idx": 27,
+      "version": "6",
+      "when": 1792148922579,
+      "tag": "0027_snapshot_created_by",
+      "breakpoints": true
     }
   ]
 }

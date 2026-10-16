@@ -390,6 +390,69 @@ describe("prebuild processes/ports", () => {
   });
 });
 
+describe("prebuild creator", () => {
+  const baked = {
+    source: { image: "registry.test/base:1" },
+    repos: [{ url: "https://github.com/acme/private", clonePath: "app" }],
+    build: ["cd app && bun install"],
+  };
+
+  test("a bake records who baked it", async () => {
+    const { runtime, snapshots } = makeRuntime();
+    const { ref } = await runtime.prebuild(baked, {
+      githubToken: "tok-alice",
+      createdBy: "alice",
+    });
+    expect(snapshots.get(ref)?.createdBy).toBe("alice");
+  });
+
+  test("a cache hit adopts a creator-less prebuild, never replaces one", async () => {
+    const { runtime, snapshots } = makeRuntime();
+    const { ref } = await runtime.prebuild(baked);
+    expect(snapshots.get(ref)?.createdBy).toBeUndefined();
+    // No token: nothing proves the caller can read the repos.
+    await runtime.prebuild(baked, { createdBy: "bob" });
+    expect(snapshots.get(ref)?.createdBy).toBeUndefined();
+    await runtime.prebuild(baked, { githubToken: "t", createdBy: "alice" });
+    expect(snapshots.get(ref)?.createdBy).toBe("alice");
+    await runtime.prebuild(baked, { githubToken: "t", createdBy: "bob" });
+    expect(snapshots.get(ref)?.createdBy).toBe("alice");
+  });
+
+  test("the staleness refresh re-bakes with the creator's own token", async () => {
+    const { runtime, snapshots } = makeRuntime();
+    // A prebuild whose key no longer matches: upstream moved.
+    snapshots.put({
+      hash: "h-stale",
+      ref: "snap-stale",
+      image: "registry.test/base:1",
+      spec: baked,
+      createdBy: "alice",
+      createdAt: new Date().toISOString(),
+    });
+    const asked: string[] = [];
+    const rebakes: { githubToken?: string; createdBy?: string }[] = [];
+    const prebuild = runtime.prebuild.bind(runtime);
+    runtime.prebuild = (s, options = {}) => {
+      rebakes.push({
+        githubToken: options.githubToken,
+        createdBy: options.createdBy,
+      });
+      return prebuild(s, options);
+    };
+
+    await runtime.refreshStalePrebuilds((userId) => {
+      asked.push(userId);
+      return `tok-${userId}`;
+    });
+
+    expect(asked).toEqual(["alice"]);
+    expect(rebakes).toEqual([{ githubToken: "tok-alice", createdBy: "alice" }]);
+    const fresh = runtime.listPrebuilds().find((p) => p.ref !== "snap-stale");
+    expect(fresh && snapshots.get(fresh.ref)?.createdBy).toBe("alice");
+  });
+});
+
 describe("display annotations", () => {
   test("setAnnotation sets and clears one key, keeping the others", async () => {
     const { runtime, sandboxes } = makeRuntime();

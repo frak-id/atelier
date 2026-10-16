@@ -60,6 +60,10 @@ export interface SnapshotRecord {
   metadata?: Record<string, string>;
   /** The original request, so a prebuild can be replayed/refreshed. */
   spec?: PrebuildSpec;
+  /** Opaque id of the user who baked this prebuild. The staleness refresh
+   * has no caller, so it re-resolves (and re-bakes) with that user's own
+   * GitHub token: private repos are unreachable without one. */
+  createdBy?: string;
   createdAt: string;
 }
 
@@ -482,6 +486,7 @@ interface SnapshotRow {
   sandboxId: string | null;
   metadata: string | null;
   spec: string | null;
+  createdBy: string | null;
   createdAt: string;
 }
 
@@ -496,6 +501,7 @@ function snapshotRowToRecord(row: SnapshotRow): SnapshotRecord {
       ? (JSON.parse(row.metadata) as Record<string, string>)
       : undefined,
     spec: row.spec ? (JSON.parse(row.spec) as PrebuildSpec) : undefined,
+    createdBy: row.createdBy ?? undefined,
     createdAt: row.createdAt,
   };
 }
@@ -509,6 +515,7 @@ function snapshotRecordToRow(record: SnapshotRecord): SnapshotRow {
     sandboxId: record.sandboxId ?? null,
     metadata: record.metadata ? JSON.stringify(record.metadata) : null,
     spec: record.spec ? JSON.stringify(record.spec) : null,
+    createdBy: record.createdBy ?? null,
     createdAt: record.createdAt,
   };
 }

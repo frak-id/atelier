@@ -244,6 +244,7 @@ export function registerConfigTools(
             {
               force,
               githubToken: control.userService.resolveGitHubToken(user.id),
+              createdBy: user.id,
               saveSurface: true,
             },
           );

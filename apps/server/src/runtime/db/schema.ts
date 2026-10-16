@@ -53,6 +53,9 @@ export const snapshots = sqliteTable(
     metadata: text("metadata"),
     /** JSON: the original PrebuildSpec, so a prebuild can be replayed/refreshed. */
     spec: text("spec"),
+    /** Opaque id of the user who baked the prebuild: the staleness refresh
+     * uses that user's own GitHub token to reach private repos. */
+    createdBy: text("created_by"),
     createdAt: text("created_at").notNull(),
   },
   (t) => [uniqueIndex("idx_snapshots_hash").on(t.hash)],

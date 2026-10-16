@@ -242,12 +242,19 @@ export class RuntimeService {
    * The one exception is a recipe's very first bake, which has none to
    * inherit: it records the declared ones (a Launchpad "set it up here"
    * starter's), so the snapshot lists what its first spawn ran.
+   *
+   * `createdBy` (an opaque user id, paired with that user's `githubToken`)
+   * is recorded on the snapshot so `refreshStalePrebuilds` can re-resolve a
+   * private repo with the same user's token. A cache hit on a snapshot with
+   * no recorded creator adopts the caller: their token just resolved every
+   * repo HEAD (the hash would not match otherwise), so they can read them.
    */
   async prebuild(
     spec: PrebuildSpec,
     options: {
       force?: boolean;
       githubToken?: string;
+      createdBy?: string;
       signal?: AbortSignal;
       onLog?: OnLog;
       saveSurface?: boolean;
@@ -263,6 +270,12 @@ export class RuntimeService {
       const existing = this.snapshots.getByHash(hash);
       if (existing) {
         if (save) this.writeRecipeSurface(existing, declared);
+        if (!existing.createdBy && options.createdBy && options.githubToken) {
+          this.snapshots.put({
+            ...(this.snapshots.get(existing.ref) ?? existing),
+            createdBy: options.createdBy,
+          });
+        }
         return { ref: existing.ref, hash, parent: existing.parent };
       }
     }
@@ -284,15 +297,12 @@ export class RuntimeService {
     // a later job deduped onto an existing run may not observe its own signal.
     const inflight = this.inflightPrebuilds.get(hash);
     if (inflight) return inflight.then(saved);
-    const run = this.executePrebuild(
-      toBake,
-      hash,
-      image,
-      snapshotName,
-      options.githubToken,
-      options.signal,
-      options.onLog,
-    )
+    const run = this.executePrebuild(toBake, hash, image, snapshotName, {
+      githubToken: options.githubToken,
+      createdBy: options.createdBy,
+      signal: options.signal,
+      onLog: options.onLog,
+    })
       .then(saved)
       .finally(() => {
         this.inflightPrebuilds.delete(hash);
@@ -456,13 +466,25 @@ export class RuntimeService {
    * snapshot. A key that already resolves to an existing snapshot is skipped
    * (already refreshed). Superseded snapshots are NOT deleted here — the
    * caller enforces retention separately via `pruneUnusedPrebuilds(keep)`, so
-   * a configurable history of older versions survives a drift rebuild. */
-  async refreshStalePrebuilds(): Promise<void> {
+   * a configurable history of older versions survives a drift rebuild.
+   *
+   * There is no caller here, so private repos are reached with the GitHub
+   * token of the user who baked the prebuild (`createdBy`, looked up through
+   * `githubTokenOf`, since runtime knows no users). A prebuild without a
+   * recorded creator, or whose creator has no token, only resolves public
+   * repos and so is skipped while any of its repos is private. */
+  async refreshStalePrebuilds(
+    githubTokenOf: (userId: string) => string | undefined = () => undefined,
+  ): Promise<void> {
     for (const snap of this.snapshots.list()) {
       if (!snap.spec?.repos?.length) continue;
       try {
+        const githubToken = snap.createdBy
+          ? githubTokenOf(snap.createdBy)
+          : undefined;
         const { hash, repoHeadsComplete } = await this.resolveContentKey(
           snap.spec,
+          githubToken,
         );
         // A transient ls-remote failure drops a repo from the key, which would
         // otherwise flap the hash and trigger a rebuild every tick. Only act on
@@ -474,7 +496,10 @@ export class RuntimeService {
           { ref: snap.ref, oldHash: snap.hash, newHash: hash },
           "prebuild stale, rebuilding",
         );
-        await this.prebuild(snap.spec);
+        await this.prebuild(snap.spec, {
+          githubToken,
+          createdBy: snap.createdBy,
+        });
       } catch (err) {
         log.error({ ref: snap.ref, err }, "prebuild staleness check failed");
       }
@@ -578,10 +603,18 @@ export class RuntimeService {
     spec: PrebuildSpec,
     hash: string,
     image: string,
-    snapshotName?: string,
-    githubToken?: string,
-    signal?: AbortSignal,
-    onLog?: OnLog,
+    snapshotName: string | undefined,
+    {
+      githubToken,
+      createdBy,
+      signal,
+      onLog,
+    }: {
+      githubToken?: string;
+      createdBy?: string;
+      signal?: AbortSignal;
+      onLog?: OnLog;
+    },
   ): Promise<SnapshotRef> {
     const parentRef =
       "snapshot" in spec.source ? spec.source.snapshot : undefined;
@@ -656,6 +689,7 @@ export class RuntimeService {
           parent: parentRef,
           metadata: spec.metadata,
           spec,
+          createdBy,
           createdAt: new Date().toISOString(),
         });
         log.info({ ref, hash, parent: parentRef }, "prebuild snapshot created");

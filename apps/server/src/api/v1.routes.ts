@@ -309,6 +309,7 @@ export async function createSandboxForUser(
     onProgress?.("resolving prebuild…");
     const snapshot = await runtime.prebuild(prebuild, {
       githubToken: control.userService.resolveGitHubToken(user.id),
+      createdBy: user.id,
     });
     spec = { ...spec, source: { snapshot: snapshot.ref } };
   }
@@ -717,6 +718,7 @@ export function createV1Routes(container: ServerContainer) {
               runtime.prebuild(spec, {
                 force: query.force === true,
                 githubToken,
+                createdBy: user.id,
                 signal,
                 onLog: log,
                 // The explicit create: a declared surface is saved on a

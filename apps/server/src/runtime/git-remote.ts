@@ -8,8 +8,8 @@
  * private repo's `ls-remote` fails with exit 128 and the HEAD drops out of
  * the content key, so the prebuild can never detect drift — and its hash
  * collides across every commit). The token is passed by the request paths
- * that already resolve it (spawn/prebuild); the staleness cron has no user
- * context and passes none, so private repos there stay skipped as before.
+ * that already resolve it (spawn/prebuild); the staleness cron has no caller
+ * and uses the token of the user who baked the prebuild (`createdBy`).
  */
 import { createChildLogger } from "../shared/lib/logger.ts";
 

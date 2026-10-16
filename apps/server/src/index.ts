@@ -111,7 +111,10 @@ if (!isMock()) {
     const { serverConfigService } = container.control;
     try {
       if (!serverConfigService.get("prebuild.gitTracking")) return;
-      await container.runtime.refreshStalePrebuilds();
+      // Private repos are reached with the prebuild creator's own token.
+      await container.runtime.refreshStalePrebuilds((userId) =>
+        container.control.userService.resolveGitHubToken(userId),
+      );
       await container.runtime.pruneUnusedPrebuilds(
         serverConfigService.get("prebuild.pruneKeep"),
       );

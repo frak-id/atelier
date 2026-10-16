@@ -1,0 +1,1 @@
+ALTER TABLE `snapshots` ADD `created_by` text;
