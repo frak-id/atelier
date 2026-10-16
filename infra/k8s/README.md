@@ -82,6 +82,8 @@ kubectl --context hetzner-atelier apply -f infra/k8s/40-server-pvc.yaml
 kubectl --context hetzner-atelier apply -f infra/k8s/50-deployment.yaml
 kubectl --context hetzner-atelier apply -f infra/k8s/60-service.yaml
 kubectl --context hetzner-atelier apply -f infra/k8s/70-ingress.yaml
+# forward-auth for `auth: "forward"` tool URLs (referenced by 30-config.yaml)
+kubectl --context hetzner-atelier apply -f infra/k8s/80-forward-auth.yaml
 ```
 
 ## Rebuild images (in-cluster, no local docker)

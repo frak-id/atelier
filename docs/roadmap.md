@@ -19,9 +19,14 @@ priority, not a strict sequence.
 
 ## Known gaps
 
-- **Forward-auth for tool ingresses.** Ports with `auth: "forward"` get the
-  operator's forward-auth annotations, but the server has no verify endpoint
-  of its own for them.
+- **Forward-auth is sign-in only.** Ports with `auth: "forward"` require an
+  Atelier session (`GET /auth/forward`, infra/k8s/80-forward-auth.yaml), not
+  access to that sandbox's org. The session cookie is scoped to the base
+  domain, so a sandbox's own processes receive its visitors' session token;
+  a per-host tool cookie would close that.
+- **Previews are public.** A prebuild's dev-server ports skip forward-auth
+  whatever they declare (`spawnSurface`), so preview links work for people
+  without an Atelier account. Only the toolboxes' tools need the login.
 - **Prebuilds aren't caller-scoped.** Sandboxes are guarded by owner/org, but
   any authenticated user can list or delete any prebuild, or edit its dev
   servers (`/v1/prebuilds`).

@@ -3,9 +3,9 @@
  * (it's how a caller *gets* a token): mints the `sandbox_token` JWT the rest
  * of `/v1`, `/api`, `/sessions` require.
  *
- * ACP/console-scoped: no cliproxy user-key bootstrap and no `/opencode/verify`
- * forward-auth route (forward-auth for tool ingresses is a separate,
- * still-open follow-up, not this login flow).
+ * ACP/console-scoped: no cliproxy user-key bootstrap. `/auth/forward` is the
+ * forward-auth check for sandbox tool URLs (see `forward-auth.ts`); a login
+ * started from one carries `return_to` so the callback lands back on it.
  */
 import { Elysia, t } from "elysia";
 import { nanoid } from "nanoid";
@@ -28,6 +28,7 @@ import {
 } from "../shared/lib/config.ts";
 import { createChildLogger } from "../shared/lib/logger.ts";
 import type { ServerContainer } from "./container.ts";
+import { decideForwardAuth, isReturnUrl } from "./forward-auth.ts";
 
 const log = createChildLogger("auth-routes");
 
@@ -62,6 +63,14 @@ function isLoopbackRedirect(uri: string): boolean {
   } catch {
     return false;
   }
+}
+
+/** A post-login destination under the base domain (a sandbox tool URL the
+ * forward-auth check sent to the login), or `undefined`. */
+function returnUrlOf(url: string | undefined): string | undefined {
+  return url && isReturnUrl(url, config.domain.baseDomain, !isProduction())
+    ? url
+    : undefined;
 }
 
 /** Append `token` to a loopback callback URL, preserving any existing query. */
@@ -103,6 +112,7 @@ export function createAuthRoutes(container: ServerContainer) {
       async ({ redirect, cookie, query }) => {
         const cliRedirect =
           query.cli && isLoopbackRedirect(query.cli) ? query.cli : undefined;
+        const returnTo = returnUrlOf(query.return_to);
 
         if (isAuthBypassed()) {
           const token = await signJwt({
@@ -143,7 +153,7 @@ export function createAuthRoutes(container: ServerContainer) {
           });
 
           log.info("Auth bypassed: user auto-logged in as local user");
-          return redirect("/");
+          return redirect(returnTo ?? "/");
         }
 
         // Carry the loopback target through the OAuth roundtrip so the callback
@@ -154,6 +164,18 @@ export function createAuthRoutes(container: ServerContainer) {
             httpOnly: true,
             secure: isProduction(),
             sameSite: isProduction() ? "none" : "lax",
+            path: "/",
+            domain: `.${config.domain.baseDomain}`,
+            maxAge: 600,
+          });
+        }
+        // Same for a login a sandbox tool URL sent here (forward-auth).
+        if (returnTo) {
+          cookie.auth_return_to?.set({
+            value: returnTo,
+            httpOnly: true,
+            secure: isProduction(),
+            sameSite: "lax",
             path: "/",
             domain: `.${config.domain.baseDomain}`,
             maxAge: 600,
@@ -184,7 +206,12 @@ export function createAuthRoutes(container: ServerContainer) {
         );
         return redirect(url);
       },
-      { query: t.Object({ cli: t.Optional(t.String()) }) },
+      {
+        query: t.Object({
+          cli: t.Optional(t.String()),
+          return_to: t.Optional(t.String()),
+        }),
+      },
     )
     .get(
       "/callback",
@@ -270,6 +297,21 @@ export function createAuthRoutes(container: ServerContainer) {
             });
             return redirect(cliCallbackUrl(cliRedirect, token));
           }
+          const returnTo = returnUrlOf(
+            cookie.auth_return_to?.value as string | undefined,
+          );
+          if (returnTo) {
+            cookie.auth_return_to?.set({
+              value: "",
+              httpOnly: true,
+              secure: isProduction(),
+              sameSite: "lax",
+              path: "/",
+              domain: `.${config.domain.baseDomain}`,
+              maxAge: 0,
+            });
+            return redirect(returnTo);
+          }
           return redirect(dashboardUrl);
         } catch (error) {
           log.error({ error }, "GitHub login callback failed");
@@ -304,6 +346,33 @@ export function createAuthRoutes(container: ServerContainer) {
         avatarUrl: user.avatarUrl,
         email: user.email,
       };
+    })
+    // Forward-auth for sandbox tool URLs (`ports[].auth: "forward"`), asked by
+    // the ingress before each request: 200 lets it through, a browser page
+    // load without a session is sent to the login, the rest gets 401.
+    .get("/forward", async ({ cookie, headers, set, redirect }) => {
+      const token = cookie.sandbox_token?.value as string | undefined;
+      const signedIn =
+        isAuthBypassed() || (token ? (await verifyJwt(token)) !== null : false);
+      const decision = decideForwardAuth({
+        signedIn,
+        forwarded: {
+          proto: headers["x-forwarded-proto"],
+          host: headers["x-forwarded-host"],
+          uri: headers["x-forwarded-uri"],
+          method: headers["x-forwarded-method"],
+          accept: headers.accept,
+        },
+        loginUrl: deriveCallbackUrl("/auth/github"),
+        baseDomain: config.domain.baseDomain,
+        allowHttp: !isProduction(),
+      });
+      set.headers["cache-control"] = "no-store";
+      if (decision.status === 302) return redirect(decision.location);
+      set.status = decision.status;
+      return decision.status === 200
+        ? ""
+        : { error: "UNAUTHORIZED", message: "Sign in to Atelier first" };
     })
     .get("/verify", async ({ cookie, set }) => {
       const token = cookie.sandbox_token?.value as string | undefined;

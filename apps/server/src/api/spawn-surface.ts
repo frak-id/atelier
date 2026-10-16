@@ -12,13 +12,18 @@ import { type RuntimeSurface, runtimeSurfaceOf } from "@atelier/spec";
  * 3. the spec's own entries: the caller's explicit word.
  *
  * `shadowed` names the prebuild entries a toolbox replaced, for a warning.
+ *
+ * Previews are public for now: a prebuild's ports skip the login
+ * (`auth: "forward"`) whatever they declare, so a dev-server link can be
+ * shared with someone who has no Atelier account. The toolboxes' tools
+ * (pi-web, code-server, the browser) and the spec's own ports keep theirs.
  */
 export function spawnSurface(layers: {
   prebuild?: RuntimeSurface;
   toolboxes: RuntimeSurface;
   own: RuntimeSurface;
 }): RuntimeSurface & { shadowed: string[] } {
-  const prebuild = runtimeSurfaceOf(layers.prebuild ?? {});
+  const prebuild = withoutLogin(runtimeSurfaceOf(layers.prebuild ?? {}));
   const toolboxes = runtimeSurfaceOf(layers.toolboxes);
   const merged = mergeSpecs(prebuild, toolboxes, runtimeSurfaceOf(layers.own));
   const names = (list?: { name: string }[]) =>
@@ -32,4 +37,14 @@ export function spawnSurface(layers: {
       .map((n) => `port ${n}`),
   ];
   return { ...runtimeSurfaceOf(merged), shadowed };
+}
+
+function withoutLogin(surface: RuntimeSurface): RuntimeSurface {
+  if (!surface.ports) return surface;
+  return {
+    ...surface,
+    ports: surface.ports.map((p) =>
+      p.auth === "forward" ? { ...p, auth: "none" } : p,
+    ),
+  };
 }

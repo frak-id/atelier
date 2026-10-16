@@ -1,0 +1,31 @@
+# Forward-auth for sandbox tool URLs: every per-sandbox Ingress built from a
+# port with `auth: "forward"` (pi-web, code-server, the browser) gets this
+# middleware through the `kubernetes.vsCodeIngressAnnotations` config
+# (30-config.yaml). Prebuild dev-server previews stay public for now: the
+# server drops their `auth: "forward"` at spawn (apps/server/src/api/
+# spawn-surface.ts). Traefik asks
+# the server's `GET /auth/forward` before each request: a signed-in Atelier
+# session (the `sandbox_token` cookie, scoped to the base domain) passes, a
+# browser without one is sent through the GitHub login and back, anything
+# else gets 401 (apps/server/src/api/forward-auth.ts).
+#
+# Lives in the sandboxes namespace, next to the Ingresses that reference it:
+# Traefik's CRD provider resolves `<namespace>-<name>@kubernetescrd` and
+# cross-namespace references would need `allowCrossNamespace`.
+#
+# The address is the server container itself (the Service's `api` port),
+# NOT the console nginx on 8080: nginx rewrites `X-Forwarded-Proto`, which
+# the login redirect back to the tool URL is built from.
+apiVersion: traefik.io/v1alpha1
+kind: Middleware
+metadata:
+  name: atelier-forward-auth
+  namespace: atelier-v2-sandboxes
+  labels:
+    app.kubernetes.io/name: atelier-v2
+spec:
+  forwardAuth:
+    address: http://atelier-v2.atelier-v2-system.svc.cluster.local:4000/auth/forward
+    # Traefik sets X-Forwarded-* from the request it received; never trust a
+    # client-supplied copy.
+    trustForwardHeader: false

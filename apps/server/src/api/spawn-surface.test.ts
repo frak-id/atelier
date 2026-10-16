@@ -61,6 +61,25 @@ describe("spawnSurface", () => {
     expect(surface.processes).toEqual([proc("web", "mine")]);
   });
 
+  test("previews skip the login, tools and the spec's own ports keep it", () => {
+    const forward = (name: string, n: number): PortEntry => ({
+      ...port(name, n),
+      auth: "forward",
+    });
+    const surface = spawnSurface({
+      prebuild: {
+        ports: [forward("landing", 5173), forward("pi-web", 3000)],
+      },
+      toolboxes: { ports: [forward("pi-web", 8514)] },
+      own: { ports: [forward("admin", 9000)] },
+    });
+    expect(surface.ports).toEqual([
+      { ...port("landing", 5173), auth: "none" },
+      forward("pi-web", 8514),
+      forward("admin", 9000),
+    ]);
+  });
+
   test("two toolboxes declaring one name apply once, the later winning", () => {
     const surface = spawnSurface({
       toolboxes: { processes: [proc("x", "first"), proc("x", "second")] },

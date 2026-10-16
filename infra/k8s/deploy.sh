@@ -173,6 +173,12 @@ if $DO_ROLLOUT; then
   # code+config ship together: the restart below recreates the pods, which
   # re-mount the updated ConfigMap. Without this the file edits never reach the
   # cluster and the server falls back to defaults (e.g. imageBuilder.kind).
+  # The forward-auth middleware (and the Service port it calls) must exist
+  # before the config that makes new tool Ingresses reference it: Traefik
+  # disables a router whose middleware is missing.
+  say "Applying 60-service.yaml + 80-forward-auth.yaml"
+  K apply -f "$ROOT/infra/k8s/60-service.yaml"
+  K apply -f "$ROOT/infra/k8s/80-forward-auth.yaml"
   say "Applying 30-config.yaml"
   K apply -f "$ROOT/infra/k8s/30-config.yaml"
 

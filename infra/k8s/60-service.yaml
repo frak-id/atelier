@@ -16,6 +16,11 @@ spec:
     - name: http
       port: 8080
       targetPort: http
+    # The server itself, for in-cluster callers that must bypass the console
+    # nginx: Traefik's forward-auth check (80-forward-auth.yaml).
+    - name: api
+      port: 4000
+      targetPort: api
 ---
 # Exposes the in-server ssh2 gateway (server container :2222) to the node on a
 # fixed NodePort (sshpiper is gone from the host). Point ssh.hetzner-staging.frak.id (or the

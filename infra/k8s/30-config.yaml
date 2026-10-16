@@ -11,6 +11,13 @@
 # the kata-atelier-clh-rs 384Mi pod overhead; build pods take 4Gi while they
 # run).
 #
+# Forward-auth: `kubernetes.vsCodeIngressAnnotations` (the name predates the
+# generic ports model) is put on every tool Ingress whose port says
+# `auth: "forward"`; it points at the Traefik middleware in
+# 80-forward-auth.yaml. Read at server start and applied when an Ingress is
+# created, so sandboxes booted before a change keep their old Ingress until
+# they are paused and resumed.
+#
 # SSH note: `listenPort` (2222) is what the in-server ssh2 proxy binds inside
 # the pod (== Service targetPort). `port` (30222) is what clients dial and is
 # advertised in the sandbox ssh URL — it must equal the NodePort in 60-service
@@ -56,7 +63,10 @@ data:
         "registryUrl": "zot.zot.svc:5000",
         "storageClass": "topolvm-thin",
         "volumeSnapshotClass": "atelier-snapshots",
-        "defaultVolumeSize": "20Gi"
+        "defaultVolumeSize": "20Gi",
+        "vsCodeIngressAnnotations": {
+          "traefik.ingress.kubernetes.io/router.middlewares": "atelier-v2-sandboxes-atelier-forward-auth@kubernetescrd"
+        }
       },
       "imageBuilder": {
         "kind": "buildkit",
