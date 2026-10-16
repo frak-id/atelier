@@ -253,11 +253,19 @@ function startFakeAgentServer(
   };
 }
 
+/** What the fake agent's process list says about `acp`: a run, `null`
+ * (not running), or `"error"` (the agent can't answer). Without it the
+ * client has no `processList`, like the agents of older tests. */
+interface FakeAcpProcess {
+  run: { pid: number; startedAt: string } | null | "error";
+}
+
 function makeDispatch(
   fakeAgent: FakeAcpAgent,
   notifier?: PermissionNotifier,
   onActivity?: (sandboxId: string) => void,
   replay?: { seed: string },
+  acp?: FakeAcpProcess,
 ): {
   dispatch: InstanceType<typeof AgentDispatch>;
   stop: () => void;
@@ -265,11 +273,22 @@ function makeDispatch(
   const server = startFakeAgentServer(fakeAgent, replay);
   const fakeAgentClient = {
     attachUrl: async () => server.url,
+    ...(acp && {
+      processList: async () => {
+        if (acp.run === "error") throw new Error("agent unreachable");
+        return {
+          processes: acp.run
+            ? [{ name: "acp", status: "running", ...acp.run }]
+            : [{ name: "acp", status: "stopped", pid: 0, startedAt: "" }],
+        };
+      },
+    }),
   } as unknown as AgentClientType;
   const dispatch = new AgentDispatch({
     agentClient: fakeAgentClient,
     notifier,
     onActivity,
+    runWatchMs: 20,
   });
   return {
     dispatch,
@@ -468,6 +487,81 @@ describe("AgentDispatch × session/list", () => {
     expect(await replyOf("pi")).toEqual(["Done."]);
     // Without pi's adapter nothing tells them apart.
     expect(await replyOf(undefined)).toHaveLength(3);
+  });
+
+  test("a turn in flight fails when the acp process restarts under it", async () => {
+    const fakeAgent = new FakeAcpAgent();
+    fakeAgent.promptDelayMs = 10_000; // a long render; the restart comes first
+    const acp: FakeAcpProcess = { run: { pid: 10, startedAt: "t1" } };
+    const { dispatch, stop } = makeDispatch(
+      fakeAgent,
+      undefined,
+      undefined,
+      undefined,
+      acp,
+    );
+    cleanups.push(stop);
+    const session = await dispatch.openSession({
+      sandboxId: SANDBOX_ID,
+      cwd: "/home/dev",
+    });
+    const turn = session.prompt("render it");
+    await new Promise((r) => setTimeout(r, 30));
+    acp.run = { pid: 11, startedAt: "t2" }; // crashed, restarted by the supervisor
+
+    await expect(turn).rejects.toThrow(/agent process \(acp\) restarted/);
+    expect(session.live).toBe(false);
+    expect(dispatch.workFor(SANDBOX_ID)).toEqual({ turns: 0, permissions: 0 });
+  });
+
+  test("stillLive asks the agent; a gone acp run drops the connection", async () => {
+    const fakeAgent = new FakeAcpAgent();
+    const acp: FakeAcpProcess = { run: { pid: 10, startedAt: "t1" } };
+    const { dispatch, stop } = makeDispatch(
+      fakeAgent,
+      undefined,
+      undefined,
+      undefined,
+      acp,
+    );
+    cleanups.push(stop);
+    const session = await dispatch.openSession({
+      sandboxId: SANDBOX_ID,
+      cwd: "/home/dev",
+    });
+    expect(await session.stillLive()).toBe(true);
+
+    acp.run = "error"; // the agent can't say: not a reason to drop it
+    expect(await session.stillLive()).toBe(true);
+
+    acp.run = { pid: 11, startedAt: "t2" };
+    expect(session.live).toBe(true); // the socket never noticed
+    expect(await session.stillLive()).toBe(false);
+    expect(session.live).toBe(false);
+
+    // The task's reopen lands on a new connection, attached to the new run.
+    const reopened = await dispatch.openSession({
+      sandboxId: SANDBOX_ID,
+      cwd: "/home/dev",
+      resumeSessionId: session.sessionId,
+    });
+    expect(await reopened.stillLive()).toBe(true);
+    expect((await reopened.prompt("go on")).stopReason).toBe("end_turn");
+  });
+
+  test("dialing a sandbox whose acp process isn't running fails fast", async () => {
+    const fakeAgent = new FakeAcpAgent();
+    const { dispatch, stop } = makeDispatch(
+      fakeAgent,
+      undefined,
+      undefined,
+      undefined,
+      { run: null },
+    );
+    cleanups.push(stop);
+    await expect(
+      dispatch.openSession({ sandboxId: SANDBOX_ID, cwd: "/home/dev" }),
+    ).rejects.toThrow(/isn't running/);
   });
 
   test("resumeSessionId on an agent without loadSession is a conflict", async () => {

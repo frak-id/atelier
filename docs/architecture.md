@@ -422,6 +422,13 @@ the MCP tools in `api/mcp/tools/tasks.ts` are a thin binding.
   context intact (the sandbox must be running; a paused one is resumed
   first). Parked tasks are forgotten after a week, or earlier when the
   owner's cap needs room.
+- When the sandbox's `acp` process restarts (a crash, a manual restart), the
+  attach bridge keeps the server's socket open but wired to the dead process,
+  so the connection records which run it attached to (`pid`, `startedAt` from
+  the agent's `/processes`) and compares: before a follow-up `send_prompt`
+  (a changed run drops the connection and the task reopens its session) and
+  every 10s while a turn runs (the turn fails instead of hanging; the next
+  prompt reopens the session).
 - A reply holds the agent's answer only: harness status text sent as message
   chunks (pi-acp's startup banner and extension notices, tagged
   `_meta.piAcp.notify`) is left out, through the harness's dispatch adapter

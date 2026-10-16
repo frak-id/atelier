@@ -332,23 +332,13 @@ export class AgentTaskService {
   ): Promise<TaskView> {
     const prompt = this.validatePrompt(text);
     const task = this.requireTask(ownerId, taskId);
-    const status = this.statusOf(task);
-    if (status === "running" || status === "waiting_permission") {
-      throw new ConflictError(
-        `Task ${taskId} is ${status}; wait for the current turn to finish (get_task) or cancel it first`,
-      );
-    }
-    if (task.turns.length >= MAX_TURNS_PER_TASK) {
-      throw new ConflictError(
-        `Task ${taskId} reached ${MAX_TURNS_PER_TASK} turns; dispatch a new task`,
-      );
-    }
-    if (!task.handle?.live) {
-      if (task.reopening) {
-        throw new ConflictError(
-          `Task ${taskId} is reconnecting to its agent session; retry in a moment`,
-        );
-      }
+    this.assertCanPrompt(task);
+    // The agent process may have restarted (a crash, a manual restart)
+    // without the connection noticing; ask before prompting into it.
+    const live = task.handle ? await task.handle.stillLive() : false;
+    // Again: another prompt (or a reopen) may have started meanwhile.
+    this.assertCanPrompt(task);
+    if (!live || !task.handle?.live) {
       task.updatedAt = Date.now();
       task.reopening = this.reopen(task).finally(() => {
         task.reopening = undefined;
@@ -457,6 +447,26 @@ export class AgentTaskService {
     task.turns.push(turn);
     task.updatedAt = turn.startedAt;
     void this.runTurn(task, turn);
+  }
+
+  private assertCanPrompt(task: TaskRecord): void {
+    if (task.closed) throw new NotFoundError("Task", task.id);
+    const status = this.statusOf(task);
+    if (status === "running" || status === "waiting_permission") {
+      throw new ConflictError(
+        `Task ${task.id} is ${status}; wait for the current turn to finish (get_task) or cancel it first`,
+      );
+    }
+    if (task.turns.length >= MAX_TURNS_PER_TASK) {
+      throw new ConflictError(
+        `Task ${task.id} reached ${MAX_TURNS_PER_TASK} turns; dispatch a new task`,
+      );
+    }
+    if (task.reopening) {
+      throw new ConflictError(
+        `Task ${task.id} is reconnecting to its agent session; retry in a moment`,
+      );
+    }
   }
 
   private async runTurn(task: TaskRecord, turn: TaskTurn): Promise<void> {

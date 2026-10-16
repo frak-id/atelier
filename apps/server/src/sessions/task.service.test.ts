@@ -640,6 +640,45 @@ describe("idle parking", () => {
     expect(fake.prompts.at(-1)?.text).toBe("again");
   });
 
+  test("a follow-up after an acp restart the connection missed reopens the session", async () => {
+    const fake = makeFake();
+    const service = makeService(fake);
+    const { taskId } = await service.dispatchTask(OWNER, {
+      sandboxId: SANDBOX,
+      prompt: "x",
+    });
+    fake.finish();
+    await tick();
+    // acp crashed or was restarted: the socket stays open, wired to the
+    // dead process, so the handle still looks live.
+    fake.restartAgentUnseen();
+
+    await service.sendPrompt(OWNER, taskId, "again");
+
+    expect(fake.state.stillLiveCalls).toBe(1);
+    expect(fake.opened.map((o) => o.resumeSessionId)).toEqual([
+      undefined,
+      SESSION,
+    ]);
+    expect(fake.prompts.at(-1)?.text).toBe("again");
+  });
+
+  test("a follow-up on a live session prompts it without reopening", async () => {
+    const fake = makeFake();
+    const service = makeService(fake);
+    const { taskId } = await service.dispatchTask(OWNER, {
+      sandboxId: SANDBOX,
+      prompt: "x",
+    });
+    fake.finish();
+    await tick();
+
+    await service.sendPrompt(OWNER, taskId, "again");
+
+    expect(fake.opened).toHaveLength(1);
+    expect(fake.prompts.at(-1)?.text).toBe("again");
+  });
+
   test("a follow-up on a paused sandbox asks for a resume and keeps the task", async () => {
     const fake = makeFake();
     const service = makeService(fake);

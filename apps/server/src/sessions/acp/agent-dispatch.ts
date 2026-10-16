@@ -93,6 +93,28 @@ const ACP_IDLE_TTL_MS = Number(process.env.ACP_IDLE_TTL_MS) || 60_000;
  */
 const ACP_PROCESS_NAME = "acp";
 
+/**
+ * Which run of the `acp` process a connection talks to. When the process
+ * restarts (a crash, a manual restart) the agent's attach bridge keeps the
+ * socket open but wired to the dead run: writes vanish and nothing answers,
+ * so the connection itself never notices. Comparing runs is how it does.
+ */
+interface AcpRun {
+  pid: number;
+  startedAt: string;
+}
+
+/** Reads the current run: `null` when acp isn't running, `undefined` when
+ * the agent couldn't say (never acted on). */
+type AcpRunReader = () => Promise<AcpRun | null | undefined>;
+
+/** How often a connection with a turn in flight checks that its acp run is
+ * still the one running (so a crash fails the turn instead of hanging it). */
+const ACP_RUN_WATCH_MS = 10_000;
+/** How long a confirmed run is trusted before a dial reuses the connection
+ * without asking again. */
+const ACP_RUN_RECHECK_MS = 5_000;
+
 /** A session as surfaced to the dashboard. Sourced from `session/list` (or,
  * for agents lacking that capability, the server-created fallback); never
  * cached authoritatively. */
@@ -168,6 +190,10 @@ export interface AgentSession {
   /** False once the connection it was opened on is gone (acp restart,
    * sandbox paused): prompting it fails, reopen it by id instead. */
   readonly live: boolean;
+  /** `live`, after asking the sandbox's agent whether the acp process run
+   * the session was opened on still runs: a restart the connection didn't
+   * see (see {@link AcpRun}) drops the connection and gives false. */
+  stillLive(): Promise<boolean>;
   prompt(
     text: string,
     selection?: AgentModelSelection,
@@ -257,6 +283,9 @@ class SandboxAcpConnection {
   canLoadSession = false;
   private holdCount = 0;
   private idleTimer: ReturnType<typeof setTimeout> | undefined;
+  /** When `run` was last confirmed as the current one. */
+  private runCheckedAt = 0;
+  private runWatch: ReturnType<typeof setInterval> | undefined;
 
   /** Whether the socket has been torn down (idle-close or peer drop). A session
    * handle captured before the drop uses this to fail fast rather than prompt
@@ -283,6 +312,10 @@ class SandboxAcpConnection {
      * idle-TTL close) would re-deliver an old turn's updates. A live turn is
      * covered anyway: it blocks the pause until `markBusy` ends it. */
     private readonly touch: () => void,
+    /** The acp run this socket attached to; `undefined` if unknown. */
+    private readonly run: AcpRun | undefined,
+    private readonly currentRun: AcpRunReader,
+    private readonly runWatchMs: number,
   ) {}
 
   static async open(
@@ -293,6 +326,7 @@ class SandboxAcpConnection {
     createdSessions: Map<string, CreatedSessionEntry>,
     notifier: PermissionNotifier | undefined,
     touch: () => void,
+    run: { at: AcpRun | undefined; read: AcpRunReader; watchMs: number },
   ): Promise<SandboxAcpConnection> {
     const transport = connectAcpWebSocket(url);
     // `conn` is captured by the handlers below; it's assigned before any frame
@@ -316,6 +350,9 @@ class SandboxAcpConnection {
       createdSessions,
       notifier,
       touch,
+      run.at,
+      run.read,
+      run.watchMs,
     );
 
     try {
@@ -543,6 +580,53 @@ class SandboxAcpConnection {
     state.busyCount = Math.max(0, state.busyCount + delta);
     this.emit({ resource: "sessionStatuses" });
     this.maybeScheduleIdleClose();
+    this.watchRunWhileBusy();
+  }
+
+  // ── acp process run ──────────────────────────────────────────────────────
+
+  /**
+   * Whether the acp run this socket attached to is still the one running.
+   * If it restarted or stopped, close the connection: requests in flight
+   * (a turn) fail with the reason, and the next use dials the new run.
+   * `maxAgeMs` reuses a recent confirmation; an agent that can't say (or a
+   * run unknown since the dial) counts as still running.
+   */
+  async verifyRun(maxAgeMs = 0): Promise<boolean> {
+    if (this.closed) return false;
+    if (!this.run || Date.now() - this.runCheckedAt < maxAgeMs) return true;
+    const current = await this.currentRun();
+    if (this.closed) return false;
+    if (current === undefined) return true;
+    if (
+      current &&
+      current.pid === this.run.pid &&
+      current.startedAt === this.run.startedAt
+    ) {
+      this.runCheckedAt = Date.now();
+      return true;
+    }
+    log.warn(
+      { sandboxId: this.sandboxId, was: this.run, now: current },
+      "acp process run changed under a live ACP connection; dropping it",
+    );
+    this.close(
+      new Error(
+        `The sandbox's agent process (acp) ${current ? "restarted" : "stopped"} (a crash or a restart), so this ACP session dropped; prompting the task again reopens it`,
+      ),
+    );
+    return false;
+  }
+
+  /** Check the run every `runWatchMs` while a turn is in flight. */
+  private watchRunWhileBusy(): void {
+    const busy = [...this.liveState.values()].some((s) => s.busyCount > 0);
+    if (busy && !this.runWatch && this.run && !this.closed) {
+      this.runWatch = setInterval(() => void this.verifyRun(), this.runWatchMs);
+    } else if (!busy && this.runWatch) {
+      clearInterval(this.runWatch);
+      this.runWatch = undefined;
+    }
   }
 
   cancel(sessionId: string): Promise<void> {
@@ -728,13 +812,18 @@ class SandboxAcpConnection {
   /** Tear down the socket + ACP connection (idempotent). Flushes pending
    * permissions as cancelled; emits the invalidation so watchers reflect it.
    * Does NOT touch `createdSessions` — that fallback registry is owned by
-   * `AgentDispatch` and must survive an idle-TTL reconnect. */
-  close(): void {
+   * `AgentDispatch` and must survive an idle-TTL reconnect. Requests in
+   * flight fail with `reason`. */
+  close(reason?: Error): void {
     if (this.closed) return;
     this.closed = true;
     if (this.idleTimer) {
       clearTimeout(this.idleTimer);
       this.idleTimer = undefined;
+    }
+    if (this.runWatch) {
+      clearInterval(this.runWatch);
+      this.runWatch = undefined;
     }
     const hadPermissions = this.pendingPermissions.size > 0;
     for (const pending of this.pendingPermissions.values()) {
@@ -745,8 +834,10 @@ class SandboxAcpConnection {
     this.liveState.clear();
     this.updateHandlers.clear();
     if (hadPermissions) this.emit({ resource: "permissions" });
+    // The connection first, so in-flight requests get `reason` rather than
+    // whatever the closing socket would give them.
+    this.connection.close(reason);
     this.transport.close();
-    this.connection.close();
     this.onGone(this);
   }
 }
@@ -782,8 +873,24 @@ export class AgentDispatch {
       notifier?: PermissionNotifier;
       /** ACP traffic seen for a sandbox (the `agent` idle signal). */
       onActivity?: (sandboxId: string) => void;
+      /** Overrides {@link ACP_RUN_WATCH_MS} (tests). */
+      runWatchMs?: number;
     },
   ) {}
+
+  /** The sandbox's current acp run, from the agent's process list. */
+  private async acpRun(sandboxId: string): Promise<AcpRun | null | undefined> {
+    let processes: Awaited<ReturnType<AgentClient["processList"]>>["processes"];
+    try {
+      ({ processes } = await this.deps.agentClient.processList(sandboxId));
+    } catch (err) {
+      log.debug({ sandboxId, err }, "acp process run unknown");
+      return undefined;
+    }
+    const acp = processes.find((p) => p.name === ACP_PROCESS_NAME);
+    if (acp?.status !== "running" || !acp.pid) return null;
+    return { pid: acp.pid, startedAt: acp.startedAt };
+  }
 
   // ── event emitter ─────────────────────────────────────────────────────────
 
@@ -832,7 +939,16 @@ export class AgentDispatch {
     const existing = this.connections.get(sandboxId);
     if (existing) return existing;
     const createdSessions = this.createdSessionsFor(sandboxId);
-    const pending = (async () => {
+    const pending: Promise<SandboxAcpConnection> = (async () => {
+      // Read before attaching: a restart in between then looks like one
+      // after (a needless redial), never the other way round (a dead run
+      // taken for the live one).
+      const run = await this.acpRun(sandboxId);
+      if (run === null) {
+        throw new ConflictError(
+          `The agent process (acp) of sandbox ${sandboxId} isn't running; retry once it has restarted`,
+        );
+      }
       const url = await this.deps.agentClient.attachUrl(
         sandboxId,
         ACP_PROCESS_NAME,
@@ -842,15 +958,10 @@ export class AgentDispatch {
         sandboxId,
         url,
         (self) => {
+          // Synchronously, so a dropped connection is never handed out.
           if (this.live.get(sandboxId) === self) this.live.delete(sandboxId);
-          const cur = this.connections.get(sandboxId);
-          if (cur) {
-            void cur.then(
-              (c) => {
-                if (c === self) this.connections.delete(sandboxId);
-              },
-              () => {},
-            );
+          if (this.connections.get(sandboxId) === pending) {
+            this.connections.delete(sandboxId);
           }
           // Drop an empty fallback map so read-only dials don't leak one entry
           // per sandbox ever touched (list-capable agents never populate it).
@@ -862,6 +973,11 @@ export class AgentDispatch {
         createdSessions,
         this.deps.notifier,
         () => this.deps.onActivity?.(sandboxId),
+        {
+          at: run,
+          read: () => this.acpRun(sandboxId),
+          watchMs: this.deps.runWatchMs ?? ACP_RUN_WATCH_MS,
+        },
       );
       this.live.set(sandboxId, conn);
       return conn;
@@ -877,13 +993,23 @@ export class AgentDispatch {
     return pending;
   }
 
+  /** The sandbox's connection, dialed again when the cached one is attached
+   * to an acp run that is gone (see {@link AcpRun}). */
+  private async freshConnection(
+    sandboxId: string,
+  ): Promise<SandboxAcpConnection> {
+    const conn = await this.connectionFor(sandboxId);
+    if (await conn.verifyRun(ACP_RUN_RECHECK_MS)) return conn;
+    return this.connectionFor(sandboxId);
+  }
+
   /** Dial (or reuse) the sandbox's connection, holding it for the duration of
    * `fn` so it can't idle-close mid-operation. */
   private async withHold<T>(
     sandboxId: string,
     fn: (conn: SandboxAcpConnection) => Promise<T>,
   ): Promise<T> {
-    const conn = await this.connectionFor(sandboxId);
+    const conn = await this.freshConnection(sandboxId);
     conn.acquire();
     try {
       return await fn(conn);
@@ -987,7 +1113,7 @@ export class AgentDispatch {
     const harness: HarnessDispatchAdapter = resolveHarnessDispatch(
       input.harnessId,
     );
-    const conn = await this.connectionFor(input.sandboxId);
+    const conn = await this.freshConnection(input.sandboxId);
     const acp = conn.acp;
     // Hold for the SESSION'S LIFETIME (released in `close()`), not just for
     // newSession: an open chat session is active use, so the socket must not
@@ -1047,6 +1173,7 @@ export class AgentDispatch {
       get live() {
         return !conn.isClosed;
       },
+      stillLive: () => conn.verifyRun(),
       prompt: async (text, selection) => {
         // Re-resolve the owning connection each prompt. If it dropped (acp
         // restart / idle-close race) and was replaced, the agent-side session

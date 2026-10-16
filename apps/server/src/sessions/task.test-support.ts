@@ -32,12 +32,16 @@ export function makeFake(
   const prompts: PendingPrompt[] = [];
   const opened: OpenAgentSessionInput[] = [];
   const replies: { id: string; reply: string }[] = [];
-  /** `connection` counts drops: a handle is live while it matches. */
+  /** `connection` counts drops: a handle is live while it matches.
+   * `unseenRestart`: the acp process restarted and only `stillLive` (which
+   * asks the agent) finds out. */
   const state = {
     cancelled: 0,
     closed: 0,
     nextSession: 1,
     connection: 0,
+    unseenRestart: false,
+    stillLiveCalls: 0,
     status: opts.status ?? "running",
   };
   let onUpdate: ((n: SessionNotification) => void) | undefined;
@@ -50,6 +54,14 @@ export function makeFake(
     sessionId,
     sandboxId: SANDBOX,
     get live() {
+      return connection === state.connection;
+    },
+    stillLive: async () => {
+      state.stillLiveCalls++;
+      if (state.unseenRestart) {
+        state.unseenRestart = false;
+        state.connection++;
+      }
       return connection === state.connection;
     },
     prompt: (text: string) =>
@@ -154,6 +166,11 @@ export function makeFake(
      * opened so far stops being live. */
     dropConnection() {
       state.connection++;
+    },
+    /** The acp process restarts without the connection noticing: handles
+     * look live until `stillLive` asks the agent. */
+    restartAgentUnseen() {
+      state.unseenRestart = true;
     },
   };
 }
