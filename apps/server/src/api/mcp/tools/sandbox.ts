@@ -534,7 +534,9 @@ export function registerSandboxTools(
               owner: z
                 .enum(["dev", "root"])
                 .optional()
-                .describe("File owner (default dev)"),
+                .describe(
+                  "File owner (default dev), also of directories created for it",
+                ),
             }),
           )
           .min(1),

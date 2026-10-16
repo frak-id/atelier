@@ -209,6 +209,8 @@ export const PatchFilesRequestSchema = Type.Array(
         Type.Union([Type.Literal("utf8"), Type.Literal("base64")]),
       ),
       mode: Type.Optional(Type.String()),
+      /** `dev` (default) or `root`; directories created for the file get
+       * the same owner. */
       owner: Type.Optional(Type.String()),
     },
     { additionalProperties: false },

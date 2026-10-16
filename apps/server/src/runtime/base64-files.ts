@@ -11,6 +11,7 @@
  */
 import { safeNanoid } from "../shared/lib/id.ts";
 import type { AgentClient, FileWriteResult } from "./agent/index.ts";
+import { MKDIRS_FN, OWNER_IDS, shellQuote } from "./file-owner.ts";
 
 export interface Base64FileWrite {
   path: string;
@@ -22,12 +23,6 @@ export interface Base64FileWrite {
 
 const STAGING_DIR = "/tmp";
 const DECODE_TIMEOUT_MS = 60_000;
-/** Same ids the agent's `files/write` uses for `owner`. */
-const OWNER_IDS: Record<string, string> = { dev: "1000:1000", root: "0:0" };
-
-function shellQuote(arg: string): string {
-  return `'${arg.replace(/'/g, "'\\''")}'`;
-}
 
 /** Normalize to standard, padded base64, or `null` when it isn't base64. */
 export function normalizeBase64(content: string): string | null {
@@ -58,17 +53,20 @@ function invalid(file: Base64FileWrite): string | undefined {
 }
 
 /** The decode step: `staged` (base64 text) becomes `file.path`, replaced
- * atomically, with the requested mode/owner. The staged copy is removed
- * whatever happens. */
+ * atomically, with the requested mode/owner (also given the directories
+ * created for it). The staged copy is removed whatever happens. */
 function decodeScript(staged: string, file: Base64FileWrite): string {
   const owner = file.owner ? OWNER_IDS[file.owner] : undefined;
   return [
     "set -eu",
+    MKDIRS_FN,
     `src=${shellQuote(staged)}`,
     `dst=${shellQuote(file.path)}`,
     'tmp="$dst.atelier-$$"',
     'trap \'rm -f "$src" "$tmp"\' EXIT',
-    'mkdir -p "$(dirname "$dst")"',
+    owner
+      ? `mkdirs "$(dirname "$dst")" ${owner}`
+      : 'mkdir -p "$(dirname "$dst")"',
     'base64 -d "$src" > "$tmp"',
     ...(file.mode ? [`chmod ${file.mode} "$tmp"`] : []),
     ...(owner ? [`chown ${owner} "$tmp"`] : []),
