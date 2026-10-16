@@ -354,10 +354,11 @@ of the service types, built in `api/mcp/tools/*.ts` (the services and the
 - **Never credentials or internals.** `create_sandbox` returns `{ id, urls }`
   (no `generated`: agent password, pod IP, ssh host keys); `get_sandbox` and
   `sandbox_lifecycle resume` share one projection (`ssh` split out of `urls`);
-  `manage_prebuilds` lists only `{ ref, createdAt, repos }` (no base image,
-  hash, metadata, or the recipe's env values and file contents, which can be
-  literal secrets; the console, CLI and `GET /v1/prebuilds` keep the full
-  record).
+  `manage_prebuilds` lists `{ ref, createdAt, repos, metadata?, processes?,
+  ports? }`: enough to pick a prebuild by name and know its dev servers
+  (process env is left out), but no base image, hash, or the build recipe's
+  env values and file contents, which can be literal secrets; the console,
+  CLI and `GET /v1/prebuilds` keep the full record.
 - **Simple by default, `detail: "advanced"` on request** where the extra is
   actually needed by another tool call (`list_toolboxes`: version ids for
   `manage_toolbox pin_version`). Simple is what is needed to pick and act on

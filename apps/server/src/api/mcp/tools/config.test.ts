@@ -170,7 +170,7 @@ function addToolbox(
 // ── manage_prebuilds ────────────────────────────────────────────────────────
 
 describe("manage_prebuilds list", () => {
-  test("returns ref, repos and creation date, newest first", async () => {
+  test("returns ref, repos, metadata, dev servers and creation date, newest first", async () => {
     const { call } = await connectAs(newUser());
     const res = await call("manage_prebuilds", { action: "list" });
     expect(res.data).toEqual([
@@ -178,6 +178,9 @@ describe("manage_prebuilds list", () => {
         ref: "snap-web",
         createdAt: "2026-02-01T00:00:00Z",
         repos: [{ url: "https://github.com/acme/web", branch: "main" }],
+        metadata: { workspace: "web" },
+        processes: [{ name: "dev", command: "bun dev", lazy: true }],
+        ports: [{ name: "app", port: 3000, public: true }],
       },
       {
         ref: "snap-api",
@@ -187,20 +190,27 @@ describe("manage_prebuilds list", () => {
     ]);
   });
 
-  test("never exposes the base image, hash, metadata or recipe values", async () => {
+  test("never exposes the base image, hash or build recipe values", async () => {
     const { call } = await connectAs(newUser());
     // `detail` is not an argument any more: asking for it changes nothing.
     const res = await call("manage_prebuilds", {
       action: "list",
       detail: "advanced",
     });
+    const allowed = [
+      "createdAt",
+      "metadata",
+      "ports",
+      "processes",
+      "ref",
+      "repos",
+    ];
     for (const item of res.data) {
-      expect(Object.keys(item).sort()).toEqual(["createdAt", "ref", "repos"]);
+      for (const key of Object.keys(item)) expect(allowed).toContain(key);
     }
     for (const hidden of [
       "sha256", // image digest
       "aaaaaaaa", // content hash
-      "workspace", // metadata
       "clonePath",
       "bun install", // build step
       "literal-npm-token", // env value

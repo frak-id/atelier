@@ -47,11 +47,17 @@ const detailSchema = z
 
 // ── prebuild views ──────────────────────────────────────────────────────
 
-/** What an agent needs to pick a prebuild: its ref, what it contains and
- * when it was baked. The base image, hash, metadata and recipe (and the env
- * values / file contents in it, which can be literal secrets) stay out; the
- * console, CLI and `GET /v1/prebuilds` have the full record. */
+/** What an agent needs to pick a prebuild: its ref, what it contains, its
+ * name and labels (`metadata`, e.g. `workspace`), the dev servers every
+ * sandbox from it gets (`processes`, without their env) and the URLs they
+ * serve (`ports`), and when it was baked. The base image, hash and build
+ * recipe (and the env values / file contents in it, which can be literal
+ * secrets) stay out; the console, CLI and `GET /v1/prebuilds` have the full
+ * record. */
 function prebuildView(p: PrebuildRecord) {
+  const metadata = p.metadata ?? p.spec?.metadata;
+  const processes = p.spec?.processes ?? [];
+  const ports = p.spec?.ports ?? [];
   return {
     ref: p.ref,
     createdAt: p.createdAt,
@@ -59,6 +65,26 @@ function prebuildView(p: PrebuildRecord) {
       url: r.url,
       ...(r.branch ? { branch: r.branch } : {}),
     })),
+    ...(metadata && Object.keys(metadata).length > 0 ? { metadata } : {}),
+    ...(processes.length > 0
+      ? {
+          processes: processes.map((proc) => ({
+            name: proc.name,
+            command: proc.command,
+            ...(proc.cwd ? { cwd: proc.cwd } : {}),
+            ...(proc.lazy ? { lazy: true } : {}),
+          })),
+        }
+      : {}),
+    ...(ports.length > 0
+      ? {
+          ports: ports.map((port) => ({
+            name: port.name,
+            port: port.port,
+            ...(port.public ? { public: true } : {}),
+          })),
+        }
+      : {}),
   };
 }
 
@@ -185,8 +211,11 @@ export function registerConfigTools(
         "expensive one-time setup (cloned repos, installs, build steps), " +
         "baked once and reused by every sandbox booted from them (pass " +
         "`ref` as `spec.source.snapshot` to `create_sandbox`). Prebuilds are " +
-        "shared server-wide. `list` returns {ref, createdAt, repos} newest " +
-        "first. `create` bakes and blocks until done (minutes on a cold " +
+        "shared server-wide. `list` returns {ref, createdAt, repos, " +
+        "metadata?, processes?, ports?} newest first: `metadata` names the " +
+        "prebuild (e.g. `workspace`), `processes` are the dev servers a " +
+        "sandbox from it gets and `ports` the URLs they serve. `create` " +
+        "bakes and blocks until done (minutes on a cold " +
         "cache) and returns {ref}. `delete` refuses a prebuild that a " +
         "sandbox boots from or another prebuild is chained on.",
       inputSchema: {
