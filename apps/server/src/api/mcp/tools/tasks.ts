@@ -181,10 +181,13 @@ export function registerTaskTools(
         "turns). Then `get_task` with `waitSeconds` for the answer, or set " +
         "`waitSeconds` here. If the agent asks for a permission the task " +
         "shows `waiting_permission` until you answer with `manage_task` " +
-        "action=reply_permission — or start it with `autoApprove`. Tasks " +
-        "live in server memory (lost on restart), are closed after an hour " +
-        "without activity, and you can hold at most 20: `manage_task` " +
-        "action=close the ones you are done with.",
+        "action=reply_permission — or start it with `autoApprove`. A " +
+        "follow-up keeps the context even days later: if the sandbox was " +
+        "paused meanwhile, `sandbox_lifecycle` action=resume it first. " +
+        "Tasks live in server memory (lost on restart) and are forgotten " +
+        "after a week without a prompt; at most 20 at once are active " +
+        "(older idle ones make room): `manage_task` action=close the ones " +
+        "you are done with.",
       inputSchema: {
         sandboxId: z
           .string()
@@ -289,8 +292,8 @@ export function registerTaskTools(
         "`reply`), the prompt, timestamps and ids; it can be large. " +
         "Without `taskId`: list your tasks, newest first, optionally for " +
         "one `sandboxId` or `status`; tasks lost to a server restart or " +
-        "idle eviction no longer appear (a `NOT_FOUND` for a `taskId` " +
-        "means the same).",
+        "forgotten after a week no longer appear (a `NOT_FOUND` for a " +
+        "`taskId` means the same).",
       inputSchema: {
         taskId: z
           .string()

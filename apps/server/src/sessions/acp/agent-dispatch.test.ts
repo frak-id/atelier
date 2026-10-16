@@ -21,15 +21,15 @@ let agent: typeof import("@agentclientprotocol/sdk").agent;
 let methods: typeof import("@agentclientprotocol/sdk").methods;
 let ndJsonStream: typeof import("@agentclientprotocol/sdk").ndJsonStream;
 let PROTOCOL_VERSION: typeof import("@agentclientprotocol/sdk").PROTOCOL_VERSION;
+let RequestError: typeof import("@agentclientprotocol/sdk").RequestError;
 type AgentContext = import("@agentclientprotocol/sdk").AgentContext;
 type AgentClientType = import("../../runtime/index.ts").AgentClient;
 
 beforeAll(async () => {
   // ACP_IDLE_TTL_MS is read once at module load, so set it before importing.
   ({ AgentDispatch } = await import("./agent-dispatch.ts"));
-  ({ agent, methods, ndJsonStream, PROTOCOL_VERSION } = await import(
-    "@agentclientprotocol/sdk"
-  ));
+  ({ agent, methods, ndJsonStream, PROTOCOL_VERSION, RequestError } =
+    await import("@agentclientprotocol/sdk"));
   const { registerHarnessDispatch } = await import("./harness-registry.ts");
   registerHarnessDispatch({ id: "opencode" });
 });
@@ -46,6 +46,10 @@ class FakeAcpAgent {
   canList = true;
   canClose = true;
   nullFirstList = false;
+  /** When set, `session/new` fails with this message. */
+  failNewSession: string | undefined;
+  canLoad = true;
+  readonly loaded: string[] = [];
   listCallCount = 0;
   promptDelayMs = 5;
   clientCtx?: AgentContext;
@@ -58,6 +62,7 @@ class FakeAcpAgent {
         return {
           protocolVersion: PROTOCOL_VERSION,
           agentCapabilities: {
+            loadSession: this.canLoad,
             sessionCapabilities: {
               list: this.canList ? {} : undefined,
               close: this.canClose ? {} : undefined,
@@ -66,9 +71,27 @@ class FakeAcpAgent {
         };
       })
       .onRequest(methods.agent.session.new, (ctx) => {
+        if (this.failNewSession) {
+          throw new RequestError(-32603, this.failNewSession);
+        }
         const sessionId = `sess-${this.nextId++}`;
         this.sessions.set(sessionId, { sessionId, cwd: ctx.params.cwd });
         return { sessionId };
+      })
+      .onRequest(methods.agent.session.load, async (ctx) => {
+        if (!this.sessions.has(ctx.params.sessionId)) {
+          throw new RequestError(-32602, "Unknown sessionId");
+        }
+        // Like pi-acp: the history replays as updates before the answer.
+        await ctx.client.notify(methods.client.session.update, {
+          sessionId: ctx.params.sessionId,
+          update: {
+            sessionUpdate: "agent_message_chunk",
+            content: { type: "text", text: "(history)" },
+          },
+        });
+        this.loaded.push(ctx.params.sessionId);
+        return {};
       })
       .onRequest(methods.agent.session.list, () => {
         // Emulate pi-acp's cold-start quirk: first call after connect returns a
@@ -134,11 +157,22 @@ interface FakeServer {
   stop: () => void;
 }
 
-function startFakeAgentServer(fakeAgent: FakeAcpAgent): FakeServer {
+/**
+ * `replay` emulates the in-pod attach bridge: every new connection first
+ * receives `replay.seed` (raw NDJSON a previous server left in the bridge's
+ * buffer) and then everything the agent wrote to earlier connections.
+ */
+function startFakeAgentServer(
+  fakeAgent: FakeAcpAgent,
+  replay?: { seed: string },
+): FakeServer {
   const controllers = new WeakMap<
     ServerWebSocket<unknown>,
     ReadableStreamDefaultController<Uint8Array>
   >();
+  const buffered: Uint8Array[] = replay
+    ? [new TextEncoder().encode(replay.seed)]
+    : [];
   let sawClose = false;
   const server = Bun.serve({
     port: 0,
@@ -148,6 +182,7 @@ function startFakeAgentServer(fakeAgent: FakeAcpAgent): FakeServer {
     },
     websocket: {
       open(ws) {
+        if (replay) for (const chunk of buffered) ws.send(chunk);
         let controller!: ReadableStreamDefaultController<Uint8Array>;
         const readable = new ReadableStream<Uint8Array>({
           start(c) {
@@ -156,6 +191,7 @@ function startFakeAgentServer(fakeAgent: FakeAcpAgent): FakeServer {
         });
         const writable = new WritableStream<Uint8Array>({
           write(chunk) {
+            if (replay) buffered.push(chunk);
             ws.send(chunk);
           },
         });
@@ -196,11 +232,12 @@ function makeDispatch(
   fakeAgent: FakeAcpAgent,
   notifier?: PermissionNotifier,
   onActivity?: (sandboxId: string) => void,
+  replay?: { seed: string },
 ): {
   dispatch: InstanceType<typeof AgentDispatch>;
   stop: () => void;
 } {
-  const server = startFakeAgentServer(fakeAgent);
+  const server = startFakeAgentServer(fakeAgent, replay);
   const fakeAgentClient = {
     attachUrl: async () => server.url,
   } as unknown as AgentClientType;
@@ -302,6 +339,102 @@ describe("AgentDispatch × session/list", () => {
     live.get(SANDBOX_ID)?.close();
 
     await expect(session.prompt("hi")).rejects.toThrow(/no longer live/);
+  });
+
+  test("a redial ignores what the attach bridge replays from earlier connections", async () => {
+    const fakeAgent = new FakeAcpAgent();
+    fakeAgent.failNewSession = "Could not start pi";
+    // What a server without per-connection ids left in the bridge buffer:
+    // numeric ids this connection reuses, and a long-settled permission ask.
+    const seed = [
+      { jsonrpc: "2.0", id: 0, result: { protocolVersion: 1 } },
+      { jsonrpc: "2.0", id: 1, result: { sessionId: "stale-session" } },
+      {
+        jsonrpc: "2.0",
+        id: 0,
+        method: "session/request_permission",
+        params: {
+          sessionId: "stale-session",
+          toolCall: { toolCallId: "tc-0", title: "Old" },
+          options: [{ optionId: "a", name: "Allow", kind: "allow_once" }],
+        },
+      },
+    ]
+      .map((m) => `${JSON.stringify(m)}\n`)
+      .join("");
+    const { dispatch, stop } = makeDispatch(fakeAgent, undefined, undefined, {
+      seed,
+    });
+    cleanups.push(stop);
+    const live = (dispatch as unknown as { live: Map<string, unknown> }).live;
+    const open = () =>
+      dispatch.openSession({ sandboxId: SANDBOX_ID, cwd: "/home/dev" });
+
+    // The agent's real answer, not the stale success replayed ahead of it.
+    await expect(open()).rejects.toThrow(/Could not start pi/);
+    await new Promise((resolve) => setTimeout(resolve, 150));
+    expect(live.has(SANDBOX_ID)).toBe(false);
+
+    // The redial gets the failure above replayed too; the fixed agent's
+    // answer must win, and no replayed permission may surface as pending.
+    fakeAgent.failNewSession = undefined;
+    const session = await open();
+    expect(session.sessionId).toBe("sess-1");
+    expect(dispatch.permissionsFor(SANDBOX_ID)).toEqual([]);
+  });
+
+  test("resumeSessionId reopens the session with session/load, history unseen", async () => {
+    const fakeAgent = new FakeAcpAgent();
+    fakeAgent.seedSession("earlier", "/home/dev");
+    const { dispatch, stop } = makeDispatch(fakeAgent);
+    cleanups.push(stop);
+    const updates: unknown[] = [];
+
+    const session = await dispatch.openSession({
+      sandboxId: SANDBOX_ID,
+      cwd: "/home/dev",
+      resumeSessionId: "earlier",
+      callbacks: { onUpdate: (n) => updates.push(n) },
+    });
+
+    expect(session.sessionId).toBe("earlier");
+    expect(session.live).toBe(true);
+    expect(fakeAgent.loaded).toEqual(["earlier"]);
+    expect(fakeAgent.sessions.size).toBe(1); // no new session
+    expect(updates).toEqual([]); // the replayed history isn't new output
+    expect((await session.prompt("go on")).stopReason).toBe("end_turn");
+  });
+
+  test("resumeSessionId on an agent without loadSession is a conflict", async () => {
+    const fakeAgent = new FakeAcpAgent();
+    fakeAgent.canLoad = false;
+    fakeAgent.seedSession("earlier", "/home/dev");
+    const { dispatch, stop } = makeDispatch(fakeAgent);
+    cleanups.push(stop);
+
+    await expect(
+      dispatch.openSession({
+        sandboxId: SANDBOX_ID,
+        cwd: "/home/dev",
+        resumeSessionId: "earlier",
+      }),
+    ).rejects.toThrow(/can't reopen a session/);
+  });
+
+  test("a handle stops being live once its connection is gone", async () => {
+    const fakeAgent = new FakeAcpAgent();
+    const { dispatch, stop } = makeDispatch(fakeAgent);
+    cleanups.push(stop);
+    const live = (
+      dispatch as unknown as { live: Map<string, { close(): void }> }
+    ).live;
+    const session = await dispatch.openSession({
+      sandboxId: SANDBOX_ID,
+      cwd: "/home/dev",
+    });
+    expect(session.live).toBe(true);
+    live.get(SANDBOX_ID)?.close();
+    expect(session.live).toBe(false);
   });
 
   test("todos come from plan notifications; [] for sessions never driven", async () => {

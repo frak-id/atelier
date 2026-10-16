@@ -415,7 +415,12 @@ the MCP tools in `api/mcp/tools/tasks.ts` are a thin binding.
   allow each request once, unattended.
 - State is **in memory** and per server process (a restart forgets tasks; the
   agent-side session survives in the sandbox). Tasks are scoped to the user who
-  dispatched them, capped per user, and closed after an hour without activity,
-  which releases the session's hold on the shared ACP connection.
+  dispatched them and capped per user. After an hour without activity a task
+  is *parked*: its hold on the shared ACP connection is released (so the
+  socket can close and the sandbox can idle-pause) but the task stays, and the
+  next `send_prompt` reopens the same agent session with ACP `session/load`,
+  context intact (the sandbox must be running; a paused one is resumed
+  first). Parked tasks are forgotten after a week, or earlier when the
+  owner's cap needs room.
 
 Full API documentation is available at `/swagger` when the server is running.

@@ -12,6 +12,13 @@
  * minutes) would lose the reply, so the service runs each turn in the
  * background and accumulates the agent's message text as it streams.
  *
+ * A task idle for an hour is PARKED, not forgotten: its hold on the shared
+ * ACP connection is released (so the socket can close and the sandbox can
+ * idle-pause), but the record stays. The next `sendPrompt` reopens the same
+ * agent session (`session/load`), so the follow-up keeps the conversation,
+ * also after the sandbox was paused and resumed (the reopen asks for the
+ * sandbox to be running first). Parked tasks are forgotten after a week.
+ *
  * State is IN-MEMORY and per server process: a restart forgets every task
  * (the agent-side session survives in the sandbox and stays visible through
  * the session surface, it just can't be prompted through its task id again).
@@ -46,9 +53,12 @@ const log = createChildLogger("agent-tasks");
 
 const HARNESS_ANNOTATION = "atelier.dev/harness";
 
-/** A task with no activity for this long (and no turn in flight) is closed,
- * which releases the shared ACP connection's session hold. */
+/** A task with no activity for this long (and no turn in flight) is parked:
+ * its session hold on the shared ACP connection is released, and the next
+ * prompt reopens the session. */
 const DEFAULT_IDLE_TTL_MS = 60 * 60 * 1000;
+/** A parked task is forgotten after this long without a prompt. */
+const DEFAULT_RETAIN_MS = 7 * 24 * 60 * 60 * 1000;
 const DEFAULT_SWEEP_MS = 60 * 1000;
 const DEFAULT_MAX_TASKS_PER_OWNER = 20;
 /** Per-turn cap on retained agent text (the tail wins; see `appendText`). */
@@ -175,9 +185,15 @@ interface TaskRecord {
   sessionId: string;
   cwd: string;
   autoApprove: boolean;
+  harnessId: string;
   createdAt: number;
   updatedAt: number;
-  handle: AcpAgentSession;
+  /** The open agent session; `undefined` while the task is parked. */
+  handle: AcpAgentSession | undefined;
+  /** In-flight reopen of a parked or disconnected session. */
+  reopening?: Promise<void>;
+  /** In-flight release of the session handle a park detached. */
+  parking?: Promise<void>;
   turns: TaskTurn[];
   closed: boolean;
   unsubscribe: () => void;
@@ -196,6 +212,7 @@ export interface AgentTaskServiceDeps {
     | "todosFor"
   >;
   idleTtlMs?: number;
+  retainMs?: number;
   sweepMs?: number;
   maxTasksPerOwner?: number;
   maxReplyChars?: number;
@@ -216,12 +233,14 @@ export class AgentTaskService {
   private readonly tasks = new Map<string, TaskRecord>();
   private sweepTimer: ReturnType<typeof setTimeout> | undefined;
   private readonly idleTtlMs: number;
+  private readonly retainMs: number;
   private readonly sweepMs: number;
   private readonly maxTasksPerOwner: number;
   private readonly maxReplyChars: number;
 
   constructor(private readonly deps: AgentTaskServiceDeps) {
     this.idleTtlMs = deps.idleTtlMs ?? DEFAULT_IDLE_TTL_MS;
+    this.retainMs = deps.retainMs ?? DEFAULT_RETAIN_MS;
     this.sweepMs = deps.sweepMs ?? DEFAULT_SWEEP_MS;
     this.maxTasksPerOwner =
       deps.maxTasksPerOwner ?? DEFAULT_MAX_TASKS_PER_OWNER;
@@ -237,10 +256,7 @@ export class AgentTaskService {
     input: DispatchTaskInput,
   ): Promise<TaskView> {
     const prompt = this.validatePrompt(input.prompt);
-    const owned = [...this.tasks.values()].filter((t) => t.ownerId === ownerId);
-    if (owned.length >= this.maxTasksPerOwner) {
-      throw new ResourceExhaustedError("Agent tasks");
-    }
+    this.makeRoomFor(ownerId);
 
     const state = await this.deps.runtime.get(input.sandboxId);
     if (state.status !== "running") {
@@ -278,6 +294,7 @@ export class AgentTaskService {
       sessionId: handle.sessionId,
       cwd,
       autoApprove: input.autoApprove ?? false,
+      harnessId,
       createdAt: now,
       updatedAt: now,
       handle,
@@ -325,6 +342,18 @@ export class AgentTaskService {
       throw new ConflictError(
         `Task ${taskId} reached ${MAX_TURNS_PER_TASK} turns; dispatch a new task`,
       );
+    }
+    if (!task.handle?.live) {
+      if (task.reopening) {
+        throw new ConflictError(
+          `Task ${taskId} is reconnecting to its agent session; retry in a moment`,
+        );
+      }
+      task.updatedAt = Date.now();
+      task.reopening = this.reopen(task).finally(() => {
+        task.reopening = undefined;
+      });
+      await task.reopening;
     }
     this.startTurn(task, prompt);
     return this.view(task, {});
@@ -432,6 +461,7 @@ export class AgentTaskService {
 
   private async runTurn(task: TaskRecord, turn: TaskTurn): Promise<void> {
     try {
+      if (!task.handle) throw new Error("the task's agent session is closed");
       const response = await task.handle.prompt(turn.prompt);
       turn.stopReason = response.stopReason;
       turn.status =
@@ -452,7 +482,7 @@ export class AgentTaskService {
 
   private async cancelInFlight(task: TaskRecord): Promise<void> {
     try {
-      await task.handle.cancel();
+      await task.handle?.cancel();
     } catch (err) {
       log.warn({ taskId: task.id, err }, "Agent task cancel failed");
     }
@@ -692,6 +722,67 @@ export class AgentTaskService {
     return task;
   }
 
+  /** Reopen a parked (or disconnected) task's agent session by id, so the
+   * next turn continues the same conversation. */
+  private async reopen(task: TaskRecord): Promise<void> {
+    const state = await this.deps.runtime.get(task.sandboxId);
+    if (state.status !== "running") {
+      throw new ConflictError(
+        `Sandbox ${task.sandboxId} is ${state.status}; resume it (sandbox_lifecycle action=resume), then send the follow-up again: the task keeps its conversation`,
+      );
+    }
+    // Closing the old handle drops the session's update handler, so it must
+    // be done before the same session id is opened again.
+    await task.parking;
+    await this.releaseHandle(task);
+    const handle = await this.deps.dispatch.openSession({
+      sandboxId: task.sandboxId,
+      cwd: task.cwd,
+      harnessId: task.harnessId,
+      resumeSessionId: task.sessionId,
+      callbacks: { onUpdate: (n) => this.handleUpdate(task, n) },
+    });
+    if (task.closed) {
+      // Closed (manage_task close) while reconnecting: don't keep the hold.
+      await handle.close().catch(() => {});
+      throw new NotFoundError("Task", task.id);
+    }
+    task.handle = handle;
+    log.info(
+      { taskId: task.id, sandboxId: task.sandboxId },
+      "Agent task session reopened",
+    );
+  }
+
+  /** Release the task's agent session (its hold on the shared ACP
+   * connection, which is what lets the socket idle-close). */
+  private async releaseHandle(task: TaskRecord): Promise<void> {
+    const handle = task.handle;
+    task.handle = undefined;
+    if (!handle) return;
+    try {
+      await handle.close();
+    } catch (err) {
+      log.warn({ taskId: task.id, err }, "Agent task close failed");
+    }
+  }
+
+  /** Make room under the per-owner cap by forgetting the owner's oldest
+   * parked tasks; refuse only when tasks with an open session fill it. */
+  private makeRoomFor(ownerId: string): void {
+    const owned = [...this.tasks.values()]
+      .filter((t) => t.ownerId === ownerId)
+      .sort((a, b) => a.updatedAt - b.updatedAt);
+    let excess = owned.length - this.maxTasksPerOwner + 1;
+    for (const task of owned) {
+      if (excess <= 0) return;
+      if (task.handle || task.reopening) continue;
+      void this.dispose(task);
+      excess--;
+    }
+    if (excess > 0) throw new ResourceExhaustedError("Agent tasks");
+  }
+
   private async dispose(task: TaskRecord): Promise<void> {
     if (task.closed) return;
     const status = this.statusOf(task);
@@ -701,13 +792,8 @@ export class AgentTaskService {
     if (status === "running" || status === "waiting_permission") {
       await this.cancelInFlight(task);
     }
-    try {
-      // Releases the lifetime hold `openSession` took on the shared ACP
-      // connection, which is what lets the socket idle-close again.
-      await task.handle.close();
-    } catch (err) {
-      log.warn({ taskId: task.id, err }, "Agent task close failed");
-    }
+    await task.parking;
+    await this.releaseHandle(task);
     this.wake(task);
   }
 
@@ -726,15 +812,45 @@ export class AgentTaskService {
   }
 
   private sweep(): void {
-    const cutoff = Date.now() - this.idleTtlMs;
+    const now = Date.now();
     for (const task of [...this.tasks.values()]) {
       // A turn in flight is working, however quiet; everything else (incl. a
       // permission nobody answered) is reclaimable once it goes stale.
-      if (this.statusOf(task) === "running") continue;
-      if (task.updatedAt < cutoff) {
-        log.info({ taskId: task.id }, "Evicting idle agent task");
+      if (this.statusOf(task) === "running" || task.reopening) continue;
+      if (task.handle && task.updatedAt < now - this.idleTtlMs) {
+        log.info({ taskId: task.id }, "Parking idle agent task");
+        this.park(task);
+      } else if (!task.handle && task.updatedAt < now - this.retainMs) {
+        log.info({ taskId: task.id }, "Forgetting parked agent task");
         void this.dispose(task);
       }
     }
+  }
+
+  /** Let go of an idle task's agent session, keeping the task. The handle is
+   * detached at once (a prompt arriving now reopens rather than using it);
+   * a permission nobody answered is rejected first, as a cancel would. */
+  private park(task: TaskRecord): void {
+    const handle = task.handle;
+    if (!handle) return;
+    task.handle = undefined;
+    const waiting = this.statusOf(task) === "waiting_permission";
+    task.parking = (async () => {
+      if (waiting) {
+        await handle.cancel().catch(() => {});
+        for (const pending of this.pendingFor(task)) {
+          this.deps.dispatch.replyPermission(
+            task.sandboxId,
+            pending.id,
+            "reject",
+          );
+        }
+      }
+      await handle.close().catch((err) => {
+        log.warn({ taskId: task.id, err }, "Agent task close failed");
+      });
+    })().finally(() => {
+      task.parking = undefined;
+    });
   }
 }

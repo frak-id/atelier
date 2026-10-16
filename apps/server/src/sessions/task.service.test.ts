@@ -572,8 +572,27 @@ describe("ownership and listing", () => {
   });
 });
 
-describe("idle eviction", () => {
-  test("a stale finished task is closed and its session released", async () => {
+describe("idle parking", () => {
+  test("a stale finished task releases its session but stays", async () => {
+    const fake = makeFake();
+    const service = makeService(fake, { idleTtlMs: 30, sweepMs: 10 });
+    const { taskId } = await service.dispatchTask(OWNER, {
+      sandboxId: SANDBOX,
+      prompt: "x",
+    });
+    fake.say("first answer");
+    fake.finish();
+    await tick();
+
+    await Bun.sleep(120);
+
+    expect(fake.state.closed).toBe(1);
+    const view = await service.get(OWNER, taskId);
+    expect(view.status).toBe("idle");
+    expect(view.turn.reply).toBe("first answer");
+  });
+
+  test("a follow-up on a parked task reopens the same agent session", async () => {
     const fake = makeFake();
     const service = makeService(fake, { idleTtlMs: 30, sweepMs: 10 });
     const { taskId } = await service.dispatchTask(OWNER, {
@@ -582,12 +601,106 @@ describe("idle eviction", () => {
     });
     fake.finish();
     await tick();
-
     await Bun.sleep(120);
 
-    expect(fake.state.closed).toBe(1);
+    const view = await service.sendPrompt(OWNER, taskId, "and now?");
+
+    expect(view.status).toBe("running");
+    expect(fake.opened.at(-1)).toMatchObject({
+      resumeSessionId: SESSION,
+      harnessId: "opencode",
+    });
+    fake.say("still with you");
+    fake.finish();
+    await tick();
+    const after = await service.get(OWNER, taskId);
+    expect(after.sessionId).toBe(SESSION);
+    expect(after.turn.reply).toBe("still with you");
+    expect(after.turns).toHaveLength(2);
+  });
+
+  test("a follow-up after the connection dropped reopens the session", async () => {
+    const fake = makeFake();
+    const service = makeService(fake);
+    const { taskId } = await service.dispatchTask(OWNER, {
+      sandboxId: SANDBOX,
+      prompt: "x",
+    });
+    fake.finish();
+    await tick();
+    // The sandbox was paused and resumed: the old socket is gone.
+    fake.dropConnection();
+
+    await service.sendPrompt(OWNER, taskId, "again");
+
+    expect(fake.opened.map((o) => o.resumeSessionId)).toEqual([
+      undefined,
+      SESSION,
+    ]);
+    expect(fake.prompts.at(-1)?.text).toBe("again");
+  });
+
+  test("a follow-up on a paused sandbox asks for a resume and keeps the task", async () => {
+    const fake = makeFake();
+    const service = makeService(fake);
+    const { taskId } = await service.dispatchTask(OWNER, {
+      sandboxId: SANDBOX,
+      prompt: "x",
+    });
+    fake.finish();
+    await tick();
+    fake.dropConnection();
+    fake.state.status = "paused";
+
+    await expect(service.sendPrompt(OWNER, taskId, "again")).rejects.toThrow(
+      /paused; resume it/,
+    );
+
+    fake.state.status = "running";
+    const view = await service.sendPrompt(OWNER, taskId, "again");
+    expect(view.status).toBe("running");
+  });
+
+  test("a parked task is forgotten after the retention window", async () => {
+    const fake = makeFake();
+    const service = makeService(fake, {
+      idleTtlMs: 20,
+      retainMs: 40,
+      sweepMs: 10,
+    });
+    const { taskId } = await service.dispatchTask(OWNER, {
+      sandboxId: SANDBOX,
+      prompt: "x",
+    });
+    fake.finish();
+    await tick();
+
+    await Bun.sleep(150);
+
     expect(fake.listeners.size).toBe(0);
     await expect(service.get(OWNER, taskId)).rejects.toBeInstanceOf(
+      NotFoundError,
+    );
+  });
+
+  test("the per-owner cap forgets parked tasks before refusing", async () => {
+    const fake = makeFake();
+    const service = makeService(fake, {
+      maxTasksPerOwner: 1,
+      idleTtlMs: 20,
+      sweepMs: 10,
+    });
+    const first = await service.dispatchTask(OWNER, {
+      sandboxId: SANDBOX,
+      prompt: "x",
+    });
+    fake.finish();
+    await tick();
+    await Bun.sleep(80);
+
+    await service.dispatchTask(OWNER, { sandboxId: SANDBOX, prompt: "y" });
+
+    await expect(service.get(OWNER, first.taskId)).rejects.toBeInstanceOf(
       NotFoundError,
     );
   });

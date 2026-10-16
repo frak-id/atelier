@@ -46,7 +46,7 @@ import type {
   AgentTodo,
 } from "@frak/atelier-shared";
 import type { AgentClient } from "../../runtime/index.ts";
-import { ValidationError } from "../../shared/errors.ts";
+import { ConflictError, ValidationError } from "../../shared/errors.ts";
 import { safeNanoid } from "../../shared/lib/id.ts";
 import { createChildLogger } from "../../shared/lib/logger.ts";
 import type { PermissionNotifier } from "../permission-notifier.ts";
@@ -65,6 +65,10 @@ const log = createChildLogger("agent-dispatch");
  * as long as the agent works).
  */
 const ACP_HANDSHAKE_TIMEOUT_MS = 30_000;
+
+/** `session/load` restarts the agent on the stored session and replays its
+ * history, so it gets longer than a handshake. */
+const ACP_LOAD_TIMEOUT_MS = 120_000;
 
 /** Hard cap on `session/list` pagination (10 pages × ~50/page ballpark) so a
  * misbehaving agent can't make a list call loop forever. */
@@ -152,11 +156,18 @@ export interface OpenAgentSessionInput {
   harnessId?: string;
   mcpServers?: McpServer[];
   callbacks?: AgentSessionCallbacks;
+  /** Reopen this existing agent session (`session/load`, its history and
+   * context intact) instead of creating one. Needs the agent's
+   * `loadSession` capability. */
+  resumeSessionId?: string;
 }
 
 export interface AgentSession {
   readonly sessionId: string;
   readonly sandboxId: string;
+  /** False once the connection it was opened on is gone (acp restart,
+   * sandbox paused): prompting it fails, reopen it by id instead. */
+  readonly live: boolean;
   prompt(
     text: string,
     selection?: AgentModelSelection,
@@ -242,6 +253,8 @@ class SandboxAcpConnection {
   canCloseSession = false;
   /** Whether the agent advertised `sessionCapabilities.list` at initialize. */
   canListSessions = false;
+  /** Whether the agent advertised `loadSession` at initialize. */
+  canLoadSession = false;
   private holdCount = 0;
   private idleTimer: ReturnType<typeof setTimeout> | undefined;
 
@@ -319,6 +332,7 @@ class SandboxAcpConnection {
         init.agentCapabilities?.sessionCapabilities?.close != null;
       conn.canListSessions =
         init.agentCapabilities?.sessionCapabilities?.list != null;
+      conn.canLoadSession = init.agentCapabilities?.loadSession === true;
     } catch (err) {
       conn.close();
       throw err;
@@ -493,6 +507,26 @@ class SandboxAcpConnection {
     }
     this.emit({ resource: "sessions" });
     return created.sessionId;
+  }
+
+  /** Reopen an existing agent session. The agent replays its history as
+   * `session/update`s before answering; register the session's update
+   * handler after this resolves so the replay isn't taken for new output. */
+  async loadSession(
+    sessionId: string,
+    cwd: string,
+    mcpServers: McpServer[],
+  ): Promise<void> {
+    await withTimeout(
+      this.acp.request(methods.agent.session.load, {
+        sessionId,
+        cwd,
+        mcpServers,
+      }),
+      ACP_LOAD_TIMEOUT_MS,
+      "session/load",
+    );
+    this.emit({ resource: "sessions" });
   }
 
   registerUpdateHandler(
@@ -973,11 +1007,25 @@ export class AgentDispatch {
     };
     let sessionId: string;
     try {
-      sessionId = await conn.newSession(
-        input.cwd,
-        input.mcpServers ?? [],
-        titleFor(input.cwd),
-      );
+      if (input.resumeSessionId) {
+        if (!conn.canLoadSession) {
+          throw new ConflictError(
+            `The ${harness.id} agent can't reopen a session (no ACP loadSession capability); start a new one`,
+          );
+        }
+        await conn.loadSession(
+          input.resumeSessionId,
+          input.cwd,
+          input.mcpServers ?? [],
+        );
+        sessionId = input.resumeSessionId;
+      } else {
+        sessionId = await conn.newSession(
+          input.cwd,
+          input.mcpServers ?? [],
+          titleFor(input.cwd),
+        );
+      }
     } catch (err) {
       releaseHold();
       throw err;
@@ -989,6 +1037,9 @@ export class AgentDispatch {
     const session: AgentSession = {
       sessionId,
       sandboxId: input.sandboxId,
+      get live() {
+        return !conn.isClosed;
+      },
       prompt: async (text, selection) => {
         // Re-resolve the owning connection each prompt. If it dropped (acp
         // restart / idle-close race) and was replaced, the agent-side session
@@ -1036,7 +1087,12 @@ export class AgentDispatch {
     };
 
     log.info(
-      { sandboxId: input.sandboxId, sessionId, harness: harness.id },
+      {
+        sandboxId: input.sandboxId,
+        sessionId,
+        harness: harness.id,
+        resumed: input.resumeSessionId !== undefined,
+      },
       "ACP session opened",
     );
     return session;

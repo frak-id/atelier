@@ -32,16 +32,26 @@ export function makeFake(
   const prompts: PendingPrompt[] = [];
   const opened: OpenAgentSessionInput[] = [];
   const replies: { id: string; reply: string }[] = [];
-  const state = { cancelled: 0, closed: 0, nextSession: 1 };
+  /** `connection` counts drops: a handle is live while it matches. */
+  const state = {
+    cancelled: 0,
+    closed: 0,
+    nextSession: 1,
+    connection: 0,
+    status: opts.status ?? "running",
+  };
   let onUpdate: ((n: SessionNotification) => void) | undefined;
 
   const emit = () => {
     for (const l of [...listeners]) l({ resource: "permissions" });
   };
 
-  const handleFor = (sessionId: string) => ({
+  const handleFor = (sessionId: string, connection = state.connection) => ({
     sessionId,
     sandboxId: SANDBOX,
+    get live() {
+      return connection === state.connection;
+    },
     prompt: (text: string) =>
       new Promise<{ stopReason: string }>((resolve, reject) => {
         prompts.push({
@@ -64,7 +74,7 @@ export function makeFake(
     runtime: {
       get: async () => ({
         id: SANDBOX,
-        status: opts.status ?? "running",
+        status: state.status,
         annotations:
           "annotations" in opts
             ? opts.annotations
@@ -75,6 +85,7 @@ export function makeFake(
       openSession: async (input: OpenAgentSessionInput) => {
         opened.push(input);
         onUpdate = input.callbacks?.onUpdate;
+        if (input.resumeSessionId) return handleFor(input.resumeSessionId);
         const id = state.nextSession++;
         return handleFor(id === 1 ? SESSION : `${SESSION}-${id}`);
       },
@@ -138,6 +149,11 @@ export function makeFake(
     /** Finish the oldest in-flight turn. */
     finish(stopReason = "end_turn") {
       prompts.shift()?.resolve(stopReason);
+    },
+    /** The ACP connection drops (acp restart, sandbox paused): every handle
+     * opened so far stops being live. */
+    dropConnection() {
+      state.connection++;
     },
   };
 }
