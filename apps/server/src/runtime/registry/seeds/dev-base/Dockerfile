@@ -45,7 +45,10 @@ ENV LC_ALL=C.UTF-8
 # sandbox-boot.sh formats it ext4 and mounts it at /data on first boot
 # (docs/plans/toolset-inplace-update-fix-options.md §3). blkid/mountpoint come
 # from util-linux and cmp (the mkfs guard's zero-probe) from diffutils — both
-# Essential in Debian, so present in -slim.
+# Essential in Debian, so present in -slim. libnss3 (+ libnspr4): headless
+# Chrome (e.g. Remotion's chrome-headless-shell) won't start without it;
+# lacking it, a prebuild had to `apt-get download` + extract it into ~/.local
+# and point LD_LIBRARY_PATH at it.
 RUN apt-get update && apt-get install -y --no-install-recommends \
     ca-certificates \
     chrony \
@@ -67,6 +70,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     erofs-utils \
     e2fsprogs \
     rsync \
+    libnss3 \
     && apt-get clean \
     && rm -rf /var/lib/apt/lists/* /tmp/* /var/tmp/* \
     && rm -rf /usr/share/doc /usr/share/man /usr/share/info /usr/share/lintian \
