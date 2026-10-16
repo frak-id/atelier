@@ -484,11 +484,12 @@ class SandboxAcpConnection {
 
   // ── sessions ───────────────────────────────────────────────────────────────
 
+  /** Create a session; `meta` is the response's `_meta` (harness extras). */
   async newSession(
     cwd: string,
     mcpServers: McpServer[],
     title: string,
-  ): Promise<string> {
+  ): Promise<{ sessionId: string; meta: Record<string, unknown> | undefined }> {
     const created = await withTimeout(
       this.acp.request(methods.agent.session.new, { cwd, mcpServers }),
       ACP_HANDSHAKE_TIMEOUT_MS,
@@ -506,7 +507,7 @@ class SandboxAcpConnection {
       });
     }
     this.emit({ resource: "sessions" });
-    return created.sessionId;
+    return { sessionId: created.sessionId, meta: created._meta ?? undefined };
   }
 
   /** Reopen an existing agent session. The agent replays its history as
@@ -946,7 +947,7 @@ export class AgentDispatch {
     directory: string,
   ): Promise<{ sessionId: string; directory: string }> {
     return this.withHold(sandboxId, async (conn) => {
-      const sessionId = await conn.newSession(
+      const { sessionId } = await conn.newSession(
         directory,
         [],
         titleFor(directory),
@@ -1006,6 +1007,7 @@ export class AgentDispatch {
       conn.release();
     };
     let sessionId: string;
+    let startupNotice: string | undefined;
     try {
       if (input.resumeSessionId) {
         if (!conn.canLoadSession) {
@@ -1020,18 +1022,23 @@ export class AgentDispatch {
         );
         sessionId = input.resumeSessionId;
       } else {
-        sessionId = await conn.newSession(
+        const created = await conn.newSession(
           input.cwd,
           input.mcpServers ?? [],
           titleFor(input.cwd),
         );
+        sessionId = created.sessionId;
+        startupNotice = harness.startupNotice?.(created.meta);
       }
     } catch (err) {
       releaseHold();
       throw err;
     }
     if (input.callbacks?.onUpdate) {
-      conn.registerUpdateHandler(sessionId, input.callbacks.onUpdate);
+      conn.registerUpdateHandler(
+        sessionId,
+        withoutNotices(harness, startupNotice, input.callbacks.onUpdate),
+      );
     }
 
     const session: AgentSession = {
@@ -1109,6 +1116,32 @@ export class AgentDispatch {
       );
     }
   }
+}
+
+/** `onUpdate` minus the message chunks that are the harness talking about
+ * itself (its startup banner, once; status notices), which a reader of the
+ * agent's answer (a task reply) must not get. */
+function withoutNotices(
+  harness: HarnessDispatchAdapter,
+  startupNotice: string | undefined,
+  onUpdate: (notification: SessionNotification) => void,
+): (notification: SessionNotification) => void {
+  let banner = startupNotice;
+  return (notification) => {
+    const { update } = notification;
+    if (update.sessionUpdate === "agent_message_chunk") {
+      if (
+        banner !== undefined &&
+        update.content.type === "text" &&
+        update.content.text === banner
+      ) {
+        banner = undefined;
+        return;
+      }
+      if (harness.isNotice?.(update._meta)) return;
+    }
+    onUpdate(notification);
+  };
 }
 
 /** Synthesized title for a freshly created session (before any prompt) or the

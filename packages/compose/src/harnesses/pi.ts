@@ -76,3 +76,32 @@ export const piHarness: HarnessComposer = {
   id: "pi",
   compose: (opts) => composePi(opts as ComposePiOptions | undefined),
 };
+
+// ── dispatch: what pi-acp says about itself ─────────────────────────────────
+// pi-acp sends its own status text as ordinary `agent_message_chunk`s, which
+// a client showing the agent's answer must leave out. Registered by the
+// server bootstrap as pi's dispatch adapter (`startupNotice` / `isNotice`).
+
+type AcpMeta = Record<string, unknown> | null | undefined;
+
+/** pi-acp's own `_meta` entry. */
+function piAcpMeta(meta: AcpMeta): Record<string, unknown> | undefined {
+  const value = meta?.piAcp;
+  return value && typeof value === "object"
+    ? (value as Record<string, unknown>)
+    : undefined;
+}
+
+/** The startup banner (pi version, extensions, an update notice) pi-acp
+ * sends as a message chunk right after `session/new`; the same text is in
+ * that response's `_meta.piAcp.startupInfo`. */
+export function piStartupNotice(meta: AcpMeta): string | undefined {
+  const info = piAcpMeta(meta)?.startupInfo;
+  return typeof info === "string" && info.length > 0 ? info : undefined;
+}
+
+/** A pi extension's status notice ("Observational memory: observer
+ * running…"), tagged `_meta.piAcp.notify` on its message chunk. */
+export function piIsNotice(meta: AcpMeta): boolean {
+  return piAcpMeta(meta)?.notify != null;
+}

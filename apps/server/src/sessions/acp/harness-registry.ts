@@ -6,7 +6,8 @@
  * field, composed client-side by `@atelier/compose`). What this interface
  * covers is the ACP session-*dispatch* behavior that isn't spec data: how a
  * manager-side model/agent selection maps to `session/set_config_option`
- * assignments (ACP does not standardize model selection).
+ * assignments (ACP does not standardize model selection), and which message
+ * chunks are the harness reporting on itself rather than the agent's answer.
  *
  * The interface + registry mechanism is kept here (neutral); the concrete
  * opencode adapter lives in `@atelier/compose` and is registered by the
@@ -35,12 +36,25 @@ export interface HarnessDispatchAdapter {
    * Adapters that don't support selection return [].
    */
   sessionConfig?(selection: AgentModelSelection): SessionConfigAssignment[];
+  /**
+   * A startup banner the harness sends as a message chunk right after
+   * `session/new`, read from that response's `_meta`; the first chunk with
+   * exactly this text is left out of the session's updates.
+   */
+  startupNotice?(meta: AcpMeta): string | undefined;
+  /** Whether a message chunk, by its `_meta`, is a status notice of the
+   * harness (or one of its extensions); those are left out too. */
+  isNotice?(meta: AcpMeta): boolean;
 }
+
+/** An ACP `_meta` object. */
+type AcpMeta = Record<string, unknown> | null | undefined;
 
 const registry = new Map<string, HarnessDispatchAdapter>();
 
 /** Registration is OPTIONAL — only for harnesses that need a `sessionConfig`
- * translation (opencode). Any ACP-speaking harness works unregistered. */
+ * translation (opencode) or say things about themselves in message chunks
+ * (pi). Any ACP-speaking harness works unregistered. */
 export function registerHarnessDispatch(adapter: HarnessDispatchAdapter): void {
   registry.set(adapter.id, adapter);
 }

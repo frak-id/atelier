@@ -54,13 +54,18 @@ import { IdleReaper } from "./idle-reaper.ts";
  *  - compose-side `registerHarness`: server-side fallback composition when a
  *    toolbox/org-policy names a harness (client-composed specs bypass it);
  *  - `registerHarnessDispatch`: only for harnesses that translate a
- *    model/agent selection into ACP `session/set_config_option` (opencode
- *    does; pi and unknown harnesses dispatch config-free).
+ *    model/agent selection into ACP `session/set_config_option` (opencode)
+ *    or send status text of their own as message chunks (pi), which tasks
+ *    leave out of the agent's reply; unknown harnesses dispatch as is.
  */
 async function registerBuiltinHarnesses(container: ServerContainer) {
-  const { registerHarness, opencodeHarness, piHarness } = await import(
-    "@atelier/compose"
-  );
+  const {
+    registerHarness,
+    opencodeHarness,
+    piHarness,
+    piIsNotice,
+    piStartupNotice,
+  } = await import("@atelier/compose");
   registerHarness(opencodeHarness);
   registerHarness(piHarness);
   const { opencodeSessionConfig } = await import(
@@ -69,6 +74,11 @@ async function registerBuiltinHarnesses(container: ServerContainer) {
   container.registerHarnessDispatch({
     id: "opencode",
     sessionConfig: opencodeSessionConfig,
+  });
+  container.registerHarnessDispatch({
+    id: "pi",
+    startupNotice: piStartupNotice,
+    isNotice: piIsNotice,
   });
 }
 

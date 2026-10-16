@@ -32,6 +32,12 @@ beforeAll(async () => {
     await import("@agentclientprotocol/sdk"));
   const { registerHarnessDispatch } = await import("./harness-registry.ts");
   registerHarnessDispatch({ id: "opencode" });
+  const { piIsNotice, piStartupNotice } = await import("@atelier/compose");
+  registerHarnessDispatch({
+    id: "pi",
+    startupNotice: piStartupNotice,
+    isNotice: piIsNotice,
+  });
 });
 
 interface FakeSession {
@@ -52,6 +58,11 @@ class FakeAcpAgent {
   readonly loaded: string[] = [];
   listCallCount = 0;
   promptDelayMs = 5;
+  /** Like pi-acp: `session/new` reports it in `_meta.piAcp.startupInfo`
+   * and it also arrives as a message chunk (here: when the turn starts). */
+  startupBanner: string | undefined;
+  /** Message chunks each prompt streams before it ends. */
+  promptChunks: { text: string; meta?: Record<string, unknown> }[] = [];
   clientCtx?: AgentContext;
   private nextId = 1;
 
@@ -76,7 +87,9 @@ class FakeAcpAgent {
         }
         const sessionId = `sess-${this.nextId++}`;
         this.sessions.set(sessionId, { sessionId, cwd: ctx.params.cwd });
-        return { sessionId };
+        return this.startupBanner
+          ? { sessionId, _meta: { piAcp: { startupInfo: this.startupBanner } } }
+          : { sessionId };
       })
       .onRequest(methods.agent.session.load, async (ctx) => {
         if (!this.sessions.has(ctx.params.sessionId)) {
@@ -108,7 +121,19 @@ class FakeAcpAgent {
       .onRequest(methods.agent.session.setConfigOption, () => ({
         configOptions: [],
       }))
-      .onRequest(methods.agent.session.prompt, async () => {
+      .onRequest(methods.agent.session.prompt, async (ctx) => {
+        const say = (text: string, meta?: Record<string, unknown>) =>
+          ctx.client.notify(methods.client.session.update, {
+            sessionId: ctx.params.sessionId,
+            update: {
+              sessionUpdate: "agent_message_chunk",
+              content: { type: "text", text },
+              ...(meta ? { _meta: meta } : {}),
+            },
+          });
+        if (this.startupBanner) await say(this.startupBanner);
+        for (const chunk of this.promptChunks)
+          await say(chunk.text, chunk.meta);
         await new Promise((resolve) => setTimeout(resolve, this.promptDelayMs));
         return { stopReason: "end_turn" as const };
       })
@@ -403,6 +428,46 @@ describe("AgentDispatch × session/list", () => {
     expect(fakeAgent.sessions.size).toBe(1); // no new session
     expect(updates).toEqual([]); // the replayed history isn't new output
     expect((await session.prompt("go on")).stopReason).toBe("end_turn");
+  });
+
+  test("pi's startup banner and extension notices stay out of a session's updates", async () => {
+    const fakeAgent = new FakeAcpAgent();
+    fakeAgent.startupBanner =
+      "pi v1.2.0\n---\n\n## Extensions\n- npm:pi-context";
+    fakeAgent.promptChunks = [
+      {
+        text: "Observational memory: observer running\u2026",
+        meta: { piAcp: { notify: { level: "info" } } },
+      },
+      { text: "Done." },
+    ];
+    const { dispatch, stop } = makeDispatch(fakeAgent);
+    cleanups.push(stop);
+    const replyOf = async (harnessId?: string) => {
+      const texts: string[] = [];
+      const session = await dispatch.openSession({
+        sandboxId: SANDBOX_ID,
+        cwd: "/home/dev",
+        harnessId,
+        callbacks: {
+          onUpdate: ({ update }) => {
+            if (
+              update.sessionUpdate === "agent_message_chunk" &&
+              update.content.type === "text"
+            ) {
+              texts.push(update.content.text);
+            }
+          },
+        },
+      });
+      await session.prompt("hi");
+      await session.close();
+      return texts;
+    };
+
+    expect(await replyOf("pi")).toEqual(["Done."]);
+    // Without pi's adapter nothing tells them apart.
+    expect(await replyOf(undefined)).toHaveLength(3);
   });
 
   test("resumeSessionId on an agent without loadSession is a conflict", async () => {

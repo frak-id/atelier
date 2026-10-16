@@ -422,5 +422,9 @@ the MCP tools in `api/mcp/tools/tasks.ts` are a thin binding.
   context intact (the sandbox must be running; a paused one is resumed
   first). Parked tasks are forgotten after a week, or earlier when the
   owner's cap needs room.
+- A reply holds the agent's answer only: harness status text sent as message
+  chunks (pi-acp's startup banner and extension notices, tagged
+  `_meta.piAcp.notify`) is left out, through the harness's dispatch adapter
+  (`startupNotice` / `isNotice`).
 
 Full API documentation is available at `/swagger` when the server is running.
