@@ -4,7 +4,7 @@ version = "3.0.2"
 edition = "2024"
 
 [dependencies]
-tokio = { version = "1", features = ["rt-multi-thread", "macros", "fs", "io-util", "time", "sync", "net", "process"] }
+tokio = { version = "1.54", features = ["rt-multi-thread", "macros", "fs", "io-util", "time", "sync", "net", "process"] }
 hyper = { version = "1", features = ["server", "http1"] }
 hyper-util = { version = "0.1", features = ["tokio"] }
 http-body-util = "0.1"

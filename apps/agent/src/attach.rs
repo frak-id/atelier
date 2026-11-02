@@ -275,7 +275,9 @@ pub fn setup_pty(
             Ok(())
         });
     }
-    let master = Arc::new(AsyncFd::new(PtyMaster { fd: master })?);
+    // SAFETY: `master` was just opened and is owned by `PtyMaster`, which never
+    // reassigns it and only closes it on drop, after the AsyncFd deregisters.
+    let master = Arc::new(unsafe { AsyncFd::register(PtyMaster { fd: master }) }?);
     // Parent keeps the master; the slave guard is closed by the caller *after*
     // spawn so the child inherits it at fork.
     Ok((master, SlaveFd(slave)))
