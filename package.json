@@ -13,9 +13,9 @@
     "version:bump": "bun run scripts/bump-version.ts"
   },
   "devDependencies": {
-    "@biomejs/biome": "^2.5.14",
-    "@types/bun": "^1.4.2",
-    "knip": "^6.38.0",
+    "@biomejs/biome": "^2.6.4",
+    "@types/bun": "^1.4.4",
+    "knip": "^6.44.1",
     "typescript": "^7.0.2"
   },
   "peerDependencies": {
@@ -26,7 +26,7 @@
     "apps/*"
   ],
   "overrides": {
-    "@types/bun": "^1.4.2",
+    "@types/bun": "^1.4.4",
     "typescript": "^7.0.2"
   },
   "dependencies": {}

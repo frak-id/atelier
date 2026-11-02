@@ -17,6 +17,6 @@
     "@sinclair/typebox": "^0.34.52"
   },
   "devDependencies": {
-    "@types/bun": "^1.4.2"
+    "@types/bun": "^1.4.4"
   }
 }

@@ -45,13 +45,13 @@
     "@elysiajs/eden": "^1.4.9",
     "commander": "^15.0.0",
     "picocolors": "^1.1.1",
-    "ws": "^8.21.3"
+    "ws": "^8.22.1"
   },
   "devDependencies": {
     "@atelier/spec": "workspace:*",
     "@atelier/server": "workspace:*",
-    "@types/node": "^22.20.4",
-    "@types/ws": "^8.18.1",
+    "@types/node": "^22.20.5",
+    "@types/ws": "^8.18.2",
     "esbuild": "^0.28.2"
   }
 }
