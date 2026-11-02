@@ -82,7 +82,7 @@
       "name": "@atelier/server",
       "version": "3.0.2",
       "dependencies": {
-        "@agentclientprotocol/sdk": "^1.9.0",
+        "@agentclientprotocol/sdk": "^2.4.0",
         "@atelier/compose": "workspace:*",
         "@atelier/spec": "workspace:*",
         "@elysiajs/cors": "^1.4.2",
@@ -142,7 +142,7 @@
     "typescript": "^7.0.2",
   },
   "packages": {
-    "@agentclientprotocol/sdk": ["@agentclientprotocol/sdk@1.9.0", "", { "peerDependencies": { "zod": "^3.25.0 || ^4.0.0" } }, "sha512-saCOTPYBK1iqWqJFAYHXbg3+zCoFXyZZFoqQAwdTWkbrZZPpAETr80QOnYr2l+dzPwL0jpNhn3eDY8MoEIDbUA=="],
+    "@agentclientprotocol/sdk": ["@agentclientprotocol/sdk@2.4.0", "", { "peerDependencies": { "@modelcontextprotocol/server": "^2.4.0", "zod": "^3.25.76 || ^4.0.0" }, "optionalPeers": ["@modelcontextprotocol/server"] }, "sha512-7qJ8nnyj7WesC5ve185ioTpB2/svQoeGV4HA4nLEhgDUrcmBe54/08VcXc/oL4p14tDbxxECZzdYmUYQ+4l+Wg=="],
 
     "@atelier/compose": ["@atelier/compose@workspace:packages/compose"],
 
