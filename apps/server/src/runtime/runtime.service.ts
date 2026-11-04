@@ -38,6 +38,8 @@ import {
   type ToolsetCaptureRequest,
   type ToolsetEntry,
   type ToolsetRef,
+  type ToolsetRefreshRequest,
+  type ToolsetRefreshResult,
   withoutSurface,
 } from "@atelier/spec";
 import {
@@ -90,6 +92,7 @@ import {
   type ToolsetRecord,
   type ToolsetStore,
 } from "./store.ts";
+import { fingerprintScript, parseFingerprint } from "./toolset-fingerprint.ts";
 
 const log = createChildLogger("runtime");
 
@@ -1588,7 +1591,7 @@ export class RuntimeService {
   private async withThrowawayPod<T>(
     tempId: string,
     spec: SandboxSpec,
-    input: { image: string; snapshotName?: string },
+    input: { image: string; snapshotName?: string; toolsets?: string[] },
     cleanupFailureMessage: string,
     fn: (boot: BootOutput) => Promise<T>,
   ): Promise<T> {
@@ -1603,6 +1606,121 @@ export class RuntimeService {
       await this.backend
         .cleanup(tempId)
         .catch((err) => log.warn({ tempId, err }, cleanupFailureMessage));
+    }
+  }
+
+  /**
+   * Refresh a toolset without a live sandbox (docs/toolbox-versions.md
+   * §10): boot a throwaway pod with `base` materialized into the home, run
+   * `steps` as `dev`, then capture `paths` through the agent's capture route
+   * (same default excludes + secret scan as a sandbox capture). The paths
+   * are fingerprinted before and after the steps; when both are known and
+   * equal, nothing is pushed and the result is `changed: false`. An unknown
+   * fingerprint never skips: it captures, at worst an extra version.
+   * Result-keyed and private like a capture: the caller decides on publish.
+   */
+  async refreshToolset(
+    req: ToolsetRefreshRequest,
+    signal?: AbortSignal,
+    onLog?: OnLog,
+  ): Promise<ToolsetRefreshResult> {
+    if (req.steps.length === 0) {
+      throw new ValidationError("a toolset refresh needs at least one step");
+    }
+    if (req.paths.length === 0) {
+      throw new ValidationError("a toolset refresh needs paths to capture");
+    }
+    // Built before the pod boots: a bad path fails fast, not after a boot.
+    const fingerprint = fingerprintScript(req.paths);
+    const source = req.source ?? { image: defaultImage() };
+    const { image, snapshotName } = await this.resolveSource(source);
+    const tempId = `tr-${safeNanoid()}`;
+    const target = `${qualifyImageName(`toolsets/${req.name}`)}:refresh-${safeNanoid()}`;
+
+    return this.withThrowawayPod(
+      tempId,
+      toolsetToSpec(source),
+      {
+        image,
+        snapshotName,
+        toolsets: [this.resolveToolsetRef(req.base.ref)],
+      },
+      "toolset refresh pod cleanup failed",
+      async () => {
+        onLog?.(`Starting from ${req.base.ref}`);
+        const before = await this.fingerprintPaths(tempId, fingerprint, signal);
+        for (const step of req.steps) {
+          signal?.throwIfAborted();
+          await this.execStep(tempId, step, "dev", signal, onLog);
+        }
+        signal?.throwIfAborted();
+        const after = await this.fingerprintPaths(tempId, fingerprint, signal);
+        if (before !== undefined && before === after) {
+          onLog?.("Nothing changed in the toolset paths; nothing to save.");
+          log.info(
+            { name: req.name, base: req.base.ref },
+            "toolset refresh: unchanged",
+          );
+          return { changed: false };
+        }
+        onLog?.(`Capturing ${req.paths.join(", ")}…`);
+        const { digest } = await this.agent.captureToolset(
+          tempId,
+          { target, paths: req.paths, exclude: [], overrides: [] },
+          signal,
+        );
+        const ref = `toolsets/${req.name}@${digest}`;
+        this.toolsets.put({
+          // Result-keyed like a capture (see `captureToolset`).
+          hash: createHash("sha256")
+            .update(`${req.name}\u0000${digest}`)
+            .digest("hex"),
+          name: req.name,
+          ref,
+          paths: req.paths,
+          provenance: {
+            kind: "refreshed",
+            base: req.base.ref,
+            steps: req.steps,
+          },
+          private: true,
+          createdAt: new Date().toISOString(),
+        });
+        onLog?.(`Pushed ${ref}`);
+        log.info({ ref, base: req.base.ref }, "toolset refreshed");
+        return { changed: true, ref };
+      },
+    );
+  }
+
+  /** Hash a throwaway pod's toolset paths (`toolset-fingerprint.ts`), or
+   * `undefined` when it can't be told (the exec failed or printed no
+   * hash): the caller then treats the content as changed. */
+  private async fingerprintPaths(
+    tempId: string,
+    script: string,
+    signal?: AbortSignal,
+  ): Promise<string | undefined> {
+    try {
+      const res = await this.agent.exec(tempId, script, {
+        timeout: 300_000,
+        user: "dev",
+        workdir: "/home/dev",
+        signal,
+      });
+      const value =
+        res.exitCode === 0 ? parseFingerprint(res.stdout) : undefined;
+      if (value === undefined) {
+        log.warn(
+          { tempId, exitCode: res.exitCode, stderr: res.stderr.slice(0, 500) },
+          "toolset fingerprint unavailable; treating as changed",
+        );
+      }
+      return value;
+    } catch (err) {
+      signal?.throwIfAborted();
+      log.warn({ tempId, err }, "toolset fingerprint failed");
+      return undefined;
     }
   }
 

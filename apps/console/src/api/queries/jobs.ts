@@ -88,6 +88,8 @@ export function jobKindLabel(kind: Job["kind"]): string {
       return "Toolset build";
     case "toolset-capture":
       return "Toolset capture";
+    case "toolbox-refresh":
+      return "Toolbox refresh";
     case "image-build":
       return "Image build";
     case "sandbox-create":

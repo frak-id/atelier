@@ -74,6 +74,29 @@ export function useUpdateToolbox() {
   });
 }
 
+/**
+ * Start a refresh (POST /api/toolboxes/:id/refresh): the server runs the
+ * toolbox's update commands over its current version and pins the result.
+ * Answers `202` with the job (or the one already running for this toolbox);
+ * the SSE feed (`useJobEvents`) delivers its progress and outcome.
+ */
+export function useRefreshToolbox() {
+  return useMutation({
+    mutationFn: async (id: string) => {
+      const { data, error } = await api.api.toolboxes({ id }).refresh.post();
+      if (error)
+        throw new Error(errorMessage(error, "Failed to start the refresh"));
+      return data;
+    },
+    onSuccess: (job) => {
+      toast.success(
+        job?.status === "queued" ? "Refresh queued" : "Refresh started",
+      );
+    },
+    onError: (error) => toast.error(error.message),
+  });
+}
+
 export function useDeleteToolbox() {
   const queryClient = useQueryClient();
   return useMutation({

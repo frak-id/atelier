@@ -54,6 +54,61 @@ const ToolboxPathsSchema = Type.Array(
 );
 
 /**
+ * Update commands a refresh runs (docs/toolbox-versions.md §10), e.g.
+ * `pi update --all`. A refresh boots a throwaway pod from the toolbox's
+ * current version, runs these as `dev` in a login shell, and saves the
+ * toolbox's `paths[]` as a new pinned version. Empty = no refresh.
+ */
+const RefreshStepsSchema = Type.Array(
+  Type.String({ minLength: 1, maxLength: 2000 }),
+  { maxItems: 100 },
+);
+
+/**
+ * When a refresh runs on its own: a 5-field cron expression or a nickname
+ * (`@daily`, `@weekly`), read in UTC. Validated by the server's cron parser
+ * (the browser-safe schema only bounds the string).
+ */
+export const ToolboxRefreshScheduleSchema = Type.String({
+  minLength: 1,
+  maxLength: 100,
+  description: "Cron expression (UTC), e.g. `0 4 * * *` or `@daily`.",
+});
+
+/** What started a refresh. */
+export const ToolboxRefreshTriggerSchema = Type.Union(
+  [Type.Literal("manual"), Type.Literal("schedule")],
+  { $id: "ToolboxRefreshTrigger" },
+);
+export type ToolboxRefreshTrigger = Static<typeof ToolboxRefreshTriggerSchema>;
+
+/**
+ * The outcome of a toolbox's last finished refresh (server-written, never in
+ * a create/patch body). `updated`: a new version was saved (`versionId`) and
+ * pinned unless the pin moved during the refresh (`pinned: false`).
+ * `unchanged`: the saved files hashed the same as the current version, so no
+ * version was made. `failed`: an update command or the capture failed
+ * (`error`); the pin is untouched.
+ */
+export const ToolboxRefreshStatusSchema = Type.Object(
+  {
+    at: Type.String(),
+    trigger: ToolboxRefreshTriggerSchema,
+    outcome: Type.Union([
+      Type.Literal("updated"),
+      Type.Literal("unchanged"),
+      Type.Literal("failed"),
+    ]),
+    versionId: Type.Optional(Type.String()),
+    pinned: Type.Optional(Type.Boolean()),
+    error: Type.Optional(Type.String()),
+    jobId: Type.Optional(Type.String()),
+  },
+  { additionalProperties: false, $id: "ToolboxRefreshStatus" },
+);
+export type ToolboxRefreshStatus = Static<typeof ToolboxRefreshStatusSchema>;
+
+/**
  * Optional harness this toolbox provides (entities-toolbox.md). A harness id
  * (e.g. "opencode", "pi") the api/ seam composes into the spawn's spec when no
  * higher-precedence harness is present (spec > toolbox > org policy). The
@@ -94,6 +149,10 @@ export const ToolboxConfigInputSchema = Type.Object(
      * misleadingly implied on/off existence).
      */
     autoInject: Type.Optional(Type.Boolean()),
+    /** Update commands a refresh runs (default none = no refresh). */
+    refresh: Type.Optional(RefreshStepsSchema),
+    /** Run a refresh on this schedule (needs `refresh` commands). */
+    refreshSchedule: Type.Optional(ToolboxRefreshScheduleSchema),
   },
   { additionalProperties: false, $id: "ToolboxConfigInput" },
 );
@@ -114,6 +173,11 @@ export const ToolboxConfigSchema = Type.Object(
     processes: Type.Optional(SurfaceProcessesSchema),
     ports: Type.Optional(SurfacePortsSchema),
     autoInject: Type.Boolean(),
+    refresh: RefreshStepsSchema,
+    refreshSchedule: Type.Optional(ToolboxRefreshScheduleSchema),
+    /** When the schedule next runs a refresh (absent: not scheduled). */
+    nextRefreshAt: Type.Optional(Type.String()),
+    lastRefresh: Type.Optional(ToolboxRefreshStatusSchema),
     createdAt: Type.String(),
     updatedAt: Type.String(),
   },
@@ -140,6 +204,11 @@ export const ToolboxConfigPatchSchema = Type.Object(
     processes: Type.Optional(SurfaceProcessesSchema),
     ports: Type.Optional(SurfacePortsSchema),
     autoInject: Type.Optional(Type.Boolean()),
+    refresh: Type.Optional(RefreshStepsSchema),
+    /** `null` turns the schedule off; an absent key keeps it. */
+    refreshSchedule: Type.Optional(
+      Type.Union([ToolboxRefreshScheduleSchema, Type.Null()]),
+    ),
   },
   { additionalProperties: false, $id: "ToolboxConfigPatch" },
 );

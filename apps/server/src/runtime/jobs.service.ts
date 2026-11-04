@@ -139,17 +139,26 @@ export class JobService {
    * sandbox under one. Reads only the in-process handles, never the table.
    */
   hasActiveFor(sandboxId: string): boolean {
-    const ids = [...this.controllers.keys(), ...this.waiting.map((w) => w.id)];
-    return ids.some((id) => {
-      const job = this.store.get(id);
-      return (
-        job !== undefined &&
-        !isJobTerminal(job.status) &&
-        (job.target === sandboxId ||
+    return (
+      this.findActive(
+        (job) =>
+          job.target === sandboxId ||
           job.metadata?.sandboxId === sandboxId ||
-          job.metadata?.forkOf === sandboxId)
-      );
-    });
+          job.metadata?.forkOf === sandboxId,
+      ) !== undefined
+    );
+  }
+
+  /** The first running or queued job of this process that `match`es (e.g.
+   * a refresh already in flight for a toolbox). Reads only the in-process
+   * handles, never the table. */
+  findActive(match: (job: JobRecord) => boolean): JobRecord | undefined {
+    const ids = [...this.controllers.keys(), ...this.waiting.map((w) => w.id)];
+    for (const id of ids) {
+      const job = this.store.get(id);
+      if (job && !isJobTerminal(job.status) && match(job)) return job;
+    }
+    return undefined;
   }
 
   /**

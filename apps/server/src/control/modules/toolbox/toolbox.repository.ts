@@ -1,5 +1,9 @@
-import type { ToolboxConfig, ToolboxOwner } from "@atelier/spec";
-import { and, asc, eq } from "drizzle-orm";
+import type {
+  ToolboxConfig,
+  ToolboxOwner,
+  ToolboxRefreshStatus,
+} from "@atelier/spec";
+import { and, asc, eq, isNotNull, lte } from "drizzle-orm";
 import { getDatabase } from "../../db/client.ts";
 import { entityToolboxes } from "../../db/schema.ts";
 
@@ -17,6 +21,10 @@ function rowToConfig(row: typeof entityToolboxes.$inferSelect): ToolboxConfig {
     processes: row.processes ?? undefined,
     ports: row.ports ?? undefined,
     autoInject: row.autoInject === 1,
+    refresh: row.refresh,
+    refreshSchedule: row.refreshSchedule ?? undefined,
+    nextRefreshAt: row.nextRefreshAt ?? undefined,
+    lastRefresh: row.lastRefresh ?? undefined,
     createdAt: row.createdAt,
     updatedAt: row.updatedAt,
   };
@@ -89,6 +97,9 @@ export class ToolboxRepository {
         processes: record.processes,
         ports: record.ports,
         autoInject: record.autoInject ? 1 : 0,
+        refresh: record.refresh,
+        refreshSchedule: record.refreshSchedule ?? null,
+        nextRefreshAt: record.nextRefreshAt ?? null,
         createdAt: record.createdAt,
         updatedAt: record.updatedAt,
       })
@@ -96,11 +107,60 @@ export class ToolboxRepository {
     return record;
   }
 
+  /**
+   * Toolboxes whose scheduled refresh is due at `nowIso`, oldest-due first.
+   * Only rows with a `nextRefreshAt` (a schedule AND update commands) can
+   * match. ISO-8601 UTC strings compare correctly as text.
+   */
+  listDueForRefresh(nowIso: string): ToolboxConfig[] {
+    return getDatabase()
+      .select()
+      .from(entityToolboxes)
+      .where(
+        and(
+          isNotNull(entityToolboxes.nextRefreshAt),
+          lte(entityToolboxes.nextRefreshAt, nowIso),
+        ),
+      )
+      .orderBy(asc(entityToolboxes.nextRefreshAt))
+      .all()
+      .map(rowToConfig);
+  }
+
+  /** Scheduler bookkeeping, not a config edit: `updatedAt` stays put. */
+  setNextRefreshAt(id: string, nextRefreshAt: string | null): void {
+    getDatabase()
+      .update(entityToolboxes)
+      .set({ nextRefreshAt })
+      .where(eq(entityToolboxes.id, id))
+      .run();
+  }
+
+  /** Record a finished refresh's outcome (not a config edit either). */
+  setLastRefresh(id: string, status: ToolboxRefreshStatus): void {
+    getDatabase()
+      .update(entityToolboxes)
+      .set({ lastRefresh: status })
+      .where(eq(entityToolboxes.id, id))
+      .run();
+  }
+
   update(
     id: string,
-    patch: Partial<Omit<ToolboxConfig, "harness" | "source">> & {
+    patch: Partial<
+      Omit<
+        ToolboxConfig,
+        | "harness"
+        | "source"
+        | "refreshSchedule"
+        | "nextRefreshAt"
+        | "lastRefresh"
+      >
+    > & {
       harness?: string | null;
       source?: ToolboxConfig["source"] | null;
+      refreshSchedule?: string | null;
+      nextRefreshAt?: string | null;
     },
   ): ToolboxConfig | undefined {
     const existing = this.getById(id);
@@ -116,11 +176,21 @@ export class ToolboxRepository {
       patch.source === undefined
         ? existing.source
         : (patch.source ?? undefined);
+    const refreshSchedule =
+      patch.refreshSchedule === undefined
+        ? existing.refreshSchedule
+        : (patch.refreshSchedule ?? undefined);
+    const nextRefreshAt =
+      patch.nextRefreshAt === undefined
+        ? existing.nextRefreshAt
+        : (patch.nextRefreshAt ?? undefined);
     const updated: ToolboxConfig = {
       ...existing,
       ...patch,
       harness,
       source,
+      refreshSchedule,
+      nextRefreshAt,
       id: existing.id,
       ownerType: existing.ownerType,
       ownerId: existing.ownerId,
@@ -141,6 +211,9 @@ export class ToolboxRepository {
         processes: updated.processes,
         ports: updated.ports,
         autoInject: updated.autoInject ? 1 : 0,
+        refresh: updated.refresh,
+        refreshSchedule: updated.refreshSchedule ?? null,
+        nextRefreshAt: updated.nextRefreshAt ?? null,
         updatedAt: updated.updatedAt,
       })
       .where(eq(entityToolboxes.id, id))

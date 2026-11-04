@@ -8,6 +8,7 @@
  * without either plane importing the other.
  */
 import { type Static, Type } from "@sinclair/typebox";
+import { ToolboxRefreshTriggerSchema } from "./toolbox-config-spec.ts";
 
 /**
  * How a version came to exist. `captured` records the live sandbox + user
@@ -43,11 +44,29 @@ export const ToolboxVersionProvenanceSchema = Type.Union(
       },
       { additionalProperties: false },
     ),
+    Type.Object(
+      {
+        kind: Type.Literal("refreshed"),
+        /** Artifact ref the refresh started from (the pinned version, or
+         * the recipe build when nothing was pinned). */
+        from: Type.String(),
+        /** The version row of `from`, when it had one. */
+        fromVersionId: Type.Optional(Type.String()),
+        /** The update commands that ran. */
+        steps: Type.Array(Type.String()),
+        trigger: ToolboxRefreshTriggerSchema,
+        /** User who started a manual refresh. */
+        by: Type.Optional(Type.String()),
+        /** Resolved base image the refresh pod ran on. */
+        sourceImage: Type.Optional(Type.String()),
+      },
+      { additionalProperties: false },
+    ),
   ],
   {
     $id: "ToolboxVersionProvenance",
     description:
-      "Discriminated on `kind`: captured carries sandbox+user, built carries the recipe hash. Both optionally carry the resolved sourceImage at save time.",
+      "Discriminated on `kind`: captured carries sandbox+user, built carries the recipe hash, refreshed carries the version it started from and the commands it ran. All optionally carry the resolved sourceImage at save time.",
   },
 );
 export type ToolboxVersionProvenance = Static<

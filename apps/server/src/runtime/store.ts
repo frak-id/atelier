@@ -159,6 +159,7 @@ export type JobKind =
   | "prebuild"
   | "toolset-build"
   | "toolset-capture"
+  | "toolbox-refresh"
   | "image-build"
   | "sandbox-create"
   | "sandbox-pause"

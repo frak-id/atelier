@@ -11,6 +11,7 @@ import type {
   PortEntry,
   ProcessEntry,
   Source,
+  ToolboxRefreshStatus,
   ToolboxVersionProvenance,
   WorkspaceSnapshot,
 } from "@atelier/spec";
@@ -169,6 +170,21 @@ export const entityToolboxes = sqliteTable(
      * `ToolboxRepository.setActiveVersionId`, never by
      * `ToolboxRepository.update` (docs/toolbox-versions.md §2). */
     activeVersionId: text("active_version_id"),
+    /** Update commands a refresh runs (docs/toolbox-versions.md §10). */
+    refresh: text("refresh_steps", { mode: "json" })
+      .notNull()
+      .default([])
+      .$type<string[]>(),
+    /** Cron expression (UTC) for scheduled refreshes; null = manual only. */
+    refreshSchedule: text("refresh_schedule"),
+    /** Next scheduled refresh (ISO); null when not scheduled. Advanced by
+     * the scheduler before it starts a run, so a failing refresh waits for
+     * its next slot instead of retrying every tick. */
+    nextRefreshAt: text("next_refresh_at"),
+    /** Outcome of the last finished refresh. */
+    lastRefresh: text("last_refresh", {
+      mode: "json",
+    }).$type<ToolboxRefreshStatus>(),
     createdAt: text("created_at").notNull(),
     updatedAt: text("updated_at").notNull(),
   },

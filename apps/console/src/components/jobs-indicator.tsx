@@ -158,6 +158,7 @@ const POOLED_BUILD_KINDS = new Set<Job["kind"]>([
   "prebuild",
   "toolset-build",
   "toolset-capture",
+  "toolbox-refresh",
 ]);
 
 function JobRow({

@@ -81,7 +81,12 @@ export class ToolboxVersionService {
    * recording on, so the hot path (every spawn) stays a single indexed
    * lookup instead of an insert attempt. */
   existsByRef(toolboxId: string, ref: string): boolean {
-    return this.repository.getByToolboxAndRef(toolboxId, ref) !== undefined;
+    return this.findByRef(toolboxId, ref) !== undefined;
+  }
+
+  /** This toolbox's version row for an artifact ref, if it has one. */
+  findByRef(toolboxId: string, ref: string): ToolboxVersion | undefined {
+    return this.repository.getByToolboxAndRef(toolboxId, ref);
   }
 
   /** Lazily record a recipe-built artifact as a version row, once per

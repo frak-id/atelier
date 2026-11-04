@@ -9,6 +9,10 @@
  * `list_toolboxes` comes in two sizes: the default ("simple") is what an
  * agent needs to pick and act on a toolbox; `detail: "advanced"` adds the
  * recipe and version history (ids that `pin_version` takes).
+ *
+ * `manage_toolbox` `action=refresh` runs a toolbox's update commands on the
+ * server (docs/toolbox-versions.md section 10) and returns at once; the
+ * outcome lands in `list_toolboxes` as `refresh.last`.
  */
 import {
   type PrebuildRecord,
@@ -34,6 +38,10 @@ import {
   requireToolboxOwnerAccess,
   resolveOwner,
 } from "../../toolbox-access.ts";
+import {
+  activeRefreshJob,
+  startToolboxRefresh,
+} from "../../toolbox-refresh.ts";
 import { safeTool, text } from "../format.ts";
 import { parseSpec } from "../validate.ts";
 
@@ -132,11 +140,39 @@ function versionView(v: ToolboxVersion) {
   };
 }
 
+/** A toolbox's refresh setup and last outcome, or undefined when it has
+ * none (no update commands, schedule or past refresh). */
+function refreshView(tb: ToolboxConfig, running: () => boolean) {
+  if (tb.refresh.length === 0 && !tb.refreshSchedule && !tb.lastRefresh) {
+    return undefined;
+  }
+  const last = tb.lastRefresh;
+  return {
+    commands: tb.refresh,
+    ...(tb.refreshSchedule ? { schedule: tb.refreshSchedule } : {}),
+    ...(tb.nextRefreshAt ? { nextRunAt: tb.nextRefreshAt } : {}),
+    running: running(),
+    ...(last
+      ? {
+          last: {
+            at: last.at,
+            trigger: last.trigger,
+            outcome: last.outcome,
+            ...(last.versionId ? { versionId: last.versionId } : {}),
+            ...(last.pinned !== undefined ? { pinned: last.pinned } : {}),
+            ...(last.error ? { error: last.error } : {}),
+          },
+        }
+      : {}),
+  };
+}
+
 function toolboxView(
   control: Control,
   tb: ToolboxConfig,
   roles: Map<string, string>,
   advanced: boolean,
+  isRefreshing: (toolboxId: string) => boolean,
 ) {
   const isOrg = tb.ownerType === "org";
   const role = isOrg ? roles.get(tb.ownerId) : undefined;
@@ -150,6 +186,7 @@ function toolboxView(
   const active = activeId
     ? versions?.find((v) => v.id === activeId)
     : undefined;
+  const refresh = refreshView(tb, () => isRefreshing(tb.id));
 
   return {
     selector: toolboxSelector(tb),
@@ -166,6 +203,7 @@ function toolboxView(
       : null,
     ...(versions ? { versionCount: versions.length } : {}),
     canManage: privileged,
+    ...(refresh ? { refresh } : {}),
     ...(advanced
       ? {
           ...(tb.source ? { source: tb.source } : {}),
@@ -200,6 +238,8 @@ export function registerConfigTools(
   user: AuthUser,
 ): void {
   const { runtime, control } = container;
+  const isRefreshing = (toolboxId: string) =>
+    activeRefreshJob(container, toolboxId) !== undefined;
 
   // ── prebuilds ────────────────────────────────────────────────────────
   server.registerTool(
@@ -303,9 +343,14 @@ export function registerConfigTools(
         "`create_sandbox` as `toolboxes: [selector]`. Auto-included ones " +
         "come first, in application order. `activeVersion` is the pinned " +
         "build (null: built from the recipe at spawn). `canManage` says " +
-        "whether `manage_toolbox` works on it. detail=advanced adds the " +
-        "recipe (source, build, paths, processes, ports) and version " +
-        "history (visible to org owners/admins and for your own).",
+        "whether `manage_toolbox` works on it. `refresh` (when set up) " +
+        "holds the update commands a refresh runs, its cron `schedule` " +
+        "(UTC) and `nextRunAt`, whether one is `running`, and the `last` " +
+        "outcome: `updated` (a new version, pinned unless `pinned: " +
+        "false`), `unchanged` (nothing new to save) or `failed` (`error`). " +
+        "detail=advanced adds the recipe (source, build, paths, processes, " +
+        "ports) and version history (visible to org owners/admins and for " +
+        "your own).",
       inputSchema: {
         owner: z
           .string()
@@ -332,7 +377,9 @@ export function registerConfigTools(
             a.createdAt.localeCompare(b.createdAt),
         );
       return text(
-        toolboxes.map((tb) => toolboxView(control, tb, roles, advanced)),
+        toolboxes.map((tb) =>
+          toolboxView(control, tb, roles, advanced, isRefreshing),
+        ),
       );
     }),
   );
@@ -343,8 +390,16 @@ export function registerConfigTools(
       title: "Manage toolbox",
       description:
         "Create, update or delete a toolbox; capture a running sandbox's " +
-        "toolbox paths as a new version; pin/unpin the active version; " +
-        "publish or delete a version. Your own toolboxes are yours alone; " +
+        "toolbox paths as a new version; refresh it; pin/unpin the active " +
+        "version; publish or delete a version. `refresh` updates a toolbox " +
+        "without a sandbox: the server runs its update commands " +
+        "(`config.refresh`, e.g. `pi update --all`) over the current " +
+        "version in a throwaway pod, saves the toolbox paths as a new " +
+        "version and pins it (published, for an org toolbox); when nothing " +
+        "changed no version is made. It returns at once with a `jobId` " +
+        "(minutes of work); read the outcome later in `list_toolboxes` " +
+        "(`refresh.running`, then `refresh.last`). Your own toolboxes are " +
+        "yours alone; " +
         "an org's need you to be its owner or admin (see `canManage` in " +
         "`list_toolboxes`). New toolboxes are auto-included by default " +
         "(`config.autoInject`). To roll out a captured version org-wide: " +
@@ -356,6 +411,7 @@ export function registerConfigTools(
           "update",
           "delete",
           "capture",
+          "refresh",
           "pin_version",
           "publish",
           "delete_version",
@@ -381,8 +437,11 @@ export function registerConfigTools(
               "(shell steps, max 100) and `paths` (home-relative paths to " +
               "capture, max 100); optional `source` ({image}|{snapshot}), " +
               "`harness` (e.g. pi, opencode), `processes`, `ports`, " +
-              "`autoInject` (default true). update takes any of them " +
-              "except `slug`; `source`/`harness` null clears.",
+              "`autoInject` (default true), `refresh` (update commands a " +
+              "refresh runs, max 100), `refreshSchedule` (cron, UTC, e.g. " +
+              "`0 4 * * *` or `@daily`, at most hourly; needs `refresh`). " +
+              "update takes any of them except `slug`; `source`/`harness`/" +
+              "`refreshSchedule` null clears.",
           ),
         sandboxId: z
           .string()
@@ -424,6 +483,7 @@ export function registerConfigTools(
               control.toolboxService.create(ownerRef, input),
               roles,
               false,
+              isRefreshing,
             ),
           );
         }
@@ -465,6 +525,7 @@ export function registerConfigTools(
                 control.toolboxService.update(id, patch),
                 roles,
                 false,
+                isRefreshing,
               ),
             );
           }
@@ -472,6 +533,18 @@ export function registerConfigTools(
           case "delete":
             control.toolboxService.delete(id);
             return text({ id, status: "deleted" });
+
+          case "refresh": {
+            const { job, started } = startToolboxRefresh(container, tb.id, {
+              trigger: "manual",
+              userId: user.id,
+            });
+            return text({
+              id,
+              jobId: job.id,
+              status: started ? "started" : "already-running",
+            });
+          }
 
           case "pin_version": {
             if (versionId === undefined) {

@@ -9,6 +9,7 @@ import {
   wireBuiltinHarnesses,
 } from "./api/container.ts";
 import { createApp } from "./api/index.ts";
+import { runDueToolboxRefreshes } from "./api/toolbox-refresh.ts";
 import { initDatabase } from "./control/index.ts";
 import { ensureSharedSshPipeKey } from "./runtime/index.ts";
 import { config, isLocal, isMock, isProduction } from "./shared/lib/config.ts";
@@ -96,6 +97,18 @@ Bun.cron("* * * * *", async () => {
     await container.idle.tick();
   } catch (err) {
     logger.error({ err }, "idle reaper tick failed");
+  }
+});
+
+// Scheduled toolbox refreshes (docs/toolbox-versions.md section 10): start a
+// refresh job for every toolbox whose cron schedule is due. The tick only
+// dispatches (the jobs pool runs the pods), so it stays short. Every mode:
+// mock/local runtimes refresh like any other toolset build.
+Bun.cron("* * * * *", () => {
+  try {
+    runDueToolboxRefreshes(container);
+  } catch (err) {
+    logger.error({ err }, "toolbox refresh scheduler tick failed");
   }
 });
 
