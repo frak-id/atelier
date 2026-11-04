@@ -1,7 +1,7 @@
 import { type PrebuildRecord, prebuildJobTarget } from "@atelier/spec";
 import { useQuery } from "@tanstack/react-query";
 import { createFileRoute, Link } from "@tanstack/react-router";
-import { Pencil, Plus, RefreshCw, Rocket, Trash2 } from "lucide-react";
+import { Pencil, Plus, RefreshCw, Trash2 } from "lucide-react";
 import { useState } from "react";
 import {
   prebuildsListQuery,
@@ -152,16 +152,6 @@ function StoredPrebuildRow({
           {formatRelativeTime(prebuild.createdAt)}
         </span>
         <div className="ml-auto flex items-center gap-2">
-          <Button asChild variant="outline" size="sm">
-            <Link
-              to="/settings/launchpad/new"
-              search={{ owner: "", prebuild: prebuild.ref }}
-              title="Create a Launchpad starter that boots from this prebuild"
-            >
-              <Rocket />
-              Launchpad starter
-            </Link>
-          </Button>
           {spec ? (
             <>
               <Button asChild variant="outline" size="sm">

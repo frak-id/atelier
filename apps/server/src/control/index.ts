@@ -21,7 +21,6 @@ export {
   IdlePolicyService,
   type IdleRule,
 } from "./modules/idle-policy/index.ts";
-export type { WorkspaceRecord } from "./modules/launchpad/index.ts";
 export { SecretService } from "./modules/secret/index.ts";
 export { ServerConfigService } from "./modules/server-config/index.ts";
 export { recipeFingerprint } from "./modules/toolbox-version/index.ts";

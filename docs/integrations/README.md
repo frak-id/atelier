@@ -11,7 +11,7 @@ Per-integration guides: [steery.md](./steery.md).
 
 Atelier pushes an event to the UI, which may answer it. The only event today
 is an agent **permission prompt** in an Atelier-driven session (console chat,
-MCP tasks, Launchpad). The first answer wins, from the console or any
+MCP tasks). The first answer wins, from the console or any
 integration.
 
 Using Atelier as a UI's remote compute needs no integration: the UI uses a

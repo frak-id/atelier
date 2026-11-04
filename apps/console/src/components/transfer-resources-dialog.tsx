@@ -35,7 +35,6 @@ const SECTION_TITLE: Record<TransferKind, string> = {
   secrets: "Secrets",
   policy: "Org policy",
   toolboxes: "Toolboxes",
-  starters: "Launchpad starters",
 };
 
 function canManage(role: OrgMemberRole): boolean {
@@ -43,13 +42,13 @@ function canManage(role: OrgMemberRole): boolean {
 }
 
 function emptySelection(): TransferSelection {
-  return { secrets: [], policy: [], toolboxes: [], starters: [] };
+  return { secrets: [], policy: [], toolboxes: [] };
 }
 
 /**
  * "Move resources": moves (not copies) an org's or the caller's personal
- * secrets/policy/toolboxes/Launchpad starters into another org. Reachable
- * from the Organizations page's header.
+ * secrets/policy/toolboxes into another org. Reachable from the
+ * Organizations page's header.
  */
 export function TransferResourcesDialog({
   open,

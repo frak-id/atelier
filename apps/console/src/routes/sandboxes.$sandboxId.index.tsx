@@ -31,7 +31,6 @@ import { useCaptureToolboxVersion } from "@/api/queries/toolbox-versions";
 import { toolboxesListQuery } from "@/api/queries/toolboxes";
 import { useCaptureToolset } from "@/api/queries/toolsets";
 import { ImmersiveView } from "@/components/immersive-view";
-import { LaunchpadBadge } from "@/components/launchpad/launchpad-badge";
 import { MultiTerminal } from "@/components/multi-terminal";
 import { RenameSandboxDialog } from "@/components/rename-sandbox-dialog";
 import { SandboxActivitySection } from "@/components/sandbox-activity";
@@ -149,11 +148,6 @@ function SandboxDetailPage() {
           </Button>
           <Badge variant={status.variant}>{status.label}</Badge>
           {harness ? <Badge variant="outline">{harness}</Badge> : null}
-          <LaunchpadBadge
-            sandboxId={sandbox.id}
-            annotations={sandbox.annotations}
-            link
-          />
         </div>
         <div className="flex flex-wrap items-center gap-2">
           <Button

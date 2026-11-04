@@ -273,7 +273,7 @@ describe("prebuild processes/ports", () => {
     expect(runtime.listPrebuilds()).toHaveLength(1);
   });
 
-  // A Launchpad starter's stale copy of the dev servers, from before an edit.
+  // A caller's stale copy of the dev servers, from before an edit.
   const stale = {
     processes: [{ name: "web", command: "npm start", lazy: true }],
     ports: [{ name: "web", port: 3000, public: true }],
@@ -283,7 +283,7 @@ describe("prebuild processes/ports", () => {
     const { runtime } = makeRuntime();
     const old = await runtime.prebuild(baked);
     runtime.setPrebuildSurface(old.ref, surface);
-    // The repo moved: the spawn re-resolving the starter's recipe bakes.
+    // The repo moved: the spawn re-resolving its inline recipe bakes.
     const fresh = await runtime.prebuild(
       { ...baked, ...stale },
       { force: true },
@@ -295,7 +295,7 @@ describe("prebuild processes/ports", () => {
 
   test("a recipe's first bake records what it declares", async () => {
     const { runtime } = makeRuntime();
-    // A "set it up here" starter's inline recipe, launched for the first time.
+    // An inline recipe, spawned for the first time.
     const { ref } = await runtime.prebuild({ ...baked, ...surface });
     expect(runtime.prebuildSurface(ref)).toEqual(surface);
   });
@@ -331,7 +331,7 @@ describe("prebuild processes/ports", () => {
     const { runtime } = makeRuntime();
     const { ref } = await runtime.prebuild(baked);
     runtime.setPrebuildSurface(ref, surface);
-    // A Launchpad starter following the prebuild carries the pre-edit copy.
+    // A caller holding a copy of the recipe carries the pre-edit surface.
     await runtime.prebuild(baked);
     await runtime.prebuild({ ...baked, ...surface, ports: [] });
     expect(runtime.prebuildSpec(ref)?.processes).toEqual(surface.processes);

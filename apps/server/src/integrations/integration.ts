@@ -1,7 +1,7 @@
 /**
  * The integration contract. An integration pushes an event to an external
  * agent UI (Steery today), which may answer it: today an agent's permission
- * prompt in an Atelier-driven session (console chat, MCP tasks, Launchpad),
+ * prompt in an Atelier-driven session (console chat, MCP tasks),
  * routed to the sandbox OWNER's connections. The first answer wins, from the
  * console or any UI.
  *

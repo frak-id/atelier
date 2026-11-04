@@ -1,10 +1,9 @@
-import type { CreateSandboxRequest, ToolboxOwner } from "@atelier/spec";
+import type { ToolboxOwner } from "@atelier/spec";
 import { and, asc, eq, inArray } from "drizzle-orm";
 import { getDatabase } from "../../db/client.ts";
 import {
   entityToolboxes,
   entityToolboxVersions,
-  launchpadStarters,
   orgPolicySpecs,
   secrets,
 } from "../../db/schema.ts";
@@ -18,13 +17,6 @@ export interface TransferToolboxRow {
   activeVersionLabel: number | null;
 }
 
-export interface TransferStarterRow {
-  id: string;
-  title: string;
-  published: boolean;
-  recipe: CreateSandboxRequest;
-}
-
 /** Everything one transfer writes, applied atomically by `apply`. */
 export interface TransferWrite {
   from: ToolboxOwner;
@@ -32,9 +24,6 @@ export interface TransferWrite {
   secretIds: string[];
   policyIds: string[];
   toolboxIds: string[];
-  starterIds: string[];
-  /** Starters (any owner) whose recipe selectors point at a moved toolbox. */
-  recipeRewrites: { id: string; recipe: CreateSandboxRequest }[];
 }
 
 function toolboxOwnerFilter(owner: ToolboxOwner) {
@@ -47,7 +36,7 @@ function toolboxOwnerFilter(owner: ToolboxOwner) {
 /**
  * Reads + the one atomic write behind an ownership transfer. Spans several
  * modules' tables on purpose: a transfer is a unit of work across secrets,
- * org policy, toolboxes and starters, and must land all-or-nothing.
+ * org policy and toolboxes, and must land all-or-nothing.
  */
 export class OwnershipTransferRepository {
   listSecrets(orgId: string): { id: string; name: string }[] {
@@ -85,28 +74,6 @@ export class OwnershipTransferRepository {
       .orderBy(asc(entityToolboxes.createdAt))
       .all()
       .map((row) => ({ ...row, autoInject: row.autoInject === 1 }));
-  }
-
-  listStarters(owner?: ToolboxOwner): TransferStarterRow[] {
-    return getDatabase()
-      .select({
-        id: launchpadStarters.id,
-        title: launchpadStarters.title,
-        published: launchpadStarters.published,
-        recipe: launchpadStarters.recipe,
-      })
-      .from(launchpadStarters)
-      .where(
-        owner
-          ? and(
-              eq(launchpadStarters.ownerType, owner.type),
-              eq(launchpadStarters.ownerId, owner.id),
-            )
-          : undefined,
-      )
-      .orderBy(asc(launchpadStarters.createdAt))
-      .all()
-      .map((row) => ({ ...row, published: row.published === 1 }));
   }
 
   /** Apply a validated transfer in one SQLite transaction: any failure rolls
@@ -148,24 +115,6 @@ export class OwnershipTransferRepository {
               inArray(entityToolboxes.id, write.toolboxIds),
             ),
           )
-          .run();
-      }
-      if (write.starterIds.length > 0) {
-        tx.update(launchpadStarters)
-          .set({ ownerType: "org", ownerId: write.toOrgId, updatedAt: now })
-          .where(
-            and(
-              eq(launchpadStarters.ownerType, from.type),
-              eq(launchpadStarters.ownerId, from.id),
-              inArray(launchpadStarters.id, write.starterIds),
-            ),
-          )
-          .run();
-      }
-      for (const { id, recipe } of write.recipeRewrites) {
-        tx.update(launchpadStarters)
-          .set({ recipe, updatedAt: now })
-          .where(eq(launchpadStarters.id, id))
           .run();
       }
     });

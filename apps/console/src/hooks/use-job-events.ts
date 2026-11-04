@@ -126,19 +126,11 @@ const SELF_TOASTING_KINDS = new Set<Job["kind"]>([
 
 function onJobSettled(queryClient: QueryClient, job: Job): void {
   if (job.status === "succeeded") invalidateForKind(queryClient, job);
-  // Any sandbox lifecycle outcome can move a Launchpad workspace's phase
-  // (including a failed launch, so not only on success).
-  if (job.kind.startsWith("sandbox-")) {
-    queryClient.invalidateQueries({ queryKey: queryKeys.launchpad.all });
-  }
   // A refresh records its outcome on the toolbox, failures included.
   if (job.kind === "toolbox-refresh") {
     queryClient.invalidateQueries({ queryKey: queryKeys.toolboxes.all });
   }
   if (SELF_TOASTING_KINDS.has(job.kind)) return;
-  // A Launchpad launch is narrated by the workspace page itself, in plain
-  // words; a developer-console "Spawn done" toast would be noise there.
-  if (job.metadata?.launchpadStarter) return;
   const kindLabel = jobKindLabel(job.kind);
   const description =
     job.error ?? refreshSummary(job) ?? job.target ?? undefined;

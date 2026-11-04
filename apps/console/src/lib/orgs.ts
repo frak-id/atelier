@@ -1,7 +1,7 @@
 /**
  * Picking the caller's default organization (`organizationsListQuery`):
  * used wherever a UI needs to preselect an org before the caller picks one
- * explicitly — spawning a sandbox, authoring a Launchpad starter.
+ * explicitly (spawning a sandbox).
  */
 
 export interface OrgSummaryLike {

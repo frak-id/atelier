@@ -247,9 +247,8 @@ export function buildRepoPrebuildSpec(input: RepoPrebuildInput): PrebuildSpec {
 
 /** The spec as it bakes: without the runtime surface (`processes`/`ports`),
  * which is applied at boot and never enters the snapshot key. A recipe
- * carried this way (a Launchpad starter following a stored prebuild) has no
- * opinion on the dev servers: every spawn gets the stored recipe's current
- * ones. */
+ * carried this way has no opinion on the dev servers: every spawn gets the
+ * stored recipe's current ones. */
 export function withoutSurface(
   spec: PrebuildSpec,
 ): Omit<PrebuildSpec, "processes" | "ports"> {

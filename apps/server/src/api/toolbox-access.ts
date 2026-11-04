@@ -1,7 +1,7 @@
 /**
- * Owner scoping + authorization for owner-scoped control records: toolboxes
- * (`/api/toolboxes`, the `list_toolboxes`/`manage_toolbox` MCP tools) and
- * Launchpad starters (`/api/launchpad`). One set of invariants, every caller.
+ * Owner scoping + authorization for toolboxes (`/api/toolboxes`, the
+ * `list_toolboxes`/`manage_toolbox` MCP tools) and ownership transfers. One
+ * set of invariants, every caller.
  */
 import type { ToolboxOwner } from "@atelier/spec";
 import type { ControlContainer } from "../control/index.ts";
@@ -76,26 +76,8 @@ export function requireToolboxOwnerAccess(
   throw new ForbiddenError("Unknown toolbox owner");
 }
 
-/**
- * Read access to an owner-scoped record (a toolbox, a Launchpad starter):
- * the owning user themself, or any member of the owning org. Used where a
- * non-author *consumes* the record (launching a starter), never to mutate.
- */
-export function requireOwnerReadAccess(
-  control: ControlContainer,
-  record: { ownerType: ToolboxOwner["type"]; ownerId: string },
-  userId: string,
-): void {
-  if (record.ownerType === "org") {
-    control.orgMemberService.requireMembership(record.ownerId, userId);
-    return;
-  }
-  if (record.ownerType === "user" && record.ownerId === userId) return;
-  throw new ForbiddenError("Not visible to you");
-}
-
 /** Every owner scope the caller can read: themself + each org they belong
- * to. The Launchpad catalog is the union of these scopes' starters. */
+ * to. */
 export function readableOwners(
   control: ControlContainer,
   userId: string,

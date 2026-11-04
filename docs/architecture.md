@@ -129,9 +129,8 @@ re-resolving a recipe never does, even when it bakes. Every sandbox
 that boots from the prebuild gets it, layered by name at the
 `createSandboxForUser` seam (`api/spawn-surface.ts`): the prebuild's, then
 its toolboxes' (a toolbox beats a same-name prebuild entry, with a
-warning), then the spec's own. A `lazy` process starts on first access: the
-developer console's service gate, and the Launchpad, where opening a tool
-is that access.
+warning), then the spec's own. A `lazy` process starts on first access
+(the console's service gate).
 
 ### Toolsets (content-addressed tool delivery)
 
@@ -338,8 +337,7 @@ The server exposes its API on port 4000, split into three surfaces plus MCP:
 |-------|--------|--------------|
 | Health | `/health`, `/health/live`, `/health/ready` | Liveness and readiness probes |
 | Runtime (mechanism) | `/v1/sandboxes`, `/v1/prebuilds`, `/v1/toolsets` | Sandbox lifecycle: prebuild/boot/pause/resume/destroy, files/env/processes/ports/exec/attach |
-| Launchpad | `/api/launchpad/*` | Non-technical surface: starter catalog/authoring, launch, workspace lifecycle (see [proposals/launchpad.md](proposals/launchpad.md)) |
-| Control (policy) | `/api/users`, `/api/organizations`, `/api/transfers`, `/api/saved-specs`, `/api/secrets`, `/api/toolboxes`, `/api/api-keys`, `/api/ssh-keys`, `/api/org-policy`, `/api/config`, `/api/capabilities` | Identity (user directory), orgs, ownership transfers (move secrets/policy/toolboxes/starters into an org), saved specs, secrets, toolboxes |
+| Control (policy) | `/api/users`, `/api/organizations`, `/api/transfers`, `/api/saved-specs`, `/api/secrets`, `/api/toolboxes`, `/api/api-keys`, `/api/ssh-keys`, `/api/org-policy`, `/api/config`, `/api/capabilities` | Identity (user directory), orgs, ownership transfers (move secrets/policy/toolboxes into an org), saved specs, secrets, toolboxes |
 | Sessions | `/sessions/*` | Agent app-tier: ACP client sessions, terminal |
 | Auth | `/auth/*` | GitHub OAuth |
 | MCP | `/mcp` | Same three surfaces exposed as MCP tools for AI agents |
@@ -383,8 +381,8 @@ of the service types, built in `api/mcp/tools/*.ts` (the services and the
   agent flow needs it.
 - `create_sandbox` takes an optional `spec.resources` (each field too); the
   seam (`createSandboxForUser`) fills the gaps from the
-  `sandbox.defaultVcpus` / `sandbox.defaultMemoryMb` config keys, so HTTP,
-  MCP and Launchpad behave alike.
+  `sandbox.defaultVcpus` / `sandbox.defaultMemoryMb` config keys, so HTTP
+  and MCP behave alike.
 - `list_toolboxes` lists your toolboxes **and** those of every org you belong
   to. `autoInclude` / `appliesTo` say what a new sandbox gets: your own
   auto-included toolboxes go into every sandbox you create, an org's only

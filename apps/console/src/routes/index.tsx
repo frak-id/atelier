@@ -23,8 +23,6 @@ import {
   useDeleteSession,
 } from "@/api/queries/sessions";
 import { ImmersiveView } from "@/components/immersive-view";
-import { LaunchpadBadge } from "@/components/launchpad/launchpad-badge";
-import { LaunchpadBanner } from "@/components/launchpad/launchpad-banner";
 import { RenameSandboxDialog } from "@/components/rename-sandbox-dialog";
 import {
   SessionsByRepo,
@@ -79,7 +77,6 @@ function MissionControlPage() {
 
   return (
     <div className="mx-auto max-w-5xl space-y-6">
-      <LaunchpadBanner />
       {isPending ? (
         <div className="space-y-2">
           <Skeleton className="h-16 w-full" />
@@ -333,10 +330,6 @@ function SandboxRow({
             {harness ? <Badge variant="outline">{harness}</Badge> : null}
             {owner ? <Badge variant="secondary">@{owner}</Badge> : null}
             {orgName ? <Badge variant="outline">{orgName}</Badge> : null}
-            <LaunchpadBadge
-              sandboxId={sandbox.id}
-              annotations={sandbox.annotations}
-            />
             <span className="text-xs text-muted-foreground">
               {formatRelativeTime(sandbox.createdAt)}
             </span>

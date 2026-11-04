@@ -357,10 +357,9 @@ export async function createSandboxForUser(
   });
   // The runtime surface: the prebuild's dev servers, then the toolboxes'
   // tools, then the spec's own (see `spawnSurface` for who wins). A recipe
-  // that declares dev servers brings its own (a Launchpad custom boot);
-  // otherwise they're the stored recipe's current ones, so a copied recipe
-  // (a starter following a prebuild) or a pinned snapshot never misses
-  // dev servers edited since.
+  // that declares dev servers brings its own; otherwise they're the stored
+  // recipe's current ones, so a copied recipe or a pinned snapshot never
+  // misses dev servers edited since.
   const declared = prebuild ? runtimeSurfaceOf(prebuild) : {};
   const surface = spawnSurface({
     prebuild:
@@ -456,10 +455,9 @@ export function forkSandboxForUser(
  * owner-id metadata, so it's stable regardless of who triggers the resume,
  * and fresh git files are merged over the persisted (possibly stale) ones.
  * A sandbox with no recorded owner gets no token (never someone else's).
- * Shared by `POST /v1/sandboxes/:id/resume` and the Launchpad wake-up.
  * Throws `NotFoundError` for an unknown sandbox.
  */
-export async function withFreshCredentials(
+async function withFreshCredentials(
   container: ServerContainer,
   id: string,
   body: ResumeRequest = {},

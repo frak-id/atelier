@@ -175,7 +175,6 @@ beforeAll(async () => {
   const { createV1Routes } = await import("./v1.routes.ts");
   const { createSessionsRoutes } = await import("./sessions.routes.ts");
   const { createControlRoutes } = await import("./control.routes.ts");
-  const { createLaunchpadRoutes } = await import("./launchpad.routes.ts");
   app = new Elysia()
     .onError(({ error, set }) => {
       if (error instanceof SandboxError) {
@@ -185,8 +184,7 @@ beforeAll(async () => {
     })
     .use(createV1Routes(container))
     .use(createSessionsRoutes(container))
-    .use(createControlRoutes(container))
-    .use(createLaunchpadRoutes(container)) as unknown as Elysia;
+    .use(createControlRoutes(container)) as unknown as Elysia;
   server = app.listen(0);
 });
 
@@ -400,53 +398,6 @@ describe("sandbox routes", () => {
       expect((await patch(SHARED)).status).toBe(200);
       // Clearing the source is not a snapshot.
       expect((await patch(null)).status).toBe(200);
-    });
-
-    test("POST/PATCH /api/launchpad/starters", async () => {
-      const org = control.organizationService.create("SOrg", "ar-sorg");
-      control.orgMemberService.addMember(
-        org.id,
-        users["tok-stranger"]?.id ?? "",
-        "owner",
-      );
-      const starter = (recipe: unknown) => ({
-        title: "t",
-        description: "d",
-        recipe,
-        services: [],
-      });
-      const path = `/api/launchpad/starters?owner=org:${org.id}`;
-      const denied = await request(
-        "stranger",
-        "POST",
-        path,
-        starter({ source: SCOPED }),
-      );
-      expect(denied.status).toBe(404);
-      const viaPrebuild = await request(
-        "stranger",
-        "POST",
-        path,
-        starter({
-          source: { image: "dev-base" },
-          prebuild: { source: SCOPED },
-        }),
-      );
-      expect(viaPrebuild.status).toBe(404);
-      const ok = await request(
-        "stranger",
-        "POST",
-        path,
-        starter({ source: SHARED }),
-      );
-      expect(ok.status).toBe(200);
-      const { id } = (await ok.json()) as { id: string };
-      const patch = (recipe: unknown) =>
-        request("stranger", "PATCH", `/api/launchpad/starters/${id}`, {
-          recipe,
-        });
-      expect((await patch({ source: SCOPED })).status).toBe(404);
-      expect((await patch({ source: SHARED })).status).toBe(200);
     });
   });
 

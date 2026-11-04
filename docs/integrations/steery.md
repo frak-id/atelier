@@ -78,8 +78,8 @@ The adapter uses only the public API ([host-provider.md](host-provider.md)):
 
 ## Outbound: approvals on your phone
 
-When the agent of an Atelier-driven session (console chat, MCP tasks,
-Launchpad) asks for permission (ACP `session/request_permission`), the
+When the agent of an Atelier-driven session (console chat, MCP tasks)
+asks for permission (ACP `session/request_permission`), the
 console lists the prompt as before. If the sandbox owner connected Steery
 and the prompt's risk passes their filter, Atelier also raises a Steery
 request (`POST /v1/requests`) whose buttons are the options the agent

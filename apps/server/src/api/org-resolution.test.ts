@@ -1,10 +1,6 @@
-/**
- * Which org a spawn runs in (`resolveOrgId`), and the 0024 data migration
- * that moves legacy user-owned Launchpad starters into their author's
- * personal org.
- */
+/** Which org a spawn runs in (`resolveOrgId`). */
 import { afterAll, beforeAll, describe, expect, test } from "bun:test";
-import { mkdtemp, readFile, rm } from "node:fs/promises";
+import { mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import type { ControlContainer } from "../control/index.ts";
@@ -62,38 +58,5 @@ describe("resolveOrgId", () => {
   test("an org-less user spawns bare", () => {
     control.userService.upsertFromLogin("res-none", "none", "n@x.test", "");
     expect(resolveOrgId(control, "res-none")).toBeUndefined();
-  });
-});
-
-describe("0024_org_owned_starters migration", () => {
-  test("moves user starters to the author's personal org only", async () => {
-    const { id, personal } = userWithTeam("m");
-    const input = {
-      title: "Legacy",
-      description: "d",
-      recipe: {
-        source: { image: "dev-base" },
-        resources: { vcpus: 2, memoryMb: 4096 },
-      },
-      services: [],
-    };
-    const legacy = control.starterService.create({ type: "user", id }, input);
-    const orphan = control.starterService.create(
-      { type: "user", id: "res-no-personal-org" },
-      input,
-    );
-
-    const { getDatabase } = await import("../control/db/client.ts");
-    const sql = await readFile(
-      join(migrationsDir, "0024_org_owned_starters.sql"),
-      "utf8",
-    );
-    getDatabase().run(sql);
-
-    expect(control.starterService.get(legacy.id)).toMatchObject({
-      ownerType: "org",
-      ownerId: personal.id,
-    });
-    expect(control.starterService.get(orphan.id).ownerType).toBe("user");
   });
 });

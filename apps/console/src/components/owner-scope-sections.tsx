@@ -17,7 +17,7 @@ export function OwnerScopeSections({
   children,
 }: {
   /** List the caller's own `user` scope (toolboxes have one; org-only
-   * records like secrets or starters don't). */
+   * records like secrets and policy don't). */
   includeUser: boolean;
   children: (scope: OwnerScope) => ReactNode;
 }) {

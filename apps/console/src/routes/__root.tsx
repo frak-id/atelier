@@ -5,15 +5,13 @@ import {
   Link,
   Outlet,
   useRouter,
-  useRouterState,
 } from "@tanstack/react-router";
-import { Boxes, Rocket, Settings, Sparkles } from "lucide-react";
+import { Boxes, Rocket, Settings } from "lucide-react";
 import { Toaster } from "sonner";
 import { api } from "@/api/client";
 import { currentUserQuery } from "@/api/queries/auth";
 import { AccountControls } from "@/components/account-controls";
 import { JobsIndicator } from "@/components/jobs-indicator";
-import { LaunchpadShell } from "@/components/launchpad/launchpad-shell";
 import { LoginPage } from "@/components/login-page";
 import { useJobEvents } from "@/hooks/use-job-events";
 
@@ -26,7 +24,6 @@ export const Route = createRootRouteWithContext<{
 const NAV_ITEMS = [
   { to: "/", label: "Sandboxes", icon: Boxes, exact: true },
   { to: "/spawn", label: "Spawn", icon: Rocket, exact: true },
-  { to: "/launchpad", label: "Launchpad", icon: Sparkles, exact: false },
   { to: "/settings", label: "Settings", icon: Settings, exact: false },
 ] as const;
 
@@ -34,10 +31,6 @@ function RootLayout() {
   const queryClient = useQueryClient();
   const router = useRouter();
   const { data: user, isPending } = useQuery(currentUserQuery());
-  // The Launchpad (non-technical surface) renders in its own, lighter shell.
-  const isLaunchpad = useRouterState({
-    select: (state) => state.location.pathname.startsWith("/launchpad"),
-  });
   // Global job-queue SSE — only connects once authenticated (the feed is
   // behind auth). Called unconditionally to satisfy the rules of hooks.
   useJobEvents(!!user);
@@ -66,17 +59,6 @@ function RootLayout() {
       queryClient.clear();
       await router.invalidate();
     }
-  }
-
-  if (isLaunchpad) {
-    return (
-      <>
-        <LaunchpadShell username={user.username} onLogout={handleLogout}>
-          <Outlet />
-        </LaunchpadShell>
-        <Toaster richColors position="top-right" />
-      </>
-    );
   }
 
   return (

@@ -86,8 +86,7 @@ guard; the guard only acts on paths under its prefix (`/v1/sandboxes/`,
 (the socket's `open` check covers it). A sandbox id arriving in a body or
 query (e.g. `POST /api/toolboxes/:id/versions/capture`) needs an explicit
 `requireSandboxAccess`.
-Not covered: `/v1/jobs` (feed unscoped), secrets routes, Launchpad (own
-ownership).
+Not covered: `/v1/jobs` (feed unscoped), secrets routes.
 
 ## Integrations
 

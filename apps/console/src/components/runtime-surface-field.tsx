@@ -62,8 +62,8 @@ const EXPOSURE_HINT: Record<Exposure, string> = {
 };
 
 /**
- * The processes + ports editor (a `RuntimeSurface`) shared by the toolbox,
- * prebuild and Launchpad starter editors, as *service cards*: a process and
+ * The processes + ports editor (a `RuntimeSurface`) shared by the toolbox
+ * and prebuild editors, as *service cards*: a process and
  * the port of the same name it serves edit together (command, directory,
  * user, when it starts, its port and who can open it), with readiness,
  * dependencies, restart and env under "Advanced". Ports no process claims by

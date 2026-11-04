@@ -20,12 +20,6 @@ import {
   IntegrationConnectionService,
 } from "./modules/integration-connection/index.ts";
 import {
-  StarterRepository,
-  StarterService,
-  WorkspaceRepository,
-  WorkspaceService,
-} from "./modules/launchpad/index.ts";
-import {
   OrgMemberRepository,
   OrgMemberService,
 } from "./modules/org-member/index.ts";
@@ -88,8 +82,6 @@ export function createControlContainer() {
   const toolboxVersionService = new ToolboxVersionService(
     toolboxVersionRepository,
   );
-  const starterService = new StarterService(new StarterRepository());
-  const workspaceService = new WorkspaceService(new WorkspaceRepository());
   const ownershipTransferService = new OwnershipTransferService(
     new OwnershipTransferRepository(),
   );
@@ -119,8 +111,6 @@ export function createControlContainer() {
     toolboxVersionService,
     authService,
     gitHubRepoService,
-    starterService,
-    workspaceService,
     ownershipTransferService,
     integrationConnectionService,
     /** Bound seam-crossing enrichment \u2014 the only function `api/` calls

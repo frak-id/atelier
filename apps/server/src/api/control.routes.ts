@@ -51,7 +51,6 @@ const TransferSelectionSchema = t.Object({
   secrets: TransferIdsSchema,
   policy: TransferIdsSchema,
   toolboxes: TransferIdsSchema,
-  starters: TransferIdsSchema,
 });
 
 /**
@@ -138,8 +137,8 @@ export function createControlRoutes(container: ServerContainer) {
     .use(authPlugin)
     .get("/", () => control.userService.listDirectory());
 
-  // Move owner-scoped records (org secrets + policy, toolboxes, Launchpad
-  // starters) from an org or the caller's personal scope into an org.
+  // Move owner-scoped records (org secrets + policy, toolboxes) from an org
+  // or the caller's personal scope into an org.
   const transferOptions = {
     // Same invariant as the org publish-before-pin guard on
     // `PUT /toolboxes/:id/active-version`: a private capture pinned org-wide

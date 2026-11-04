@@ -1,13 +1,13 @@
 /**
  * Ownership transfers against a real control DB: the preview (conflicts,
- * notes), the move itself (ids kept, pins kept, starter selectors
- * repointed), and the all-or-nothing validation of a selection.
+ * notes), the move itself (ids kept, pins kept), and the all-or-nothing
+ * validation of a selection.
  */
 import { afterAll, beforeAll, describe, expect, test } from "bun:test";
 import { mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import type { StarterInput, ToolboxOwner } from "@atelier/spec";
+import type { ToolboxOwner } from "@atelier/spec";
 import { ConflictError, ValidationError } from "../../../shared/errors.ts";
 import type { ControlContainer } from "../../index.ts";
 import type { TransferSelection } from "./index.ts";
@@ -53,41 +53,26 @@ function toolbox(owner: ToolboxOwner, slug: string) {
   });
 }
 
-function starterInput(overrides: Partial<StarterInput> = {}): StarterInput {
-  return {
-    title: "Landing",
-    description: "d",
-    recipe: {
-      source: { image: "dev-base" },
-      resources: { vcpus: 2, memoryMb: 4096 },
-    },
-    services: [{ id: "agent", label: "Pi", target: { port: "pi" } }],
-    ...overrides,
-  };
-}
-
 function selection(
   partial: Partial<TransferSelection> = {},
 ): TransferSelection {
-  return { secrets: [], policy: [], toolboxes: [], starters: [], ...partial };
+  return { secrets: [], policy: [], toolboxes: [], ...partial };
 }
 
 const service = () => control.ownershipTransferService;
 
 describe("OwnershipTransferService.preview", () => {
-  test("lists an org's secrets, policy, toolboxes and starters", async () => {
+  test("lists an org's secrets, policy and toolboxes", async () => {
     const from = org();
     const to = org();
     await control.secretService.set(from.id, "API_KEY", "v");
     control.orgPolicyService.set(from.id, { env: { A: "1" } });
     toolbox(from, "vscode");
-    control.starterService.create(from, starterInput());
 
     const preview = service().preview(from, to.id);
     expect(preview.secrets.map((s) => s.label)).toEqual(["API_KEY"]);
     expect(preview.policy).toHaveLength(1);
     expect(preview.toolboxes.map((t) => t.label)).toEqual(["vscode"]);
-    expect(preview.starters.map((s) => s.label)).toEqual(["Landing"]);
     const items = Object.values(preview).flat();
     expect(items.every((item) => item.blocker === undefined)).toBe(true);
   });
@@ -164,7 +149,6 @@ describe("OwnershipTransferService.execute", () => {
       recipeFingerprint: "fp",
     });
     control.toolboxService.setActiveVersionId(tb.id, version.id);
-    const starter = control.starterService.create(from, starterInput());
     const preview = service().preview(from, to.id);
 
     const result = service().execute(
@@ -174,16 +158,10 @@ describe("OwnershipTransferService.execute", () => {
         secrets: [moved.id],
         policy: preview.policy.map((p) => p.id),
         toolboxes: [tb.id],
-        starters: [starter.id],
       }),
     );
 
-    expect(result.moved).toEqual({
-      secrets: 1,
-      policy: 1,
-      toolboxes: 1,
-      starters: 1,
-    });
+    expect(result.moved).toEqual({ secrets: 1, policy: 1, toolboxes: 1 });
     expect(control.secretService.list(from.id).map((s) => s.id)).toEqual([
       secret.id,
     ]);
@@ -200,44 +178,6 @@ describe("OwnershipTransferService.execute", () => {
     expect(movedTb.ownerType).toBe("org");
     expect(movedTb.ownerId).toBe(to.id);
     expect(control.toolboxService.getActiveVersionId(tb.id)).toBe(version.id);
-    const movedStarter = control.starterService.get(starter.id);
-    expect(movedStarter.ownerType).toBe("org");
-    expect(movedStarter.ownerId).toBe(to.id);
-  });
-
-  test("repoints every starter's selectors at moved toolboxes", () => {
-    const from = user();
-    const to = org();
-    const other = org();
-    const tb = toolbox(from, "pi-web");
-    toolbox(from, "stays");
-    const oldSel = `tb/user/${from.id}/pi-web`;
-    const keptSel = `tb/user/${from.id}/stays`;
-    const recipe = {
-      ...starterInput().recipe,
-      toolboxes: [oldSel, keptSel],
-    };
-    // One starter moves along, one belongs to an unrelated org.
-    const mine = control.starterService.create(from, starterInput({ recipe }));
-    const theirs = control.starterService.create(
-      other,
-      starterInput({ recipe }),
-    );
-
-    const result = service().execute(
-      from,
-      to.id,
-      selection({ toolboxes: [tb.id], starters: [mine.id] }),
-    );
-
-    expect(result.rewrittenStarters).toBe(2);
-    const newSel = `tb/org/${to.id}/pi-web`;
-    for (const id of [mine.id, theirs.id]) {
-      expect(control.starterService.get(id).recipe.toolboxes).toEqual([
-        newSel,
-        keptSel,
-      ]);
-    }
   });
 
   test("execute enforces the pinned-toolbox veto, not just preview", () => {

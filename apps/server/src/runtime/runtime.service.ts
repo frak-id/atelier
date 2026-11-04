@@ -241,11 +241,11 @@ export class RuntimeService {
    * shared by all its snapshots (see `setPrebuildSurface`), and only an
    * explicit save writes it: `saveSurface` (the `POST /prebuilds` create or
    * rebuild), or `setPrebuildSurface`. Any other call (a spawn re-resolving
-   * a starter's recipe, the stale-prebuild refresh) never changes it, even
+   * an inline recipe, the stale-prebuild refresh) never changes it, even
    * when the call bakes: the new snapshot inherits the recipe's dev servers.
    * The one exception is a recipe's very first bake, which has none to
-   * inherit: it records the declared ones (a Launchpad "set it up here"
-   * starter's), so the snapshot lists what its first spawn ran.
+   * inherit: it records the declared ones, so the snapshot lists what its
+   * first spawn ran.
    *
    * `createdBy` (an opaque user id, paired with that user's `githubToken`)
    * is recorded on the snapshot so `refreshStalePrebuilds` can re-resolve a

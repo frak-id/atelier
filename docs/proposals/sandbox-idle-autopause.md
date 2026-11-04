@@ -11,8 +11,8 @@
 ## 1. Problem
 
 A running sandbox holds a Kata VM (2 vCPU / 4 GiB by default) until someone
-pauses it, and nothing pauses it for them. A forgotten sandbox, or a
-Launchpad workspace whose owner closed the tab, runs all night.
+pauses it, and nothing pauses it for them. A forgotten sandbox, or one
+whose owner closed the tab, runs all night.
 
 Pause and resume already work (`runtime.pause()` syncs, snapshots, deletes
 the pod and keeps the PVC). What was missing: knowing a sandbox is unused,
@@ -162,8 +162,6 @@ delay a pause, never cause an early one.
 - Console: an Activity card on the sandbox page (state, countdown,
   keep-awake menu, signals, traffic per minute); the idle state in the
   sandbox list; the rules on the Server configuration page.
-- Launchpad workspace: "It went to sleep after a while without use" once
-  idle-paused.
 - CLI: `atelier keep-awake <id> (--for 8h | --off)`; an IDLE column in
   `atelier ps`; activity in `atelier get`.
 - MCP: `get_sandbox` returns `idle`; `sandbox_lifecycle` gains
@@ -178,7 +176,7 @@ delay a pause, never cause an early one.
 
 ## 8. Not in scope
 
-- A notice before pausing (Launchpad banner, `IntegrationHub`).
+- A notice before pausing (console banner, `IntegrationHub`).
 - Keeping a sandbox awake with no end: raise `maxKeepAwakeHours` instead.
 - Per-process or per-direction traffic (needs a guest kernel with
   `inet_diag`).

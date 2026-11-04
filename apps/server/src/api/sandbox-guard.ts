@@ -58,7 +58,7 @@ type SourceLike = { snapshot?: string } | { image?: string } | null | undefined;
 
 /**
  * Every entry point that accepts a snapshot ref as a SOURCE (create, prebuild
- * chain, toolset build, toolbox/starter recipes) runs a pod over that disk:
+ * chain, toolset build, toolbox recipes) runs a pod over that disk:
  * check it with the CALLER's identity, synchronously, at write/dispatch time.
  * `recipe.prebuild` is the nested `PrebuildSpec` of a create request.
  */

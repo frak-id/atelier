@@ -1,5 +1,4 @@
 import {
-  LAUNCHPAD_STARTER_ANNOTATION,
   SANDBOX_NAME_ANNOTATION,
   SANDBOX_ORG_ANNOTATION,
   type SandboxStatus,
@@ -48,14 +47,6 @@ export function sandboxNameFromAnnotations(
   annotations: Record<string, string> | undefined,
 ): string | undefined {
   return annotations?.[SANDBOX_NAME_ANNOTATION]?.trim() || undefined;
-}
-
-/** The Launchpad starter a sandbox was launched from (stamped server-side by
- * `starterLaunchRequest`), or undefined for a developer-spawned sandbox. */
-export function launchpadStarterFromAnnotations(
-  annotations: Record<string, string> | undefined,
-): string | undefined {
-  return annotations?.[LAUNCHPAD_STARTER_ANNOTATION];
 }
 
 /** The org a sandbox runs in (`orgId` on `POST /v1/sandboxes`, absent for

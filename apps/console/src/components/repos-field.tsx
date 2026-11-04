@@ -43,8 +43,8 @@ export function repoProblems(repos: readonly PrebuildRepo[]): string[] {
 }
 
 /**
- * The repeatable git-repo row editor shared by the prebuild editor and the
- * Launchpad starter editor: URL, branch, clone path, one row per repo.
+ * The prebuild editor's repeatable git-repo rows: URL, branch, clone path,
+ * one row per repo.
  * `repos` is the single source of truth (from a visual edit or a JSON→visual
  * switch) — no local row state to keep in sync.
  */

@@ -2,8 +2,8 @@ import { LogOut, Moon, Sun } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { useTheme } from "@/providers/theme";
 
-/** The signed-in user, the theme toggle and sign out: the right end of both
- * the developer console's header and the Launchpad's. */
+/** The signed-in user, the theme toggle and sign out: the right end of the
+ * console's header. */
 export function AccountControls({
   username,
   onLogout,

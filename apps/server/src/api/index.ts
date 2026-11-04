@@ -14,7 +14,6 @@ import type { ServerContainer } from "./container.ts";
 import { createControlRoutes } from "./control.routes.ts";
 import { healthRoutes } from "./health.routes.ts";
 import { createIntegrationsRoutes } from "./integrations.routes.ts";
-import { createLaunchpadRoutes } from "./launchpad.routes.ts";
 import { createMcpRoutes } from "./mcp/index.ts";
 import { createSessionsRoutes } from "./sessions.routes.ts";
 import { createV1Routes } from "./v1.routes.ts";
@@ -88,7 +87,6 @@ export function createApp(container: ServerContainer) {
     .use(createV1Routes(container))
     .use(createControlRoutes(container))
     .use(createIntegrationsRoutes(container))
-    .use(createLaunchpadRoutes(container))
     .use(createSessionsRoutes(container))
     .use(createMcpRoutes(container))
     .get("/", () => ({

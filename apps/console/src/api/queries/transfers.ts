@@ -8,12 +8,7 @@ import { api } from "@/api/client";
 import { errorMessage } from "./error";
 import { queryKeys } from "./keys";
 
-export const TRANSFER_KINDS = [
-  "secrets",
-  "policy",
-  "toolboxes",
-  "starters",
-] as const;
+export const TRANSFER_KINDS = ["secrets", "policy", "toolboxes"] as const;
 export type TransferKind = (typeof TRANSFER_KINDS)[number];
 
 export interface TransferItem {
@@ -50,7 +45,6 @@ const KIND_NOUN: Record<TransferKind, [string, string]> = {
   secrets: ["secret", "secrets"],
   policy: ["org policy", "org policies"],
   toolboxes: ["toolbox", "toolboxes"],
-  starters: ["starter", "starters"],
 };
 
 function summarize(moved: Record<TransferKind, number>): string {
@@ -79,17 +73,9 @@ export function useMoveResources() {
       queryClient.invalidateQueries({ queryKey: queryKeys.secrets.all });
       queryClient.invalidateQueries({ queryKey: queryKeys.orgPolicy.all });
       queryClient.invalidateQueries({ queryKey: queryKeys.toolboxes.all });
-      queryClient.invalidateQueries({ queryKey: queryKeys.launchpad.all });
       queryClient.invalidateQueries({ queryKey: queryKeys.toolsets.all });
       queryClient.invalidateQueries({ queryKey: queryKeys.transfers.all });
-      const message = result ? summarize(result.moved) : "Moved";
-      const suffix =
-        result && result.rewrittenStarters > 0
-          ? ` (${result.rewrittenStarters} starter${
-              result.rewrittenStarters === 1 ? "" : "s"
-            } repointed)`
-          : "";
-      toast.success(`${message}${suffix}`);
+      toast.success(result ? summarize(result.moved) : "Moved");
     },
     onError: (error) => toast.error(error.message),
   });

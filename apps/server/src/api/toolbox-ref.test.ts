@@ -48,7 +48,7 @@ describe("toolboxForRef", () => {
     control.ownershipTransferService.execute(
       { type: "user", id: "ref-user" },
       team.id,
-      { secrets: [], policy: [], toolboxes: [tb.id], starters: [] },
+      { secrets: [], policy: [], toolboxes: [tb.id] },
     );
 
     for (const ref of [
