@@ -146,6 +146,12 @@ keep-awake annotation) over activity clocks, split along the boundaries:
   `refreshStalePrebuilds` + `pruneUnusedPrebuilds` as a
   `Bun.cron("*/30 * * * *")` job, gated on the `prebuild.gitTracking`
   config and skipped in mock mode.
+- **Toolbox refresh** (docs/toolbox-versions.md §10): `api/toolbox-refresh.ts`
+  runs a toolbox's update commands over its pinned version in a throwaway
+  pod (`runtime.refreshToolset`), saves and pins the result. Triggered by
+  `POST /api/toolboxes/:id/refresh`, MCP `manage_toolbox action=refresh`,
+  and a `Bun.cron("* * * * *")` tick in `index.ts` for due schedules (every
+  mode).
 - **Toolset tier (composed-prebuild-volumes.md) is COMPLETE end-to-end.**
   Built (`POST /v1/toolsets`) + captured (`POST /sandboxes/:id/toolsets/
   capture`) artifacts, agent materialize before files/env, `shared-binaries`

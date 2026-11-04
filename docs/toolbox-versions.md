@@ -1,6 +1,6 @@
 # Toolbox-Associated Toolset Versions ("Save toolset for toolbox")
 
-Status: **proposal — agreed direction, not yet implemented**
+Status: **implemented**. §10 (refresh) was added later.
 
 Lets an operator spawn a sandbox from a toolbox, tune a tool's config live in
 that sandbox, then **save that live state back as a new, named version of the
@@ -232,3 +232,72 @@ experiment" indistinguishable from "I changed what every future spawn gets".
 - Cross-owner promotion (user version → org baseline) beyond the existing
   publish step.
 - Automated base-image-drift rebuilds of pinned captures.
+
+---
+
+## 10. Refresh: update a toolbox without a sandbox
+
+Status: **implemented**.
+
+In practice most versions came from the same loop: spawn a sandbox with the
+toolbox, run `pi update --all`, save the toolbox, pin it. A refresh runs that
+loop on the server (`api/toolbox-refresh.ts`).
+
+- **Update commands**: `refresh: string[]` on the toolbox, e.g.
+  `["pi update --all"]`. They run in order as `dev` in a login shell (so
+  `~/.local/bin` is on `PATH`) and stop at the first failure. A toolbox
+  without update commands cannot be refreshed.
+- **Starting point**: the pinned version. When nothing is pinned, the recipe
+  build (built if needed and recorded as a `built` version).
+- **Where**: a throwaway pod on the toolbox's `source` (default: the sandbox
+  base image), with the starting version mounted in the home
+  (`RuntimeService.refreshToolset`). No processes run.
+- **What is saved**: the toolbox's own `paths[]` (the §2 invariant), through
+  the agent's capture route, so the default excludes and the secret scan are
+  the same as for a capture from a sandbox. The version's provenance is
+  `refreshed`: `from`, `fromVersionId`, `steps`, `trigger`, `by` and
+  `sourceImage`.
+- **Nothing changed, nothing saved**: the paths are fingerprinted before and
+  after the commands, with the pod's own shell tools
+  (`runtime/toolset-fingerprint.ts`: type, mode, path, symlink target and
+  content, minus the capture excludes; no timestamps, which the artifact
+  normalizes anyway). Equal fingerprints: nothing is pushed, no version is
+  made, the outcome is `unchanged`. An unknown fingerprint (the hash command
+  failed) never skips: the paths are captured.
+- **Pin**: automatic. The one exception: when the pin moved while the
+  refresh ran (someone pinned or unpinned by hand), that choice is kept and
+  the new version is only saved (`pinned: false`). Rolling back is re-pinning
+  an older version. This replaces the §7 "Save and Pin as two steps" rule
+  for refreshes only: a refresh is the operator's explicit "update what
+  every spawn gets".
+- **Publish**: on an org toolbox the refreshed artifact is published, since
+  it replaces a version that was already shared org-wide and the
+  publish-before-pin guard requires it. A user toolbox's stays private.
+- **Triggers**: Settings → Toolboxes → Refresh in the console,
+  `POST /api/toolboxes/:id/refresh` (a `202` job of kind `toolbox-refresh`),
+  MCP `manage_toolbox` `action=refresh`, `atelier toolbox refresh <id>`, and
+  the schedule. One refresh per toolbox at a time: triggering it again
+  returns the job already running.
+- **Schedule**: `refreshSchedule`, a cron expression (5 fields, or a nickname
+  like `@daily`), read in UTC and parsed by `Bun.cron.parse`. At most once an
+  hour (checked over the next 24 runs). The toolbox stores `nextRefreshAt`
+  (only when it has both a schedule and update commands). A `Bun.cron` tick
+  every minute (`index.ts`) starts each due refresh and moves
+  `nextRefreshAt` forward before starting it: a failing refresh waits for its
+  next slot instead of retrying every minute, and a server that was down
+  runs a missed slot once.
+- **Outcome**: `lastRefresh` on the toolbox, `{ at, trigger, outcome:
+  updated | unchanged | failed, versionId?, pinned?, error?, jobId? }`. It is
+  shown in the console, in `list_toolboxes` (`refresh.last`) and in `atelier
+  toolbox ls`. Nobody is notified elsewhere (no Steery or Slack message).
+
+Left out on purpose:
+
+- No smoke test before the pin. A refresh that succeeds can still ship a
+  broken tool; re-pin the previous version.
+- No refresh for toolboxes without update commands. Their recipe build stays
+  cached on its hash: edit `build[]` to pick up new releases.
+- No base-image drift handling. A refresh runs on the current base image, but
+  native modules the commands do not touch stay as they were captured.
+- A recipe edit made while a version is pinned is still ignored; the
+  "recipe changed since pin" badge still applies.

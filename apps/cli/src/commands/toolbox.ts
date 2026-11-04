@@ -1,11 +1,15 @@
 /** `atelier toolbox` — org/user tool recipes (control plane, `/api/toolboxes`)
  * with their captured version history. */
-import type { ToolboxConfigInput, ToolboxConfigPatch } from "@atelier/spec";
+import type {
+  ToolboxConfig,
+  ToolboxConfigInput,
+  ToolboxConfigPatch,
+} from "@atelier/spec";
 import type { Command } from "commander";
 import pc from "picocolors";
 import { unwrap, waitForJob } from "../client.ts";
 import type { Ctx } from "../context.ts";
-import { fail, line, printJson, table } from "../output.ts";
+import { fail, line, printJson, printLogDelta, table } from "../output.ts";
 import { collect } from "../util.ts";
 
 /** Resolve `--org <id>` → `org:<id>` or `--mine` → `user`; nothing → caller's
@@ -17,6 +21,32 @@ function owner(opts: { org?: string; mine?: boolean }): string | undefined {
   }
   return opts.mine ? "user" : undefined;
 }
+
+/** One-cell summary of a toolbox's refresh setup and last outcome. */
+function refreshCell(t: ToolboxConfig): string {
+  if (t.refresh.length === 0) return pc.dim("-");
+  const when = t.refreshSchedule ?? "manual";
+  const last = t.lastRefresh;
+  if (!last) return when;
+  const outcome =
+    last.outcome === "failed"
+      ? pc.red("failed")
+      : last.outcome === "updated"
+        ? pc.green("updated")
+        : pc.dim("unchanged");
+  return `${when} (${outcome} ${last.at.slice(0, 16).replace("T", " ")})`;
+}
+
+/** The refresh outcome a job returns (`api/toolbox-refresh.ts`). */
+type RefreshOutcome =
+  | {
+      outcome: "updated";
+      versionId: string;
+      label: number;
+      ref: string;
+      pinned: boolean;
+    }
+  | { outcome: "unchanged"; versionId?: string };
 
 export function registerToolbox(program: Command, ctx: Ctx): void {
   const toolbox = program.command("toolbox").description("Manage toolboxes");
@@ -34,11 +64,12 @@ export function registerToolbox(program: Command, ctx: Ctx): void {
       if (ctx.json) return printJson(rows);
       if (rows.length === 0) return line(pc.dim("no toolboxes"));
       table(
-        ["ID", "SLUG", "INJECT", "DESCRIPTION"],
+        ["ID", "SLUG", "INJECT", "REFRESH", "DESCRIPTION"],
         rows.map((t) => [
           t.id,
           t.slug,
           t.autoInject ? pc.green("auto") : pc.dim("manual"),
+          refreshCell(t),
           t.description,
         ]),
       );
@@ -50,6 +81,16 @@ export function registerToolbox(program: Command, ctx: Ctx): void {
     .requiredOption("--desc <text>", "description")
     .option("--build <cmd>", "build step (repeatable)", collect, [])
     .option("--path <path>", "captured path (repeatable)", collect, [])
+    .option(
+      "--refresh <cmd>",
+      "update command a refresh runs, e.g. 'pi update --all' (repeatable)",
+      collect,
+      [],
+    )
+    .option(
+      "--schedule <cron>",
+      "refresh on this cron schedule (UTC), e.g. '0 4 * * *' or @daily",
+    )
     .option("--source-image <img>", "source image")
     .option("--source-snapshot <ref>", "source snapshot")
     .option("--mine", "create under your own account")
@@ -62,6 +103,8 @@ export function registerToolbox(program: Command, ctx: Ctx): void {
           desc: string;
           build: string[];
           path: string[];
+          refresh: string[];
+          schedule?: string;
           sourceImage?: string;
           sourceSnapshot?: string;
           mine?: boolean;
@@ -77,6 +120,8 @@ export function registerToolbox(program: Command, ctx: Ctx): void {
           description: opts.desc,
           build: opts.build,
           paths: opts.path,
+          ...(opts.refresh.length > 0 ? { refresh: opts.refresh } : {}),
+          ...(opts.schedule ? { refreshSchedule: opts.schedule } : {}),
           ...(opts.sourceImage
             ? { source: { image: opts.sourceImage } }
             : opts.sourceSnapshot
@@ -106,6 +151,15 @@ export function registerToolbox(program: Command, ctx: Ctx): void {
       collect,
       [],
     )
+    .option(
+      "--refresh <cmd>",
+      "update command a refresh runs (repeatable, replaces)",
+      collect,
+      [],
+    )
+    .option("--no-refresh", "remove the update commands (no more refresh)")
+    .option("--schedule <cron>", "refresh on this cron schedule (UTC)")
+    .option("--no-schedule", "stop scheduled refreshes")
     .option("--enable", "enable auto-inject")
     .option("--disable", "disable auto-inject")
     .action(
@@ -115,6 +169,9 @@ export function registerToolbox(program: Command, ctx: Ctx): void {
           desc?: string;
           build: string[];
           path: string[];
+          // commander: `false` from --no-refresh / --no-schedule.
+          refresh: string[] | false;
+          schedule?: string | false;
           enable?: boolean;
           disable?: boolean;
         },
@@ -126,6 +183,16 @@ export function registerToolbox(program: Command, ctx: Ctx): void {
           ...(opts.desc !== undefined ? { description: opts.desc } : {}),
           ...(opts.build.length > 0 ? { build: opts.build } : {}),
           ...(opts.path.length > 0 ? { paths: opts.path } : {}),
+          ...(opts.refresh === false
+            ? { refresh: [] }
+            : opts.refresh.length > 0
+              ? { refresh: opts.refresh }
+              : {}),
+          ...(opts.schedule === false
+            ? { refreshSchedule: null }
+            : opts.schedule
+              ? { refreshSchedule: opts.schedule }
+              : {}),
           ...(opts.enable ? { autoInject: true } : {}),
           ...(opts.disable ? { autoInject: false } : {}),
         };
@@ -143,6 +210,46 @@ export function registerToolbox(program: Command, ctx: Ctx): void {
     .action(async (id: string) => {
       await ctx.api().api.toolboxes({ id }).delete().then(unwrap);
       line(`removed ${id}`);
+    });
+
+  toolbox
+    .command("refresh <id>")
+    .description(
+      "Run the toolbox's update commands over its current version on the " +
+        "server, save the result as a new pinned version (blocks on the job)",
+    )
+    .option("--no-wait", "return once the job is started")
+    .action(async (id: string, opts: { wait: boolean }) => {
+      const api = ctx.api();
+      const job = unwrap(await api.api.toolboxes({ id }).refresh.post());
+      if (!opts.wait) {
+        if (ctx.json) return printJson(job);
+        return line(`${job.id}\t${job.status}`);
+      }
+      // Echo the job log as it grows (a pod boot + the update commands).
+      let printed = 0;
+      const out = await waitForJob<RefreshOutcome>(api, job, {
+        onTick: async (current) => {
+          if (ctx.json) return;
+          try {
+            const { log } = unwrap(
+              await api.v1.jobs({ id: current.id }).logs.get(),
+            );
+            printed = printLogDelta(log, printed);
+          } catch {
+            // The log is best-effort; keep polling the job.
+          }
+        },
+      });
+      if (ctx.json) return printJson(out);
+      if (out.outcome === "unchanged") {
+        return line("unchanged: nothing new to save");
+      }
+      line(
+        `v${out.label}\t${out.versionId}\t${out.ref}\t${
+          out.pinned ? pc.green("pinned") : pc.yellow("saved, not pinned")
+        }`,
+      );
     });
 
   toolbox

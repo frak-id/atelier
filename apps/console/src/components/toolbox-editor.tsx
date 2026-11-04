@@ -1,7 +1,7 @@
 import type { ToolboxConfig, ToolboxConfigInput } from "@atelier/spec";
 import { useNavigate } from "@tanstack/react-router";
 import { Loader2 } from "lucide-react";
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { useCreateToolbox, useUpdateToolbox } from "@/api/queries/toolboxes";
 import { ImageSourcePicker } from "@/components/image-source-picker";
 import { RuntimeSurfaceField } from "@/components/runtime-surface-field";
@@ -26,6 +26,53 @@ function arrayToLines(values: string[]): string {
   return values.join("\n");
 }
 
+function sameLines(a: string[], b: string[]): boolean {
+  return a.length === b.length && a.every((line, i) => line === b[i]);
+}
+
+/**
+ * A one-entry-per-line textarea over a `string[]`. It keeps the raw text
+ * locally so a trailing newline or a blank line survives while typing (the
+ * parsed array drops them), and resyncs when the array changes from outside
+ * (e.g. an edit in JSON mode).
+ */
+function LinesTextarea({
+  id,
+  value,
+  onChange,
+  placeholder,
+  className,
+}: {
+  id: string;
+  value: string[];
+  onChange: (value: string[]) => void;
+  placeholder: string;
+  className: string;
+}) {
+  const [text, setText] = useState(() => arrayToLines(value));
+  useEffect(() => {
+    setText((current) =>
+      sameLines(linesToArray(current), value) ? current : arrayToLines(value),
+    );
+  }, [value]);
+  return (
+    <textarea
+      id={id}
+      value={text}
+      onChange={(e) => {
+        setText(e.target.value);
+        onChange(linesToArray(e.target.value));
+      }}
+      spellCheck={false}
+      placeholder={placeholder}
+      className={className}
+    />
+  );
+}
+
+/** A stable empty list, so an unset field doesn't resync on every render. */
+const NO_LINES: string[] = [];
+
 function toInput(toolbox?: ToolboxConfig): ToolboxConfigInput {
   if (!toolbox) return { slug: "", description: "", build: [], paths: [] };
   return {
@@ -38,6 +85,10 @@ function toInput(toolbox?: ToolboxConfig): ToolboxConfigInput {
     processes: toolbox.processes,
     ports: toolbox.ports,
     autoInject: toolbox.autoInject,
+    ...(toolbox.refresh.length > 0 ? { refresh: toolbox.refresh } : {}),
+    ...(toolbox.refreshSchedule
+      ? { refreshSchedule: toolbox.refreshSchedule }
+      : {}),
   };
 }
 
@@ -72,8 +123,14 @@ export function ToolboxEditor({
 
   function handleSave(api: SpecEditorApi<ToolboxConfigInput>) {
     if (api.mode === "visual" && !visualValid) return;
-    const value = api.resolve();
-    if (!value) return;
+    const resolved = api.resolve();
+    if (!resolved) return;
+    // The schedule field keeps what was typed; store it trimmed.
+    const schedule = resolved.refreshSchedule?.trim();
+    const value: ToolboxConfigInput = {
+      ...resolved,
+      refreshSchedule: schedule ? schedule : undefined,
+    };
     if (isEditing && toolbox) {
       updateToolbox.mutate(
         {
@@ -90,6 +147,8 @@ export function ToolboxEditor({
             harness: value.harness ? value.harness : null,
             processes: value.processes ?? [],
             ports: value.ports ?? [],
+            refresh: value.refresh ?? [],
+            refreshSchedule: value.refreshSchedule || null,
           },
         },
         {
@@ -197,29 +256,68 @@ function ToolboxVisualForm({
         <Label htmlFor="toolbox-build">
           Build steps (one per line, optional)
         </Label>
-        <textarea
+        <LinesTextarea
           id="toolbox-build"
-          value={arrayToLines(spec.build)}
-          onChange={(e) =>
-            onChange({ ...spec, build: linesToArray(e.target.value) })
-          }
-          spellCheck={false}
+          value={spec.build}
+          onChange={(build) => onChange({ ...spec, build })}
           placeholder="curl -fsSL https://example.com/tool -o ~/.local/bin/tool"
           className="min-h-24 w-full rounded-md border bg-muted/30 p-2 font-mono text-xs"
         />
       </div>
       <div className="space-y-1">
         <Label htmlFor="toolbox-paths">Paths (one per line, optional)</Label>
-        <textarea
+        <LinesTextarea
           id="toolbox-paths"
-          value={arrayToLines(spec.paths)}
-          onChange={(e) =>
-            onChange({ ...spec, paths: linesToArray(e.target.value) })
-          }
-          spellCheck={false}
+          value={spec.paths}
+          onChange={(paths) => onChange({ ...spec, paths })}
           placeholder="~/.local/bin/tool"
           className="min-h-16 w-full rounded-md border bg-muted/30 p-2 font-mono text-xs"
         />
+      </div>
+      <div className="space-y-2 rounded-md border p-3">
+        <div className="space-y-1">
+          <Label htmlFor="toolbox-refresh">
+            Update commands (one per line, optional)
+          </Label>
+          <LinesTextarea
+            id="toolbox-refresh"
+            value={spec.refresh ?? NO_LINES}
+            onChange={(refresh) =>
+              onChange({
+                ...spec,
+                refresh: refresh.length > 0 ? refresh : undefined,
+              })
+            }
+            placeholder="pi update --all"
+            className="min-h-12 w-full rounded-md border bg-muted/30 p-2 font-mono text-xs"
+          />
+          <p className="text-xs text-muted-foreground">
+            Refresh runs these on the server, on top of the current version,
+            then saves the paths above as a new version and pins it. When the
+            files did not change, nothing is saved.
+          </p>
+        </div>
+        <div className="space-y-1">
+          <Label htmlFor="toolbox-refresh-schedule">
+            Refresh schedule (optional)
+          </Label>
+          <Input
+            id="toolbox-refresh-schedule"
+            value={spec.refreshSchedule ?? ""}
+            onChange={(e) =>
+              onChange({
+                ...spec,
+                refreshSchedule: e.target.value || undefined,
+              })
+            }
+            placeholder="0 4 * * *   or   @daily"
+            className="font-mono"
+          />
+          <p className="text-xs text-muted-foreground">
+            Cron, in UTC, at most once an hour. Empty: only when you press
+            Refresh.
+          </p>
+        </div>
       </div>
       <div className="space-y-1">
         <Label htmlFor="toolbox-harness">Harness (optional)</Label>

@@ -351,7 +351,7 @@ export async function resolveSelectedToolboxes(
  * changes). Recording a version row must never fail a spawn: every failure
  * is caught and logged only.
  */
-async function recordBuiltVersionLazily(
+export async function recordBuiltVersionLazily(
   container: ServerContainer,
   config: ToolboxConfig,
   ref: string,

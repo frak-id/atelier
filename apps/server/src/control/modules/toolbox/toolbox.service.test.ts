@@ -98,6 +98,7 @@ describe("ToolboxService", () => {
       build: [],
       paths: [],
       autoInject: true,
+      refresh: [],
       createdAt: at(2000),
       updatedAt: at(2000),
     });
@@ -110,6 +111,7 @@ describe("ToolboxService", () => {
       build: [],
       paths: [],
       autoInject: true,
+      refresh: [],
       createdAt: at(0),
       updatedAt: at(0),
     });
@@ -122,6 +124,7 @@ describe("ToolboxService", () => {
       build: [],
       paths: [],
       autoInject: false,
+      refresh: [],
       createdAt: at(1000),
       updatedAt: at(1000),
     });
@@ -131,5 +134,131 @@ describe("ToolboxService", () => {
       "t-first",
       "t-third",
     ]);
+  });
+});
+
+describe("ToolboxService refresh schedule", () => {
+  const base = {
+    description: "d",
+    build: ["echo hi"],
+    paths: ["~/x"],
+  };
+
+  test("a schedule with update commands plans the next run", () => {
+    const service = new ToolboxService(new ToolboxRepository());
+    const tb = service.create(
+      { type: "user", id: "user-sched-plan" },
+      {
+        ...base,
+        slug: "pi",
+        refresh: ["pi update --all"],
+        refreshSchedule: "0 4 * * *",
+      },
+    );
+    expect(tb.refresh).toEqual(["pi update --all"]);
+    expect(tb.refreshSchedule).toBe("0 4 * * *");
+    const next = new Date(tb.nextRefreshAt ?? "");
+    expect(next.getUTCHours()).toBe(4);
+    expect(next.getUTCMinutes()).toBe(0);
+    expect(next.getTime()).toBeGreaterThan(Date.now());
+  });
+
+  test("no update commands: the schedule is kept but nothing is planned", () => {
+    const service = new ToolboxService(new ToolboxRepository());
+    const tb = service.create(
+      { type: "user", id: "user-sched-dormant" },
+      { ...base, slug: "pi", refreshSchedule: "@daily" },
+    );
+    expect(tb.refresh).toEqual([]);
+    expect(tb.refreshSchedule).toBe("@daily");
+    expect(tb.nextRefreshAt).toBeUndefined();
+
+    const armed = service.update(tb.id, { refresh: ["pi update --all"] });
+    expect(armed.nextRefreshAt).toBeDefined();
+    const disarmed = service.update(tb.id, { refresh: [] });
+    expect(disarmed.nextRefreshAt).toBeUndefined();
+  });
+
+  test("null clears the schedule; an unrelated edit keeps the plan", () => {
+    const service = new ToolboxService(new ToolboxRepository());
+    const tb = service.create(
+      { type: "user", id: "user-sched-clear" },
+      {
+        ...base,
+        slug: "pi",
+        refresh: ["pi update --all"],
+        refreshSchedule: "@weekly",
+      },
+    );
+    const kept = service.update(tb.id, { description: "d2" });
+    expect(kept.refreshSchedule).toBe("@weekly");
+    expect(kept.nextRefreshAt).toBe(tb.nextRefreshAt);
+
+    const cleared = service.update(tb.id, { refreshSchedule: null });
+    expect(cleared.refreshSchedule).toBeUndefined();
+    expect(cleared.nextRefreshAt).toBeUndefined();
+    expect(service.get(tb.id).nextRefreshAt).toBeUndefined();
+  });
+
+  test("rejects invalid and too-frequent schedules", () => {
+    const service = new ToolboxService(new ToolboxRepository());
+    const owner = { type: "user", id: "user-sched-invalid" } as const;
+    for (const refreshSchedule of ["nope", "* * * * *", "*/30 * * * *"]) {
+      expect(() =>
+        service.create(owner, {
+          ...base,
+          slug: "pi",
+          refresh: ["x"],
+          refreshSchedule,
+        }),
+      ).toThrow(ValidationError);
+    }
+    const tb = service.create(owner, { ...base, slug: "pi" });
+    expect(() =>
+      service.update(tb.id, { refreshSchedule: "0 0 30 2 *" }),
+    ).toThrow(ValidationError);
+  });
+
+  test("due toolboxes are listed, then advanced past now", () => {
+    const service = new ToolboxService(new ToolboxRepository());
+    const tb = service.create(
+      { type: "user", id: "user-sched-due" },
+      {
+        ...base,
+        slug: "pi",
+        refresh: ["pi update --all"],
+        refreshSchedule: "@daily",
+      },
+    );
+    const planned = new Date(tb.nextRefreshAt ?? "");
+    const before = new Date(planned.getTime() - 1000);
+    const after = new Date(planned.getTime() + 1000);
+    const due = (at: Date) =>
+      service.listDueForRefresh(at).filter((c) => c.id === tb.id);
+    expect(due(before)).toHaveLength(0);
+    expect(due(after)).toHaveLength(1);
+
+    const next = service.advanceRefreshSchedule(tb.id, after);
+    expect(next).not.toBeNull();
+    expect(new Date(next ?? "").getTime()).toBeGreaterThan(after.getTime());
+    expect(due(after)).toHaveLength(0);
+  });
+
+  test("recordRefresh stores the outcome without touching updatedAt", () => {
+    const service = new ToolboxService(new ToolboxRepository());
+    const tb = service.create(
+      { type: "user", id: "user-sched-record" },
+      { ...base, slug: "pi", refresh: ["pi update --all"] },
+    );
+    service.recordRefresh(tb.id, {
+      at: new Date().toISOString(),
+      trigger: "manual",
+      outcome: "failed",
+      error: "boom",
+    });
+    const read = service.get(tb.id);
+    expect(read.lastRefresh?.outcome).toBe("failed");
+    expect(read.lastRefresh?.error).toBe("boom");
+    expect(read.updatedAt).toBe(tb.updatedAt);
   });
 });

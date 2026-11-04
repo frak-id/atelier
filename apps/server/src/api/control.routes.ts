@@ -22,6 +22,7 @@ import { createAuthPlugin } from "./auth.plugin.ts";
 import { pruneToolboxVersions, type ServerContainer } from "./container.ts";
 import { requireSandboxAccess, requireSourceAccess } from "./sandbox-guard.ts";
 import { requireToolboxOwnerAccess, resolveOwner } from "./toolbox-access.ts";
+import { startToolboxRefresh } from "./toolbox-refresh.ts";
 
 const log = createChildLogger("control-routes");
 
@@ -470,6 +471,20 @@ export function createControlRoutes(container: ServerContainer) {
       },
       { body: ToolboxVersionCaptureRequestSchema },
     )
+    // Refresh (docs/toolbox-versions.md section 10): run the toolbox's update
+    // commands over its current version in a throwaway pod, save the paths
+    // as a new version and pin it. A `202` job, or the one already running
+    // for this toolbox.
+    .post("/:id/refresh", ({ user, params, set }) => {
+      const tb = control.toolboxService.get(params.id);
+      requireToolboxOwnerAccess(control, tb, user.id);
+      const { job } = startToolboxRefresh(container, tb.id, {
+        trigger: "manual",
+        userId: user.id,
+      });
+      set.status = 202;
+      return job;
+    })
     .get("/:id/versions", async ({ user, params }) => {
       const tb = control.toolboxService.get(params.id);
       requireToolboxOwnerAccess(control, tb, user.id);

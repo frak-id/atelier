@@ -19,7 +19,7 @@
  * (`ToolsetRefSchema`). Control/compose resolve names → refs.
  */
 import { type Static, Type } from "@sinclair/typebox";
-import { SourceSchema } from "./sandbox-spec.ts";
+import { SourceSchema, ToolsetRefSchema } from "./sandbox-spec.ts";
 
 // ── ref (what a SandboxSpec carries) ──────────────────────────────────────
 
@@ -100,6 +100,42 @@ export const ToolsetCaptureRequestSchema = Type.Object(
 );
 export type ToolsetCaptureRequest = Static<typeof ToolsetCaptureRequestSchema>;
 
+// ── refreshed (server-side, result-keyed) ─────────────────────────────────
+
+/**
+ * Update an existing toolset without a live sandbox: boot a throwaway pod
+ * with `base` materialized into the home, run `steps` as `dev`, then capture
+ * `paths[]` the way `capture` does (same excludes + secret scan). When the
+ * captured files hash the same before and after the steps, nothing is
+ * pushed. The "update in a sandbox, then capture" loop, minus the sandbox.
+ */
+export const ToolsetRefreshRequestSchema = Type.Object(
+  {
+    /** Registry identity for the new artifact. */
+    name: ToolsetNameSchema,
+    /** Base image to run in (defaults to the sandbox base image). */
+    source: Type.Optional(SourceSchema),
+    /** The toolset the steps run on top of. */
+    base: ToolsetRefSchema,
+    /** Ordered, fail-fast shell steps (run as `dev`, login shell). */
+    steps: Type.Array(Type.String(), { minItems: 1 }),
+    /** Home path-sets captured into the artifact. */
+    paths: Type.Array(Type.String(), { minItems: 1 }),
+  },
+  {
+    additionalProperties: false,
+    $id: "ToolsetRefreshRequest",
+    description: "Run update steps over a toolset and capture the result.",
+  },
+);
+export type ToolsetRefreshRequest = Static<typeof ToolsetRefreshRequestSchema>;
+
+/** `changed: false` = the steps left `paths[]` byte-identical, so no
+ * artifact was pushed. */
+export type ToolsetRefreshResult =
+  | { changed: true; ref: string }
+  | { changed: false };
+
 // ── provenance + stored entry ─────────────────────────────────────────────
 
 /**
@@ -125,11 +161,21 @@ export const ToolsetProvenanceSchema = Type.Union(
       },
       { additionalProperties: false },
     ),
+    Type.Object(
+      {
+        kind: Type.Literal("refreshed"),
+        /** The toolset ref the steps ran on top of. */
+        base: Type.String(),
+        /** The update steps that ran. */
+        steps: Type.Array(Type.String()),
+      },
+      { additionalProperties: false },
+    ),
   ],
   {
     $id: "ToolsetProvenance",
     description:
-      "Discriminated on `kind`: built carries its `build[]`, captured carries `capturedFrom`.",
+      "Discriminated on `kind`: built carries its `build[]`, captured carries `capturedFrom`, refreshed carries its `base` and `steps`.",
   },
 );
 export type ToolsetProvenance = Static<typeof ToolsetProvenanceSchema>;

@@ -23,6 +23,7 @@ import { connectMcp } from "./mcp.test-support.ts";
 let dataDir: string;
 let control: ControlContainer;
 let registerConfigTools: typeof import("./config.ts").registerConfigTools;
+let JobService: typeof import("../../../runtime/jobs.service.ts").JobService;
 
 beforeAll(async () => {
   dataDir = await mkdtemp(join(tmpdir(), "atelier-mcp-config-"));
@@ -33,6 +34,7 @@ beforeAll(async () => {
   const { createControlContainer } = await import("../../../control/index.ts");
   control = createControlContainer();
   ({ registerConfigTools } = await import("./config.ts"));
+  ({ JobService } = await import("../../../runtime/jobs.service.ts"));
 });
 
 afterAll(async () => {
@@ -111,6 +113,18 @@ function fakeRuntime(ownerId: string) {
       return { ref };
     },
     getSandboxImage: async () => "dev-base@sha256:base",
+    // Refresh: the update commands always change something here.
+    refreshToolset: async (req: { name: string }) => {
+      const ref = `toolsets/${req.name}@sha256:${"e".repeat(64)}`;
+      toolsets.set(ref, { private: true });
+      return { changed: true, ref };
+    },
+    buildToolset: async (req: { name: string }) => ({
+      ref: `toolsets/${req.name}@sha256:${"d".repeat(64)}`,
+    }),
+    resolveSourceImage: async () => "dev-base@sha256:base",
+    defaultImage: () => "dev-base",
+    deleteToolset: () => {},
     getToolsetEntry: (ref: string) => toolsets.get(ref),
     publishToolset: (ref: string) => {
       calls.published.push(ref);
@@ -141,15 +155,17 @@ function newOrg(name: string) {
 
 async function connectAs(user: AuthUser) {
   const fake = fakeRuntime(user.id);
+  const jobs = new JobService();
   const container = {
     runtime: fake.runtime,
     control,
+    jobs,
   } as unknown as ServerContainer;
   const mcp = await connectMcp((server) =>
     registerConfigTools(server, container, user),
   );
   cleanups.push(() => mcp.close());
-  return { ...mcp, ...fake };
+  return { ...mcp, ...fake, jobs };
 }
 
 function addToolbox(
@@ -549,6 +565,90 @@ describe("manage_toolbox", () => {
     });
     expect(res.isError).toBe(true);
     expect(res.data.message).toContain("does not belong");
+  });
+});
+
+describe("manage_toolbox refresh", () => {
+  test("set up through update, run, then read back in list_toolboxes", async () => {
+    const owner = newUser();
+    const org = newOrg("Refreshing");
+    control.orgMemberService.addMember(org.id, owner.id, "owner");
+    const tb = addToolbox({ type: "org", id: org.id }, "pi-web", true, {
+      paths: ["~/.pi/agent"],
+    });
+    const { call, calls, jobs } = await connectAs(owner);
+
+    const updated = await call("manage_toolbox", {
+      action: "update",
+      id: tb.id,
+      config: { refresh: ["pi update --all"], refreshSchedule: "@daily" },
+    });
+    expect(updated.data.refresh).toMatchObject({
+      commands: ["pi update --all"],
+      schedule: "@daily",
+      nextRunAt: expect.any(String),
+      running: false,
+    });
+
+    const started = await call("manage_toolbox", {
+      action: "refresh",
+      id: tb.id,
+    });
+    expect(started.data).toEqual({
+      id: tb.id,
+      jobId: expect.any(String),
+      status: "started",
+    });
+    for (let i = 0; i < 50; i++) {
+      if (jobs.get(started.data.jobId).status === "succeeded") break;
+      await Bun.sleep(5);
+    }
+
+    const listed = (
+      await call("list_toolboxes", { owner: `org:${org.id}` })
+    ).data.find((t: { slug: string }) => t.slug === "pi-web");
+    expect(listed.refresh).toMatchObject({
+      running: false,
+      last: { trigger: "manual", outcome: "updated", pinned: true },
+    });
+    // Nothing was pinned: the recipe build became v1, the refresh v2.
+    expect(listed.activeVersion).toMatchObject({
+      id: listed.refresh.last.versionId,
+      label: 2,
+    });
+    // An org toolbox's refreshed version is published so it can be pinned.
+    expect(calls.published).toHaveLength(1);
+  });
+
+  test("refused without update commands; bad schedules are refused", async () => {
+    const user = newUser();
+    const tb = addToolbox({ type: "user", id: user.id }, "plain", true, {
+      paths: ["~/.x"],
+    });
+    const { call } = await connectAs(user);
+
+    const res = await call("manage_toolbox", { action: "refresh", id: tb.id });
+    expect(res.isError).toBe(true);
+    expect(res.data.message).toContain("update commands");
+
+    const bad = await call("manage_toolbox", {
+      action: "update",
+      id: tb.id,
+      config: { refresh: ["x"], refreshSchedule: "* * * * *" },
+    });
+    expect(bad.isError).toBe(true);
+    expect(bad.data.message).toContain("once an hour");
+  });
+
+  test("a plain org member cannot refresh the org's toolbox", async () => {
+    const w = world();
+    const { call } = await connectAs(w.user);
+    const res = await call("manage_toolbox", {
+      action: "refresh",
+      id: w.baseline.id,
+    });
+    expect(res.isError).toBe(true);
+    expect(res.data.error).toBe("FORBIDDEN");
   });
 });
 

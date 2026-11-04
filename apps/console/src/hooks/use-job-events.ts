@@ -131,12 +131,17 @@ function onJobSettled(queryClient: QueryClient, job: Job): void {
   if (job.kind.startsWith("sandbox-")) {
     queryClient.invalidateQueries({ queryKey: queryKeys.launchpad.all });
   }
+  // A refresh records its outcome on the toolbox, failures included.
+  if (job.kind === "toolbox-refresh") {
+    queryClient.invalidateQueries({ queryKey: queryKeys.toolboxes.all });
+  }
   if (SELF_TOASTING_KINDS.has(job.kind)) return;
   // A Launchpad launch is narrated by the workspace page itself, in plain
   // words; a developer-console "Spawn done" toast would be noise there.
   if (job.metadata?.launchpadStarter) return;
   const kindLabel = jobKindLabel(job.kind);
-  const description = job.error ?? job.target ?? undefined;
+  const description =
+    job.error ?? refreshSummary(job) ?? job.target ?? undefined;
   if (job.status === "succeeded") {
     toast.success(`${kindLabel} done`, { description });
   } else if (job.status === "canceled") {
@@ -144,6 +149,22 @@ function onJobSettled(queryClient: QueryClient, job: Job): void {
   } else {
     toast.error(`${kindLabel} failed`, { description });
   }
+}
+
+/** `pi-web: new version v12` / `pi-web: no change`, for a finished refresh
+ * (its result is `api/toolbox-refresh.ts`'s outcome). */
+function refreshSummary(job: Job): string | undefined {
+  if (job.kind !== "toolbox-refresh" || job.status !== "succeeded") {
+    return undefined;
+  }
+  const result = job.result as
+    | { outcome?: string; label?: number; pinned?: boolean }
+    | undefined;
+  const what =
+    result?.outcome === "updated"
+      ? `new version v${result.label}${result.pinned ? " pinned" : " (not pinned)"}`
+      : "no change";
+  return job.target ? `${job.target}: ${what}` : what;
 }
 
 function invalidateForKind(queryClient: QueryClient, job: Job): void {
@@ -154,6 +175,7 @@ function invalidateForKind(queryClient: QueryClient, job: Job): void {
     case "toolset-build":
       queryClient.invalidateQueries({ queryKey: queryKeys.toolsets.all });
       break;
+    case "toolbox-refresh":
     case "toolset-capture":
       // A capture creates a runtime toolset AND (for the toolbox flow) a
       // version row — refresh both.

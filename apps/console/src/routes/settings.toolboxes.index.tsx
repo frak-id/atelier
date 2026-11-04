@@ -10,11 +10,13 @@ import {
   Pin,
   PinOff,
   Plus,
+  RefreshCw,
   Trash2,
   Upload,
   Wrench,
 } from "lucide-react";
 import { useState } from "react";
+import { isJobRunning, jobsListQuery } from "@/api/queries/jobs";
 import {
   type ToolboxVersionWithArtifact,
   toolboxVersionsQuery,
@@ -22,7 +24,11 @@ import {
   usePublishToolboxVersion,
   useSetActiveToolboxVersion,
 } from "@/api/queries/toolbox-versions";
-import { toolboxesListQuery, useDeleteToolbox } from "@/api/queries/toolboxes";
+import {
+  toolboxesListQuery,
+  useDeleteToolbox,
+  useRefreshToolbox,
+} from "@/api/queries/toolboxes";
 import { toolsetsListQuery } from "@/api/queries/toolsets";
 import { ConfirmDialog } from "@/components/confirm-dialog";
 import {
@@ -42,7 +48,7 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog";
 import { Skeleton } from "@/components/ui/skeleton";
-import { formatRelativeTime } from "@/lib/formatters";
+import { formatDuration, formatRelativeTime, msUntil } from "@/lib/formatters";
 import type { OwnerScope } from "@/lib/orgs";
 
 export const Route = createFileRoute("/settings/toolboxes/")({
@@ -216,6 +222,9 @@ function ToolboxRow({
             <span>Artifact not built yet — compiled on next spawn.</span>
           )}
         </div>
+        {toolbox.refresh.length > 0 || toolbox.lastRefresh ? (
+          <ToolboxRefreshStrip toolbox={toolbox} canManage={canManage} />
+        ) : null}
         <div className="border-t pt-2">
           <Button
             variant="ghost"
@@ -249,6 +258,98 @@ function ToolboxRow({
         onConfirm={() => deleteToolbox.mutate(toolbox.id)}
       />
     </Card>
+  );
+}
+
+/**
+ * Refresh status for a toolbox (docs/toolbox-versions.md section 10): when it
+ * runs, how the last one went, and a button to run it now. A refresh runs
+ * the update commands over the current version on the server, then saves and
+ * pins the result. "Running" comes from the live jobs feed.
+ */
+function ToolboxRefreshStrip({
+  toolbox,
+  canManage,
+}: {
+  toolbox: ToolboxConfig;
+  canManage: boolean;
+}) {
+  const refresh = useRefreshToolbox();
+  const { data: jobs } = useQuery(jobsListQuery());
+  const activeJob = jobs?.find(
+    (job) =>
+      job.kind === "toolbox-refresh" &&
+      job.metadata?.toolboxId === toolbox.id &&
+      (job.status === "queued" || job.status === "running"),
+  );
+  const last = toolbox.lastRefresh;
+  const canRefresh = canManage && toolbox.refresh.length > 0;
+
+  return (
+    <div className="flex min-w-0 flex-wrap items-center gap-2 border-t pt-2 text-xs text-muted-foreground">
+      <RefreshCw className="size-3.5 shrink-0" />
+      <span className="truncate font-mono" title={toolbox.refresh.join("\n")}>
+        {toolbox.refresh.length > 0
+          ? toolbox.refresh.join(" && ")
+          : "no update commands"}
+      </span>
+      <span className="shrink-0">
+        {toolbox.refreshSchedule ? (
+          <>
+            <span className="font-mono">{toolbox.refreshSchedule}</span> UTC
+            {toolbox.nextRefreshAt
+              ? ` · next in ${formatDuration(msUntil(toolbox.nextRefreshAt))}`
+              : ""}
+          </>
+        ) : (
+          "on demand"
+        )}
+      </span>
+      {activeJob ? (
+        <Badge variant="info">
+          <Loader2 className="mr-1 size-3 animate-spin" />
+          {isJobRunning(activeJob) ? "refreshing" : "queued"}
+        </Badge>
+      ) : last ? (
+        <span
+          className="flex min-w-0 items-center gap-1"
+          title={last.error ?? undefined}
+        >
+          {last.outcome === "updated" ? (
+            <Badge variant="success">
+              {last.pinned === false ? "new version, not pinned" : "updated"}
+            </Badge>
+          ) : last.outcome === "unchanged" ? (
+            <Badge variant="neutral">no change</Badge>
+          ) : (
+            <Badge variant="danger">failed</Badge>
+          )}
+          <span className="shrink-0">
+            {last.trigger === "schedule" ? "scheduled, " : ""}
+            {formatRelativeTime(last.at)}
+          </span>
+          {last.error ? (
+            <span className="truncate text-danger">{last.error}</span>
+          ) : null}
+        </span>
+      ) : null}
+      {canRefresh ? (
+        <Button
+          variant="outline"
+          size="sm"
+          className="ml-auto h-7"
+          disabled={activeJob !== undefined || refresh.isPending}
+          onClick={() => refresh.mutate(toolbox.id)}
+        >
+          {refresh.isPending ? (
+            <Loader2 className="animate-spin" />
+          ) : (
+            <RefreshCw />
+          )}
+          Refresh
+        </Button>
+      ) : null}
+    </div>
   );
 }
 
