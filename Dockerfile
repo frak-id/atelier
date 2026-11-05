@@ -20,14 +20,13 @@ WORKDIR /build
 # Workspace root + every workspace member's package.json. bun's frozen install
 # validates the whole workspace graph (root `workspaces: [packages/*, apps/*]`),
 # so ALL members must be present or the lockfile is considered out of sync
-# — even the ones whose source this image never builds (e.g. apps/cli).
+# — even the ones whose source this image never builds.
 COPY package.json bun.lock ./
 COPY packages/shared/package.json packages/shared/
 COPY packages/spec/package.json packages/spec/
 COPY packages/compose/package.json packages/compose/
 COPY apps/server/package.json apps/server/
 COPY apps/console/package.json apps/console/
-COPY apps/cli/package.json apps/cli/
 
 RUN bun install --frozen-lockfile
 

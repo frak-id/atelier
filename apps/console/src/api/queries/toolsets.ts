@@ -28,7 +28,7 @@ function useInvalidateToolsets() {
   };
 }
 
-// The build/capture endpoints answer 202 with a `running` (or `queued`) job;
+// The build endpoint answers 202 with a `running` (or `queued`) job;
 // the work proceeds in the background and is delivered to the queue over the
 // SSE feed (`useJobEvents`), which also refreshes the toolsets list on
 // completion. Mutations just kick the job off and report its initial state.

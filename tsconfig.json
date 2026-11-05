@@ -26,7 +26,6 @@
   "references": [
     { "path": "./apps/server" },
     { "path": "./apps/console" },
-    { "path": "./apps/cli" },
     { "path": "./packages/shared" },
     { "path": "./packages/spec" },
     { "path": "./packages/compose" }

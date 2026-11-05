@@ -46,37 +46,12 @@ const JWT_EXPIRY_SECONDS = 7 * 24 * 60 * 60;
  * screen for the added scope). */
 const GITHUB_OAUTH_SCOPES = "repo workflow read:user read:org";
 
-/** CLI login sends the freshly-minted JWT to a loopback listener instead of
- * the dashboard. Only ever redirect to the caller's own machine — never an
- * arbitrary host — so a crafted `cli` param can't exfiltrate a token. */
-function isLoopbackRedirect(uri: string): boolean {
-  try {
-    const u = new URL(uri);
-    if (u.protocol !== "http:" && u.protocol !== "https:") return false;
-    const host = u.hostname;
-    return (
-      host === "127.0.0.1" ||
-      host === "localhost" ||
-      host === "::1" ||
-      host === "[::1]"
-    );
-  } catch {
-    return false;
-  }
-}
-
 /** A post-login destination under the base domain (a sandbox tool URL the
  * forward-auth check sent to the login), or `undefined`. */
 function returnUrlOf(url: string | undefined): string | undefined {
   return url && isReturnUrl(url, config.domain.baseDomain, !isProduction())
     ? url
     : undefined;
-}
-
-/** Append `token` to a loopback callback URL, preserving any existing query. */
-function cliCallbackUrl(redirect: string, token: string): string {
-  const sep = redirect.includes("?") ? "&" : "?";
-  return `${redirect}${sep}token=${encodeURIComponent(token)}`;
 }
 
 const MOCK_USER = {
@@ -110,8 +85,6 @@ export function createAuthRoutes(container: ServerContainer) {
     .get(
       "/github",
       async ({ redirect, cookie, query }) => {
-        const cliRedirect =
-          query.cli && isLoopbackRedirect(query.cli) ? query.cli : undefined;
         const returnTo = returnUrlOf(query.return_to);
 
         if (isAuthBypassed()) {
@@ -131,13 +104,6 @@ export function createAuthRoutes(container: ServerContainer) {
           );
           ensurePersonalOrg(MOCK_USER.githubId, MOCK_USER.username);
 
-          // CLI login: hand the token straight back to the loopback listener
-          // (no browser session/cookie needed for the CLI).
-          if (cliRedirect) {
-            log.info("Mock: CLI login as mock-user");
-            return redirect(cliCallbackUrl(cliRedirect, token));
-          }
-
           // Same-origin over http://localhost (console nginx proxies to the
           // server): `SameSite=None` REQUIRES `Secure`, which browsers reject
           // on plain http — so the cookie would silently never be stored and
@@ -156,20 +122,8 @@ export function createAuthRoutes(container: ServerContainer) {
           return redirect(returnTo ?? "/");
         }
 
-        // Carry the loopback target through the OAuth roundtrip so the callback
-        // can return the JWT to the CLI instead of the dashboard.
-        if (cliRedirect) {
-          cookie.cli_redirect?.set({
-            value: cliRedirect,
-            httpOnly: true,
-            secure: isProduction(),
-            sameSite: isProduction() ? "none" : "lax",
-            path: "/",
-            domain: `.${config.domain.baseDomain}`,
-            maxAge: 600,
-          });
-        }
-        // Same for a login a sandbox tool URL sent here (forward-auth).
+        // A login a sandbox tool URL sent here (forward-auth) carries its
+        // destination through the OAuth roundtrip.
         if (returnTo) {
           cookie.auth_return_to?.set({
             value: returnTo,
@@ -208,7 +162,6 @@ export function createAuthRoutes(container: ServerContainer) {
       },
       {
         query: t.Object({
-          cli: t.Optional(t.String()),
           return_to: t.Optional(t.String()),
         }),
       },
@@ -282,21 +235,6 @@ export function createAuthRoutes(container: ServerContainer) {
 
           log.info({ username: ghUser.login }, "User logged in successfully");
 
-          // CLI login: bounce the token to the loopback listener instead of
-          // the dashboard, then clear the marker cookie.
-          const cliRedirect = cookie.cli_redirect?.value as string | undefined;
-          if (cliRedirect && isLoopbackRedirect(cliRedirect)) {
-            cookie.cli_redirect?.set({
-              value: "",
-              httpOnly: true,
-              secure: isProduction(),
-              sameSite: isProduction() ? "none" : "lax",
-              path: "/",
-              domain: `.${config.domain.baseDomain}`,
-              maxAge: 0,
-            });
-            return redirect(cliCallbackUrl(cliRedirect, token));
-          }
           const returnTo = returnUrlOf(
             cookie.auth_return_to?.value as string | undefined,
           );
@@ -398,21 +336,6 @@ export function createAuthRoutes(container: ServerContainer) {
         maxAge: 0,
       });
       return { ok: true };
-    })
-    .post("/api-token", async ({ cookie, set }) => {
-      const token = cookie.sandbox_token?.value as string | undefined;
-      if (!token) {
-        set.status = 401;
-        return { error: "UNAUTHORIZED", message: "Missing authentication" };
-      }
-      const user = await verifyJwt(token);
-      if (!user) {
-        set.status = 401;
-        return { error: "UNAUTHORIZED", message: "Invalid or expired token" };
-      }
-      const apiToken = await signJwt(user);
-      log.info({ username: user.username }, "API token generated");
-      return { token: apiToken };
     });
   return authRoutes;
 }

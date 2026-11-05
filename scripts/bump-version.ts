@@ -18,16 +18,11 @@ const PACKAGE_JSON_PATHS = [
   "apps/server/package.json",
   "apps/console/package.json",
   "packages/shared/package.json",
-  "apps/cli/package.json",
 ];
 
 const CARGO_TOML_PATH = "apps/agent/Cargo.toml";
 const CARGO_LOCK_PATH = "apps/agent/Cargo.lock";
 const CARGO_CRATE_NAME = "atelier-agent";
-
-// The CLI's `--version` string is injected by esbuild at build time from
-// apps/cli/package.json (see apps/cli/build.mjs), so bumping the package.json
-// above is all that's needed — no source edit to keep in lockstep.
 
 const SEMVER_RE = /^\d+\.\d+\.\d+$/;
 

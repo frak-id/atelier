@@ -1,0 +1,47 @@
+# --------------------------------------------------------------------------
+# Atelier local mode — single-user server + console on your machine, driving
+# real Docker sandboxes (no cluster, no GitHub OAuth app, auth bypassed).
+#
+#   GITHUB_TOKEN=$(gh auth token) docker compose -f docker-compose.local.yml up
+#
+# GITHUB_TOKEN is optional: when set it is passed to the server as
+# ATELIER_GITHUB_TOKEN so sandboxes can clone private repos.
+#
+# Ports (host networking): console UI http://127.0.0.1:8080, API :4000.
+#
+# Host networking is first-class on Linux and OrbStack. It does NOT work on
+# Docker Desktop (the "host" is the VM, so 127.0.0.1 is not your machine);
+# the Docker backend dials sandboxes at 127.0.0.1:<published port>, so use
+# Linux or OrbStack.
+#
+# Use ATELIER_TAG=nightly to run the bleeding-edge images instead of latest.
+# `docker compose -f docker-compose.local.yml down -v` also wipes local state.
+# --------------------------------------------------------------------------
+services:
+  server:
+    image: ghcr.io/frak-id/atelier-server:${ATELIER_TAG:-latest}
+    network_mode: host
+    restart: unless-stopped
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock
+      - atelier-local-data:/data
+    environment:
+      DATA_DIR: /data
+      ATELIER_SERVER_MODE: local
+      ATELIER_RUNTIME_BACKEND: docker
+      ATELIER_DEFAULT_IMAGE: ghcr.io/frak-id/atelier-dev-base:${ATELIER_TAG:-latest}
+      ATELIER_SERVER_HOST: 0.0.0.0
+      ATELIER_SERVER_PORT: "4000"
+      ATELIER_GITHUB_TOKEN: ${GITHUB_TOKEN:-}
+
+  console:
+    image: ghcr.io/frak-id/atelier-console:${ATELIER_TAG:-latest}
+    network_mode: host
+    restart: unless-stopped
+    depends_on:
+      - server
+    # The baked console.conf already listens on 8080 and proxies to
+    # 127.0.0.1:4000, which is exactly right under host networking.
+
+volumes:
+  atelier-local-data:

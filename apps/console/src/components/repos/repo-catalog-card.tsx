@@ -330,7 +330,7 @@ function CatalogBody({
       <EmptyState
         icon={GithubIcon}
         title="GitHub isn't connected for your account"
-        description="There's no GitHub token to list your repositories. On a hosted Atelier, sign out and sign back in with GitHub. In local mode, start the server with ATELIER_GITHUB_TOKEN set (or log in with `gh auth login` before `atelier local up`). You can still create a prebuild for any URL with “New prebuild”."
+        description="There's no GitHub token to list your repositories. On a hosted Atelier, sign out and sign back in with GitHub. In local mode, start the server with ATELIER_GITHUB_TOKEN set (e.g. `GITHUB_TOKEN=$(gh auth token) docker compose -f docker-compose.local.yml up`). You can still create a prebuild for any URL with “New prebuild”."
       />
     );
   }

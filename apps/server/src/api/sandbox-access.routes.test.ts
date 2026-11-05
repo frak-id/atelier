@@ -87,17 +87,10 @@ beforeAll(async () => {
     addPort: async (id: string) => {
       calls.push(`port:${id}`);
     },
-    addProcess: async (id: string) => {
-      calls.push(`process:${id}`);
-    },
     processAction: async (id: string) => {
       calls.push(`action:${id}`);
     },
     getSandboxImage: async () => "img",
-    captureToolset: async (id: string) => {
-      calls.push(`capture:${id}`);
-      return { ref: "r" };
-    },
     list: (filter: Record<string, string> = {}) =>
       Object.entries(labels)
         .filter(([, l]) =>
@@ -222,18 +215,11 @@ const SANDBOX_ROUTES: [string, string, unknown?][] = [
   ["POST", "/v1/sandboxes/owned/resume", {}],
   ["DELETE", "/v1/sandboxes/owned"],
   ["PATCH", "/v1/sandboxes/owned/files", []],
-  ["PATCH", "/v1/sandboxes/owned/env", {}],
   ["POST", "/v1/sandboxes/owned/exec", { command: "id" }],
   ["POST", "/v1/sandboxes/owned/snapshot"],
   ["POST", "/v1/sandboxes/owned/fork", {}],
-  [
-    "POST",
-    "/v1/sandboxes/owned/toolsets/capture",
-    { name: "t", paths: ["a"], exclude: [], overrides: [] },
-  ],
   ["GET", "/v1/sandboxes/owned/processes/web/logs"],
   ["POST", "/v1/sandboxes/owned/ports", { name: "web", port: 3000 }],
-  ["POST", "/v1/sandboxes/owned/processes", { name: "p", command: "true" }],
   ["POST", "/v1/sandboxes/owned/processes/web/start"],
   ["GET", "/sessions/sandboxes/owned/agent/sessions"],
   ["GET", "/sessions/sandboxes/owned/agent/permissions"],

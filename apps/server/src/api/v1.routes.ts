@@ -10,7 +10,6 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import {
   AddPortRequestSchema,
-  AddProcessRequestSchema,
   buildRepoPrebuildSpec,
   type CreateSandboxRequest,
   CreateSandboxRequestSchema,
@@ -18,7 +17,6 @@ import {
   type ForkSandboxRequest,
   ForkSandboxRequestSchema,
   findRepoBranchPrebuild,
-  PatchEnvRequestSchema,
   PatchFilesRequestSchema,
   type PrebuildSpec,
   PrebuildSpecSchema,
@@ -33,8 +31,6 @@ import {
   SurfaceProcessesSchema,
   type ToolsetBuildRequest,
   ToolsetBuildRequestSchema,
-  type ToolsetCaptureRequest,
-  ToolsetCaptureRequestSchema,
   type ToolsetRef,
   ToolsetRefSchema,
   UpdateSandboxRequestSchema,
@@ -918,22 +914,6 @@ export function createV1Routes(container: ServerContainer) {
         },
         { body: PatchFilesRequestSchema },
       )
-      .patch(
-        "/sandboxes/:id/env",
-        async ({ params, body, set }) => {
-          await runtime.patchEnv(params.id, body);
-          set.status = 204;
-        },
-        { body: PatchEnvRequestSchema },
-      )
-      .post(
-        "/sandboxes/:id/processes",
-        async ({ params, body, set }) => {
-          await runtime.addProcess(params.id, body);
-          set.status = 204;
-        },
-        { body: AddProcessRequestSchema },
-      )
       .post(
         "/sandboxes/:id/processes/:name/:action",
         async ({ params, set }) => {
@@ -1013,24 +993,6 @@ export function createV1Routes(container: ServerContainer) {
           return job;
         },
         { body: ForkSandboxRequestSchema },
-      )
-      .post(
-        "/sandboxes/:id/toolsets/capture",
-        ({ params, body, set }) => {
-          const req = body as ToolsetCaptureRequest;
-          const job = jobs.dispatch(
-            {
-              kind: "toolset-capture",
-              target: req.name,
-              metadata: { sandboxId: params.id },
-            },
-            (signal, log) =>
-              runtime.captureToolset(params.id, req, signal, log),
-          );
-          set.status = 202;
-          return job;
-        },
-        { body: ToolsetCaptureRequestSchema },
       )
       // ── attach ─────────────────────────────────────────────────────────
       .ws("/sandboxes/:id/attach/:name", {
