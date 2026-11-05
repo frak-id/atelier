@@ -41,6 +41,14 @@ function mkUser(name: string): AuthUser {
     `${name}@x.test`,
     "",
   );
+  // Toolboxes created without an explicit org land in the personal org.
+  const personal = control.organizationService.create(
+    u.username,
+    `mcp-acc-personal-${name}`,
+    true,
+  );
+  control.orgMemberService.addMember(personal.id, u.id, "owner");
+  control.userService.setPersonalOrg(u.id, personal.id);
   return { id: u.id, username: u.username, email: u.email, avatarUrl: "" };
 }
 
@@ -203,15 +211,17 @@ describe("MCP sandbox access", () => {
 
   test("toolbox capture of someone else's sandbox is NOT_FOUND", async () => {
     const mcp = await as(stranger);
-    const tb = control.toolboxService.create(
-      { type: "user", id: stranger.id },
-      {
-        slug: "mine",
-        description: "d",
-        build: ["true"],
-        paths: [".local"],
-      } as never,
+    const strangerOrg = control.organizationService.create(
+      "Stranger",
+      "mcp-acc-stranger-org",
     );
+    control.orgMemberService.addMember(strangerOrg.id, stranger.id, "owner");
+    const tb = control.toolboxService.create(strangerOrg.id, {
+      slug: "mine",
+      description: "d",
+      build: ["true"],
+      paths: [".local"],
+    } as never);
     reached.length = 0;
     const res = await mcp.call("manage_toolbox", {
       action: "capture",
@@ -310,8 +320,11 @@ describe("MCP sandbox access", () => {
     // The owner is the caller (set by enrichment), never the supplied one.
     expect(spec?.metadata?.[OWNER]).toBe(member.id);
     expect(spec?.metadata?.keep).toBe("me");
-    // The org is the one resolved for the caller, never the supplied one.
-    expect(spec?.annotations?.[ORG]).toBe(orgId);
+    // The org is the one resolved for the caller (their personal org, with
+    // no default org configured), never the supplied one.
+    expect(spec?.annotations?.[ORG]).toBe(
+      control.userService.getById(member.id)?.personalOrgId,
+    );
     expect(spec?.annotations?.note).toBe("x");
   });
 });

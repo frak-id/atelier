@@ -33,22 +33,18 @@ type Org = {
 
 const SECTION_TITLE: Record<TransferKind, string> = {
   secrets: "Secrets",
-  policy: "Org policy",
   toolboxes: "Toolboxes",
 };
 
-function canManage(role: OrgMemberRole): boolean {
-  return role === "owner" || role === "admin";
-}
-
 function emptySelection(): TransferSelection {
-  return { secrets: [], policy: [], toolboxes: [] };
+  return { secrets: [], toolboxes: [] };
 }
 
 /**
- * "Move resources": moves (not copies) an org's or the caller's personal
- * secrets/policy/toolboxes into another org. Reachable from the
- * Organizations page's header.
+ * "Move resources": moves (not copies) secrets and toolboxes out of an org
+ * the caller owns (typically their personal org) into another org they
+ * belong to. Moving secrets needs ownership of the destination too. Reachable
+ * from the Organizations page's header.
  */
 export function TransferResourcesDialog({
   open,
@@ -65,12 +61,13 @@ export function TransferResourcesDialog({
     emptySelection(),
   );
 
-  const manageableOrgs = useMemo(
-    () => organizations.filter((org) => canManage(org.role)),
+  const ownedOrgs = useMemo(
+    () => organizations.filter((org) => org.role === "owner"),
     [organizations],
   );
-  const fromOrgId = from.startsWith("org:") ? from.slice(4) : undefined;
-  const toOrgs = manageableOrgs.filter((org) => org.id !== fromOrgId);
+  const toOrgs = organizations.filter((org) => org.id !== from);
+  const canMoveSecrets =
+    organizations.find((org) => org.id === to)?.role === "owner";
 
   function resetSelectionFor(nextFrom: string, nextTo: string) {
     setSelection(emptySelection());
@@ -156,10 +153,10 @@ export function TransferResourcesDialog({
                 <option value="" disabled>
                   Select a source…
                 </option>
-                <option value="user">My personal resources</option>
-                {manageableOrgs.map((org) => (
-                  <option key={org.id} value={`org:${org.id}`}>
+                {ownedOrgs.map((org) => (
+                  <option key={org.id} value={org.id}>
                     {org.name}
+                    {org.personal ? " (personal)" : ""}
                   </option>
                 ))}
               </NativeSelect>
@@ -205,6 +202,13 @@ export function TransferResourcesDialog({
                   {TRANSFER_KINDS.map((kind) => {
                     const items = preview?.[kind] ?? [];
                     if (items.length === 0) return null;
+                    if (kind === "secrets" && !canMoveSecrets) {
+                      return (
+                        <p key={kind} className="text-xs text-muted-foreground">
+                          Secrets can only move into an organization you own.
+                        </p>
+                      );
+                    }
                     return (
                       <TransferSection
                         key={kind}

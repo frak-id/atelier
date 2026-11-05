@@ -7,7 +7,7 @@ import { Skeleton } from "@/components/ui/skeleton";
 
 export const Route = createFileRoute("/settings/toolboxes/$id")({
   validateSearch: (search: Record<string, unknown>) => ({
-    owner: typeof search.owner === "string" ? search.owner : "user",
+    owner: typeof search.owner === "string" ? search.owner : "me",
   }),
   component: EditToolboxPage,
 });

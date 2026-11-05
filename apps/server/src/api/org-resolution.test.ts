@@ -16,6 +16,7 @@ beforeAll(async () => {
   dataDir = await mkdtemp(join(tmpdir(), "atelier-org-resolution-"));
   process.env.DATA_DIR = dataDir;
   process.env.MIGRATIONS_DIR ??= migrationsDir;
+  process.env.ATELIER_DEFAULT_ORG = "res-default";
   const { initDatabase } = await import("../control/db/client.ts");
   await initDatabase();
   const { createControlContainer } = await import("../control/index.ts");
@@ -44,6 +45,19 @@ describe("resolveOrgId", () => {
   test("defaults to the personal org, whatever the membership order", () => {
     const { id, personal } = userWithTeam("a");
     expect(resolveOrgId(control, id)).toBe(personal.id);
+  });
+
+  test("defaults to the team org (auth.defaultOrg) for its members", () => {
+    const { id, personal } = userWithTeam("d");
+    const team =
+      control.organizationService.getBySlug("res-default") ??
+      control.organizationService.create("Default", "res-default");
+    // Not a member yet: the personal org stays the fallback.
+    expect(resolveOrgId(control, id)).toBe(personal.id);
+    control.defaultOrg.joinDefaultOrg(id);
+    expect(resolveOrgId(control, id)).toBe(team.id);
+    // An explicit org still wins.
+    expect(resolveOrgId(control, id, personal.id)).toBe(personal.id);
   });
 
   test("honours an org the caller belongs to, refuses any other", () => {

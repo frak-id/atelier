@@ -38,86 +38,79 @@ function user(): string {
   return id;
 }
 
-/** A team org with an owner, an admin and a member. */
+/** A team org with two owners and a member. */
 function team() {
   seq++;
   const org = control.organizationService.create(`Team ${seq}`, `om-${seq}`);
   const owner = user();
-  const admin = user();
+  const coOwner = user();
   const member = user();
   control.orgMemberService.addMember(org.id, owner, "owner");
-  control.orgMemberService.addMember(org.id, admin, "admin");
+  control.orgMemberService.addMember(org.id, coOwner, "owner");
   control.orgMemberService.addMember(org.id, member, "member");
   const roleOf = (id: string) =>
     control.orgMemberService.getMembership(org.id, id)?.role;
-  return { org, owner, admin, member, roleOf };
+  return { org, owner, coOwner, member, roleOf };
 }
 
 const members = () => control.orgMemberService;
 
 describe("OrgMemberService.updateRole", () => {
-  test("owners manage anyone, admins only non-owners", () => {
-    const { org, owner, admin, member, roleOf } = team();
-    members().updateRole(org.id, admin, member, "viewer");
-    expect(roleOf(member)).toBe("viewer");
-    expect(() => members().updateRole(org.id, admin, owner, "member")).toThrow(
-      ForbiddenError,
-    );
-    expect(() => members().updateRole(org.id, admin, member, "owner")).toThrow(
-      ForbiddenError,
-    );
-    expect(() => members().updateRole(org.id, member, admin, "viewer")).toThrow(
-      ForbiddenError,
-    );
-    members().updateRole(org.id, owner, admin, "owner");
-    expect(roleOf(admin)).toBe("owner");
+  test("owners change roles; members can't", () => {
+    const { org, owner, coOwner, member, roleOf } = team();
+    expect(() =>
+      members().updateRole(org.id, member, coOwner, "member"),
+    ).toThrow(ForbiddenError);
+    members().updateRole(org.id, owner, member, "owner");
+    expect(roleOf(member)).toBe("owner");
+    members().updateRole(org.id, owner, coOwner, "member");
+    expect(roleOf(coOwner)).toBe("member");
   });
 
   test("the last owner can't be demoted", () => {
-    const { org, owner } = team();
-    expect(() => members().updateRole(org.id, owner, owner, "admin")).toThrow(
+    const { org, owner, coOwner } = team();
+    members().removeMember(org.id, owner, coOwner);
+    expect(() => members().updateRole(org.id, owner, owner, "member")).toThrow(
       ValidationError,
     );
   });
 });
 
 describe("OrgMemberService.inviteMember", () => {
-  test("admins add non-owners only; members can't add anyone", () => {
-    const { org, owner, admin, member, roleOf } = team();
+  test("owners add members and owners; members can't add anyone", () => {
+    const { org, owner, member, roleOf } = team();
     const a = user();
     const b = user();
-    expect(() => members().inviteMember(org.id, admin, a, "owner")).toThrow(
-      ForbiddenError,
-    );
-    expect(() => members().inviteMember(org.id, member, a, "viewer")).toThrow(
+    expect(() => members().inviteMember(org.id, member, a, "member")).toThrow(
       ForbiddenError,
     );
     expect(roleOf(a)).toBeUndefined();
-    members().inviteMember(org.id, admin, a, "admin");
+    members().inviteMember(org.id, owner, a);
     members().inviteMember(org.id, owner, b, "owner");
-    expect([roleOf(a), roleOf(b)]).toEqual(["admin", "owner"]);
+    expect([roleOf(a), roleOf(b)]).toEqual(["member", "owner"]);
   });
 });
 
 describe("OrgMemberService.removeMember", () => {
-  test("admins remove non-owners; owners remove anyone but the last owner", () => {
-    const { org, owner, admin, member, roleOf } = team();
-    expect(() => members().removeMember(org.id, admin, owner)).toThrow(
+  test("owners remove anyone but the last owner; members remove nobody", () => {
+    const { org, owner, coOwner, member, roleOf } = team();
+    expect(() => members().removeMember(org.id, member, coOwner)).toThrow(
       ForbiddenError,
     );
-    expect(() => members().removeMember(org.id, member, admin)).toThrow(
-      ForbiddenError,
-    );
-    members().removeMember(org.id, admin, member);
+    members().removeMember(org.id, owner, member);
     expect(roleOf(member)).toBeUndefined();
-    members().removeMember(org.id, owner, admin);
-    expect(roleOf(admin)).toBeUndefined();
+    members().removeMember(org.id, owner, coOwner);
+    expect(roleOf(coOwner)).toBeUndefined();
+    expect(() => members().removeMember(org.id, owner, owner)).toThrow(
+      ValidationError,
+    );
   });
 
   test("anyone may leave, except the last owner", () => {
-    const { org, owner, member, roleOf } = team();
+    const { org, owner, coOwner, member, roleOf } = team();
     members().removeMember(org.id, member, member);
     expect(roleOf(member)).toBeUndefined();
+    members().removeMember(org.id, coOwner, coOwner);
     expect(() => members().removeMember(org.id, owner, owner)).toThrow(
       ValidationError,
     );

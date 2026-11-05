@@ -4,7 +4,7 @@ import { ToolboxEditor } from "@/components/toolbox-editor";
 
 export const Route = createFileRoute("/settings/toolboxes/new")({
   validateSearch: (search: Record<string, unknown>) => ({
-    owner: typeof search.owner === "string" ? search.owner : "user",
+    owner: typeof search.owner === "string" ? search.owner : "me",
   }),
   component: NewToolboxPage,
 });

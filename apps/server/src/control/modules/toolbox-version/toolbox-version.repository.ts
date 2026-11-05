@@ -1,10 +1,10 @@
 import type { ToolboxVersion } from "@atelier/spec";
 import { and, asc, eq, sql } from "drizzle-orm";
 import { getDatabase } from "../../db/client.ts";
-import { entityToolboxVersions } from "../../db/schema.ts";
+import { toolboxVersions } from "../../db/schema.ts";
 
 function rowToVersion(
-  row: typeof entityToolboxVersions.$inferSelect,
+  row: typeof toolboxVersions.$inferSelect,
 ): ToolboxVersion {
   return {
     id: row.id,
@@ -22,9 +22,9 @@ export class ToolboxVersionRepository {
   listByToolbox(toolboxId: string): ToolboxVersion[] {
     return getDatabase()
       .select()
-      .from(entityToolboxVersions)
-      .where(eq(entityToolboxVersions.toolboxId, toolboxId))
-      .orderBy(asc(entityToolboxVersions.label))
+      .from(toolboxVersions)
+      .where(eq(toolboxVersions.toolboxId, toolboxId))
+      .orderBy(asc(toolboxVersions.label))
       .all()
       .map(rowToVersion);
   }
@@ -32,8 +32,8 @@ export class ToolboxVersionRepository {
   getById(id: string): ToolboxVersion | undefined {
     const row = getDatabase()
       .select()
-      .from(entityToolboxVersions)
-      .where(eq(entityToolboxVersions.id, id))
+      .from(toolboxVersions)
+      .where(eq(toolboxVersions.id, id))
       .get();
     return row ? rowToVersion(row) : undefined;
   }
@@ -47,44 +47,20 @@ export class ToolboxVersionRepository {
   ): ToolboxVersion | undefined {
     const row = getDatabase()
       .select()
-      .from(entityToolboxVersions)
+      .from(toolboxVersions)
       .where(
         and(
-          eq(entityToolboxVersions.toolboxId, toolboxId),
-          eq(entityToolboxVersions.ref, ref),
+          eq(toolboxVersions.toolboxId, toolboxId),
+          eq(toolboxVersions.ref, ref),
         ),
       )
       .get();
     return row ? rowToVersion(row) : undefined;
   }
 
-  /** The toolbox that recorded an artifact: by exact `ref`, or — for a bare
-   * registry name with no `@digest` (`tb/user/42/pi-web`) — by any version
-   * stored under that name. */
-  findToolboxIdByRef(refOrName: string): string | undefined {
-    const exact = getDatabase()
-      .select({ toolboxId: entityToolboxVersions.toolboxId })
-      .from(entityToolboxVersions)
-      .where(eq(entityToolboxVersions.ref, refOrName))
-      .get();
-    if (exact || refOrName.includes("@")) return exact?.toolboxId;
-    return getDatabase()
-      .select({
-        toolboxId: entityToolboxVersions.toolboxId,
-        ref: entityToolboxVersions.ref,
-      })
-      .from(entityToolboxVersions)
-      .where(sql`instr(${entityToolboxVersions.ref}, ${`${refOrName}@`}) > 0`)
-      .all()
-      .find(
-        ({ ref }) =>
-          ref.startsWith(`${refOrName}@`) || ref.includes(`/${refOrName}@`),
-      )?.toolboxId;
-  }
-
   create(record: ToolboxVersion): ToolboxVersion {
     getDatabase()
-      .insert(entityToolboxVersions)
+      .insert(toolboxVersions)
       .values({
         id: record.id,
         toolboxId: record.toolboxId,
@@ -103,8 +79,8 @@ export class ToolboxVersionRepository {
     const existing = this.getById(id);
     if (!existing) return false;
     getDatabase()
-      .delete(entityToolboxVersions)
-      .where(eq(entityToolboxVersions.id, id))
+      .delete(toolboxVersions)
+      .where(eq(toolboxVersions.id, id))
       .run();
     return true;
   }
@@ -113,9 +89,9 @@ export class ToolboxVersionRepository {
    * monotonic counter, not a global sequence (docs/toolbox-versions.md §4). */
   nextLabel(toolboxId: string): number {
     const row = getDatabase()
-      .select({ max: sql<number | null>`max(${entityToolboxVersions.label})` })
-      .from(entityToolboxVersions)
-      .where(eq(entityToolboxVersions.toolboxId, toolboxId))
+      .select({ max: sql<number | null>`max(${toolboxVersions.label})` })
+      .from(toolboxVersions)
+      .where(eq(toolboxVersions.toolboxId, toolboxId))
       .get();
     return (row?.max ?? 0) + 1;
   }

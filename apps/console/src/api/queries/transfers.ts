@@ -8,7 +8,7 @@ import { api } from "@/api/client";
 import { errorMessage } from "./error";
 import { queryKeys } from "./keys";
 
-export const TRANSFER_KINDS = ["secrets", "policy", "toolboxes"] as const;
+export const TRANSFER_KINDS = ["secrets", "toolboxes"] as const;
 export type TransferKind = (typeof TRANSFER_KINDS)[number];
 
 export interface TransferItem {
@@ -22,9 +22,8 @@ type TransferPreview = Record<TransferKind, TransferItem[]>;
 export type TransferSelection = Record<TransferKind, string[]>;
 
 /**
- * `from` is `user` (the caller's personal scope) or `org:<id>`; `to` is a
- * destination org id. Only fetched once both are chosen (see `enabled` at
- * the call site).
+ * `from` and `to` are org ids (the source is usually the caller's personal
+ * org). Only fetched once both are chosen (see `enabled` at the call site).
  */
 export function transferPreviewQuery(from: string, to: string) {
   return queryOptions({
@@ -43,7 +42,6 @@ export function transferPreviewQuery(from: string, to: string) {
 
 const KIND_NOUN: Record<TransferKind, [string, string]> = {
   secrets: ["secret", "secrets"],
-  policy: ["org policy", "org policies"],
   toolboxes: ["toolbox", "toolboxes"],
 };
 
@@ -71,7 +69,6 @@ export function useMoveResources() {
     onSuccess: (result) => {
       queryClient.invalidateQueries({ queryKey: queryKeys.organizations.all });
       queryClient.invalidateQueries({ queryKey: queryKeys.secrets.all });
-      queryClient.invalidateQueries({ queryKey: queryKeys.orgPolicy.all });
       queryClient.invalidateQueries({ queryKey: queryKeys.toolboxes.all });
       queryClient.invalidateQueries({ queryKey: queryKeys.toolsets.all });
       queryClient.invalidateQueries({ queryKey: queryKeys.transfers.all });

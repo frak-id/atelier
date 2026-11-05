@@ -2,6 +2,12 @@
  * AES-256-GCM secret-value encryption. Free-floating crypto util — called
  * by `secret.service.ts` (encrypts a write-only value at rest).
  */
+import {
+  createCipheriv,
+  createDecipheriv,
+  createHash,
+  randomBytes,
+} from "node:crypto";
 import { isProduction } from "../../../shared/lib/config.ts";
 import { createChildLogger } from "../../../shared/lib/logger.ts";
 
@@ -69,4 +75,47 @@ export async function decryptSecretValue(encrypted: string): Promise<string> {
     ciphertext,
   );
   return new TextDecoder().decode(decrypted);
+}
+
+// Synchronous twin of the pair above, for values the sync SQLite repositories
+// store (a user's GitHub token). Same key and same `enc:` wire format
+// (`iv + ciphertext + 16-byte GCM tag`, as WebCrypto lays it out), so the two
+// pairs read each other's output.
+
+function secretsKeyBytes(): Buffer {
+  const secretKey =
+    process.env.SANDBOX_SECRETS_KEY || "default-dev-key-change-in-production";
+  return createHash("sha256").update(secretKey).digest();
+}
+
+export function isEncryptedValue(value: string): boolean {
+  return value.startsWith(ENCRYPTION_PREFIX);
+}
+
+export function encryptSecretValueSync(value: string): string {
+  const iv = randomBytes(12);
+  const cipher = createCipheriv("aes-256-gcm", secretsKeyBytes(), iv);
+  const ciphertext = Buffer.concat([
+    cipher.update(value, "utf8"),
+    cipher.final(),
+  ]);
+  const sealed = Buffer.concat([iv, ciphertext, cipher.getAuthTag()]);
+  return `${ENCRYPTION_PREFIX}${sealed.toString("base64")}`;
+}
+
+export function decryptSecretValueSync(encrypted: string): string {
+  const sealed = Buffer.from(
+    encrypted.slice(ENCRYPTION_PREFIX.length),
+    "base64",
+  );
+  const decipher = createDecipheriv(
+    "aes-256-gcm",
+    secretsKeyBytes(),
+    sealed.subarray(0, 12),
+  );
+  decipher.setAuthTag(sealed.subarray(sealed.length - 16));
+  return Buffer.concat([
+    decipher.update(sealed.subarray(12, sealed.length - 16)),
+    decipher.final(),
+  ]).toString("utf8");
 }

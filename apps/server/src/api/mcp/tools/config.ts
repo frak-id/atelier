@@ -20,8 +20,8 @@ import {
   type ToolboxConfig,
   ToolboxConfigInputSchema,
   ToolboxConfigPatchSchema,
-  type ToolboxOwner,
   type ToolboxVersion,
+  toolboxArtifactName,
 } from "@atelier/spec";
 import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { z } from "zod";
@@ -34,9 +34,9 @@ import {
   requireSourceAccess,
 } from "../../sandbox-guard.ts";
 import {
-  readableOwners,
-  requireToolboxOwnerAccess,
-  resolveOwner,
+  readableOrgIds,
+  requireToolboxAccess,
+  resolveToolboxOrg,
 } from "../../toolbox-access.ts";
 import {
   activeRefreshJob,
@@ -109,18 +109,10 @@ function rolesOf(control: Control, userId: string): Map<string, string> {
   );
 }
 
-function toolboxSelector(
-  tb: Pick<ToolboxConfig, "ownerType" | "ownerId" | "slug">,
-) {
-  return `tb/${tb.ownerType}/${tb.ownerId}/${tb.slug}`;
-}
-
-/** Where an auto-included toolbox lands (see `resolveToolboxRefs`): a user's
- * own toolboxes go into every sandbox they create; an org's only into
- * sandboxes created in that org. */
+/** Where an auto-included toolbox lands (see `resolveSpawnToolboxes`): only
+ * into sandboxes created in its org. */
 function appliesTo(tb: ToolboxConfig) {
-  if (!tb.autoInject) return "explicit-only";
-  return tb.ownerType === "org" ? "sandboxes-in-org" : "every-sandbox";
+  return tb.autoInject ? "sandboxes-in-org" : "explicit-only";
 }
 
 function versionView(v: ToolboxVersion) {
@@ -174,11 +166,9 @@ function toolboxView(
   advanced: boolean,
   isRefreshing: (toolboxId: string) => boolean,
 ) {
-  const isOrg = tb.ownerType === "org";
-  const role = isOrg ? roles.get(tb.ownerId) : undefined;
-  // Same visibility as `GET /api/toolboxes/:id/versions`: your own
-  // toolboxes always, an org's only for its owners/admins.
-  const privileged = !isOrg || role === "owner" || role === "admin";
+  // Same visibility as `GET /api/toolboxes/:id/versions`: any member of the
+  // toolbox's org (owners and members alike).
+  const privileged = roles.has(tb.orgId);
   const versions = privileged
     ? control.toolboxVersionService.listByToolbox(tb.id)
     : undefined;
@@ -189,12 +179,11 @@ function toolboxView(
   const refresh = refreshView(tb, () => isRefreshing(tb.id));
 
   return {
-    selector: toolboxSelector(tb),
+    selector: toolboxArtifactName(tb),
     id: tb.id,
     slug: tb.slug,
     description: tb.description,
-    scope: tb.ownerType,
-    ...(isOrg ? { orgId: tb.ownerId } : {}),
+    orgId: tb.orgId,
     autoInclude: tb.autoInject,
     appliesTo: appliesTo(tb),
     ...(tb.harness ? { harness: tb.harness } : {}),
@@ -211,6 +200,9 @@ function toolboxView(
           paths: tb.paths,
           ...(tb.processes?.length ? { processes: tb.processes } : {}),
           ...(tb.ports?.length ? { ports: tb.ports } : {}),
+          ...(tb.files?.length
+            ? { files: tb.files.map(({ path }) => path) }
+            : {}),
           createdAt: tb.createdAt,
           updatedAt: tb.updatedAt,
           ...(versions
@@ -225,11 +217,10 @@ function toolboxView(
   };
 }
 
-/** Injection order of `resolveToolboxRefs`: org baseline, then the user's
- * overlay, oldest first; toolboxes that are not auto-included last. */
+/** Injection order: auto-included toolboxes (oldest first) before the
+ * explicit-only ones. */
 function injectionRank(tb: ToolboxConfig): number {
-  if (!tb.autoInject) return 2;
-  return tb.ownerType === "org" ? 0 : 1;
+  return tb.autoInject ? 0 : 1;
 }
 
 export function registerConfigTools(
@@ -333,13 +324,14 @@ export function registerConfigTools(
     {
       title: "List toolboxes",
       description:
-        "List the toolboxes you can use: your own AND those of every " +
-        "organization you belong to (narrow with `owner`). A toolbox " +
+        "List the toolboxes you can use: those of every organization you " +
+        "belong to, your personal org included (narrow with `owner`). A " +
+        "toolbox " +
         "bundles tools and config baked into sandboxes. `autoInclude: true` " +
         "ones are added to new sandboxes automatically: `appliesTo` " +
-        "`every-sandbox` for your own, `sandboxes-in-org` for an org's " +
-        "(only sandboxes created in that org, `orgId`; your default org is " +
-        "in `whoami`). `explicit-only` ones apply only when passed to " +
+        "`sandboxes-in-org` (only sandboxes created in that org, `orgId`; " +
+        "your default org is in `whoami`). `explicit-only` ones apply " +
+        "only when passed to " +
         "`create_sandbox` as `toolboxes: [selector]`. Auto-included ones " +
         "come first, in application order. `activeVersion` is the pinned " +
         "build (null: built from the recipe at spawn). `canManage` says " +
@@ -349,24 +341,22 @@ export function registerConfigTools(
         "outcome: `updated` (a new version, pinned unless `pinned: " +
         "false`), `unchanged` (nothing new to save) or `failed` (`error`). " +
         "detail=advanced adds the recipe (source, build, paths, processes, " +
-        "ports) and version history (visible to org owners/admins and for " +
-        "your own).",
+        "ports) and version history.",
       inputSchema: {
         owner: z
           .string()
           .optional()
           .describe(
-            "all (default) | me | org:<orgId>. `me` is only your own " +
-              "toolboxes.",
+            "all (default) | me | org:<orgId>. `me` is your personal org.",
           ),
         detail: detailSchema,
       },
     },
     safeTool(async ({ owner, detail }) => {
-      const scopes: ToolboxOwner[] =
+      const scopes =
         owner === undefined || owner === "all"
-          ? readableOwners(control, user.id)
-          : [resolveOwner(control, user.id, owner, false)];
+          ? readableOrgIds(control, user.id)
+          : [resolveToolboxOrg(control, user.id, owner)];
       const roles = rolesOf(control, user.id);
       const advanced = detail === "advanced";
       const toolboxes = scopes
@@ -398,10 +388,9 @@ export function registerConfigTools(
         "version and pins it (published, for an org toolbox); when nothing " +
         "changed no version is made. It returns at once with a `jobId` " +
         "(minutes of work); read the outcome later in `list_toolboxes` " +
-        "(`refresh.running`, then `refresh.last`). Your own toolboxes are " +
-        "yours alone; " +
-        "an org's need you to be its owner or admin (see `canManage` in " +
-        "`list_toolboxes`). New toolboxes are auto-included by default " +
+        "(`refresh.running`, then `refresh.last`). Any member of a " +
+        "toolbox's org can manage it. New toolboxes are auto-included by " +
+        "default " +
         "(`config.autoInject`). To roll out a captured version org-wide: " +
         "`capture`, `publish`, then `pin_version`. create/update return " +
         "the toolbox like `list_toolboxes`.",
@@ -420,7 +409,7 @@ export function registerConfigTools(
           .string()
           .optional()
           .describe(
-            "action=create: me (default) | org:<orgId> (needs owner/admin)",
+            "action=create: me (default, your personal org) | org:<orgId>",
           ),
         id: z
           .string()
@@ -436,7 +425,8 @@ export function registerConfigTools(
               "kebab, immutable), `description` (max 200), `build` " +
               "(shell steps, max 100) and `paths` (home-relative paths to " +
               "capture, max 100); optional `source` ({image}|{snapshot}), " +
-              "`harness` (e.g. pi, opencode), `processes`, `ports`, " +
+              "`harness` (e.g. pi, opencode), `processes`, `ports`, `files` " +
+              "([{path, content|{$secret}, mode?, owner?}]), " +
               "`autoInject` (default true), `refresh` (update commands a " +
               "refresh runs, max 100), `refreshSchedule` (cron, UTC, e.g. " +
               "`0 4 * * *` or `@daily`, at most hourly; needs `refresh`). " +
@@ -470,7 +460,7 @@ export function registerConfigTools(
           if (!config) {
             throw new ValidationError("action=create requires `config`");
           }
-          const ownerRef = resolveOwner(control, user.id, owner, true);
+          const orgId = resolveToolboxOrg(control, user.id, owner);
           const input = parseSpec(
             ToolboxConfigInputSchema,
             config,
@@ -480,7 +470,7 @@ export function registerConfigTools(
           return text(
             toolboxView(
               control,
-              control.toolboxService.create(ownerRef, input),
+              control.toolboxService.create(orgId, input),
               roles,
               false,
               isRefreshing,
@@ -490,7 +480,7 @@ export function registerConfigTools(
 
         if (!id) throw new ValidationError(`action=${action} requires \`id\``);
         const tb = control.toolboxService.get(id);
-        requireToolboxOwnerAccess(control, tb, user.id);
+        requireToolboxAccess(control, tb, user.id);
 
         /** A version of THIS toolbox, or a ValidationError. */
         const versionOf = (vid: string | null | undefined) => {
@@ -560,14 +550,12 @@ export function registerConfigTools(
             // Org publish-before-pin guard (docs/toolbox-versions.md §5):
             // a private capture pinned org-wide would replay one user's
             // config (and possibly secrets) into every future spawn.
-            if (tb.ownerType === "org") {
-              const entry = runtime.getToolsetEntry(version.ref);
-              if (entry?.private === true) {
-                throw new ValidationError(
-                  "publish this version (action=publish) before pinning an " +
-                    "org toolbox org-wide",
-                );
-              }
+            const entry = runtime.getToolsetEntry(version.ref);
+            if (entry?.private === true) {
+              throw new ValidationError(
+                "publish this version (action=publish) before pinning a " +
+                  "toolbox org-wide",
+              );
             }
             control.toolboxService.setActiveVersionId(id, version.id);
             return text({ id, activeVersionId: version.id });
@@ -593,7 +581,7 @@ export function registerConfigTools(
                   "(action=pin_version with versionId null)",
               );
             }
-            control.toolboxVersionService.delete(version.id);
+            control.toolboxVersionService.delete(tb.id, version.id);
             return text({ id, versionId: version.id, status: "deleted" });
           }
 
@@ -611,7 +599,7 @@ export function registerConfigTools(
             // caller-supplied ones.
             requireSandboxAccess(container, user.id, sandboxId);
             const { ref } = await runtime.captureToolset(sandboxId, {
-              name: toolboxSelector(tb),
+              name: toolboxArtifactName(tb),
               paths: tb.paths,
               exclude: [],
               overrides: [],

@@ -1,4 +1,8 @@
-import type { ToolboxConfig, ToolsetEntry } from "@atelier/spec";
+import {
+  type ToolboxConfig,
+  type ToolsetEntry,
+  toolboxArtifactName,
+} from "@atelier/spec";
 import { useQuery } from "@tanstack/react-query";
 import { createFileRoute, Link } from "@tanstack/react-router";
 import {
@@ -55,11 +59,6 @@ export const Route = createFileRoute("/settings/toolboxes/")({
   component: ToolboxesPage,
 });
 
-/** The artifact name a toolbox compiles into at spawn (`resolveToolboxRefs`). */
-function toolboxArtifactName(toolbox: ToolboxConfig): string {
-  return `tb/${toolbox.ownerType}/${toolbox.ownerId}/${toolbox.slug}`;
-}
-
 function ToolboxesPage() {
   const { data: toolsets } = useQuery(toolsetsListQuery());
   const artifactByName = new Map(
@@ -69,12 +68,14 @@ function ToolboxesPage() {
   return (
     <div className="space-y-6">
       <p className="text-sm text-muted-foreground">
-        Toolboxes are owner-scoped recipes (<code>build[]</code> +{" "}
-        <code>paths[]</code>) that, when enabled, are automatically compiled
-        into a <strong>toolset</strong> (the resulting build artifact) and
-        injected into every spawn for that user or org.
+        Toolboxes are org-scoped recipes (<code>build[]</code> +{" "}
+        <code>paths[]</code>, plus optional <code>files</code>, processes and
+        ports) that, when auto-injected, are compiled into a{" "}
+        <strong>toolset</strong> (the resulting build artifact) and applied to
+        every spawn in that org. Your personal toolboxes live in your personal
+        org; move one into the team org to share it.
       </p>
-      <OwnerScopeSections includeUser>
+      <OwnerScopeSections>
         {(scope) => (
           <ToolboxScopeSection
             key={scope.owner}
@@ -88,7 +89,7 @@ function ToolboxesPage() {
   );
 }
 
-/** One owner's toolboxes (the caller's own, or an org's). */
+/** One org's toolboxes (any member may use, create and edit them). */
 function ToolboxScopeSection({
   scope,
   artifactByName,
@@ -131,8 +132,6 @@ function ToolboxScopeSection({
               key={toolbox.id}
               toolbox={toolbox}
               owner={scope.owner}
-              // Publish requires toolbox-owner access (`canManage`).
-              canManage={scope.canManage}
               artifact={artifactByName.get(toolboxArtifactName(toolbox))}
             />
           ))}
@@ -145,12 +144,10 @@ function ToolboxScopeSection({
 function ToolboxRow({
   toolbox,
   owner,
-  canManage,
   artifact,
 }: {
   toolbox: ToolboxConfig;
   owner: string;
-  canManage: boolean;
   artifact: ToolsetEntry | undefined;
 }) {
   const deleteToolbox = useDeleteToolbox();
@@ -223,7 +220,7 @@ function ToolboxRow({
           )}
         </div>
         {toolbox.refresh.length > 0 || toolbox.lastRefresh ? (
-          <ToolboxRefreshStrip toolbox={toolbox} canManage={canManage} />
+          <ToolboxRefreshStrip toolbox={toolbox} />
         ) : null}
         <div className="border-t pt-2">
           <Button
@@ -237,10 +234,7 @@ function ToolboxRow({
           {/* Mounted only while open — mirrors ProcessLogs' mount-gate so N
            * toolbox rows don't fire N version queries on page load. */}
           {versionsOpen ? (
-            <ToolboxVersionsPanel
-              toolboxId={toolbox.id}
-              canManage={canManage}
-            />
+            <ToolboxVersionsPanel toolboxId={toolbox.id} />
           ) : null}
         </div>
       </CardContent>
@@ -267,13 +261,7 @@ function ToolboxRow({
  * the update commands over the current version on the server, then saves and
  * pins the result. "Running" comes from the live jobs feed.
  */
-function ToolboxRefreshStrip({
-  toolbox,
-  canManage,
-}: {
-  toolbox: ToolboxConfig;
-  canManage: boolean;
-}) {
+function ToolboxRefreshStrip({ toolbox }: { toolbox: ToolboxConfig }) {
   const refresh = useRefreshToolbox();
   const { data: jobs } = useQuery(jobsListQuery());
   const activeJob = jobs?.find(
@@ -283,7 +271,7 @@ function ToolboxRefreshStrip({
       (job.status === "queued" || job.status === "running"),
   );
   const last = toolbox.lastRefresh;
-  const canRefresh = canManage && toolbox.refresh.length > 0;
+  const canRefresh = toolbox.refresh.length > 0;
 
   return (
     <div className="flex min-w-0 flex-wrap items-center gap-2 border-t pt-2 text-xs text-muted-foreground">
@@ -356,13 +344,7 @@ function ToolboxRefreshStrip({
 /** Per-toolbox version history: label, description, provenance, pin/unpin,
  * delete, and a "recipe changed since pin" drift badge on the active row
  * (docs/toolbox-versions.md §3, §7). */
-function ToolboxVersionsPanel({
-  toolboxId,
-  canManage,
-}: {
-  toolboxId: string;
-  canManage: boolean;
-}) {
+function ToolboxVersionsPanel({ toolboxId }: { toolboxId: string }) {
   const { data, isPending, isError, error } = useQuery(
     toolboxVersionsQuery(toolboxId),
   );
@@ -434,7 +416,7 @@ function ToolboxVersionsPanel({
               </Badge>
             ) : null}
             <div className="ml-auto flex shrink-0 gap-1">
-              {canManage && version.artifact?.private ? (
+              {version.artifact?.private ? (
                 <Button
                   variant="outline"
                   size="sm"

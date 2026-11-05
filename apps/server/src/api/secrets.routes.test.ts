@@ -1,7 +1,7 @@
 /**
  * `/api/secrets` authorization, through the real control routes against a real
- * control DB: org secrets (member lists, owner/admin writes, foreign ids are
- * 404) and global org-less secrets (operator = owner/admin somewhere).
+ * control DB: org secrets (member lists, owner writes, foreign ids are
+ * 404) and global org-less secrets (server-managed).
  */
 import { afterAll, beforeAll, describe, expect, test } from "bun:test";
 import { mkdtemp, rm } from "node:fs/promises";
@@ -99,8 +99,8 @@ describe("org secrets", () => {
   test("any member lists; a non-member is refused", async () => {
     const org = makeOrg();
     await control.secretService.set(org, "K", "v");
-    const viewer = makeUser([[org, "viewer"]]);
-    const res = await call(viewer, "GET", `?orgId=${org}`);
+    const member = makeUser([[org, "member"]]);
+    const res = await call(member, "GET", `?orgId=${org}`);
     expect(res.status).toBe(200);
     expect(
       ((await res.json()) as { name: string }[]).map((s) => s.name),
@@ -109,10 +109,10 @@ describe("org secrets", () => {
     expect((await call(stranger, "GET", `?orgId=${org}`)).status).toBe(403);
   });
 
-  test("a non-admin member cannot set or delete; an admin can", async () => {
+  test("a member cannot set or delete; an owner can", async () => {
     const org = makeOrg();
     const member = makeUser([[org, "member"]]);
-    const admin = makeUser([[org, "admin"]]);
+    const admin = makeUser([[org, "owner"]]);
     const body = { orgId: org, name: "TOKEN", value: "v" };
 
     expect((await call(member, "POST", "", body)).status).toBe(403);

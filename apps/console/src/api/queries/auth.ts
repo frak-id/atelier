@@ -7,6 +7,9 @@ interface CurrentUser {
   username: string;
   avatarUrl: string;
   email: string;
+  /** Server admin (owner of the default org): may change server config,
+   * manage images and delete prebuilds / raw toolsets. */
+  admin: boolean;
 }
 
 async function fetchCurrentUser(): Promise<CurrentUser | null> {

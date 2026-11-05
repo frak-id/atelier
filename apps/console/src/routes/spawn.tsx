@@ -62,8 +62,9 @@ function SpawnPage() {
   );
   const { data: orgs } = useQuery(organizationsListQuery());
   const [orgId, setOrgId] = useState("");
-  // Default to the caller's personal org once it's loaded; the picker still
-  // lets them run the spawn in any other org they belong to.
+  // Default to the team org (the server's `auth.defaultOrg`, else the
+  // caller's personal org) once loaded; the picker still lets them run the
+  // spawn in any other org they belong to.
   useEffect(() => {
     if (!orgId && orgs && orgs.length > 0) {
       setOrgId(pickDefaultOrgId(orgs));
@@ -189,7 +190,7 @@ function OrgPickerCard({
           />
         </div>
         <p className="text-xs text-muted-foreground">
-          Uses this organization's secrets, policy and toolboxes.
+          Uses this organization's secrets and toolboxes.
         </p>
       </CardContent>
     </Card>

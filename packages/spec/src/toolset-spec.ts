@@ -193,7 +193,7 @@ export const ToolsetEntrySchema = Type.Object(
     provenance: ToolsetProvenanceSchema,
     /**
      * The harness this toolset's owning toolbox provides, if any (e.g.
-     * "opencode", "pi"). Derived at list time from the `tb/<owner>/<slug>`
+     * "opencode", "pi"). Derived at list time from the `tb/<toolboxId>`
      * toolbox behind this artifact; absent for standalone toolsets. Lets the
      * compose surface tag a toolset with the harness it brings, independent
      * of who is viewing.

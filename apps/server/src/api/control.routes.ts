@@ -1,12 +1,13 @@
 /**
  * `/api/*` — control CRUD (design.md §3.1 api/ table: "/api/* → control
- * CRUD"). Identity, orgs, secrets, org policy. Thin Elysia
+ * CRUD"). Identity, orgs, secrets, toolboxes. Thin Elysia
  * binding; all policy logic lives in `control/`.
  */
 import {
   ToolboxConfigInputSchema,
   ToolboxConfigPatchSchema,
   ToolboxVersionCaptureRequestSchema,
+  toolboxArtifactName,
 } from "@atelier/spec";
 import { Elysia, t } from "elysia";
 import { type ControlContainer, recipeFingerprint } from "../control/index.ts";
@@ -21,7 +22,7 @@ import { createChildLogger } from "../shared/lib/logger.ts";
 import { createAuthPlugin } from "./auth.plugin.ts";
 import { pruneToolboxVersions, type ServerContainer } from "./container.ts";
 import { requireSandboxAccess, requireSourceAccess } from "./sandbox-guard.ts";
-import { requireToolboxOwnerAccess, resolveOwner } from "./toolbox-access.ts";
+import { requireToolboxAccess, resolveToolboxOrg } from "./toolbox-access.ts";
 import { startToolboxRefresh } from "./toolbox-refresh.ts";
 
 const log = createChildLogger("control-routes");
@@ -30,12 +31,7 @@ const log = createChildLogger("control-routes");
  * hard limit (R10). */
 const TOOLBOX_SOFT_CAP = 5;
 
-const OrgRoleSchema = t.Union([
-  t.Literal("owner"),
-  t.Literal("admin"),
-  t.Literal("member"),
-  t.Literal("viewer"),
-]);
+const OrgRoleSchema = t.Union([t.Literal("owner"), t.Literal("member")]);
 
 const OrgSlugSchema = t.String({
   minLength: 1,
@@ -49,24 +45,26 @@ const TransferIdsSchema = t.Array(t.String({ minLength: 1 }), {
 /** Ids to move, per kind (mirrors control's `TransferSelection`). */
 const TransferSelectionSchema = t.Object({
   secrets: TransferIdsSchema,
-  policy: TransferIdsSchema,
   toolboxes: TransferIdsSchema,
 });
 
 /**
- * AuthZ for an ownership transfer: owner/admin of the source org (or the
- * caller's own personal scope — `resolveOwner` with write access) AND of the
- * target org. A non-member gets 403 for an org that doesn't exist, too.
+ * AuthZ for an ownership transfer: an owner of the source org (their personal
+ * org, typically) and a member of the target org: sharing a toolbox with the
+ * team is open to every member. Moving secrets writes them into the target,
+ * which takes an owner there. A non-member gets 403 for an org that doesn't
+ * exist, too.
  */
 function authorizeTransfer(
   control: ControlContainer,
   userId: string,
-  fromParam: string,
+  fromOrgId: string,
   toOrgId: string,
+  movesSecrets: boolean,
 ) {
-  const from = resolveOwner(control, userId, fromParam, true);
-  control.orgMemberService.requireRole(toOrgId, userId, ["owner", "admin"]);
-  return { from, toOrgId };
+  control.orgMemberService.requireOwner(fromOrgId, userId);
+  if (movesSecrets) control.orgMemberService.requireOwner(toOrgId, userId);
+  else control.orgMemberService.requireMembership(toOrgId, userId);
 }
 
 export function createControlRoutes(container: ServerContainer) {
@@ -125,8 +123,8 @@ export function createControlRoutes(container: ServerContainer) {
     .use(authPlugin)
     .get("/", () => control.userService.listDirectory());
 
-  // Move owner-scoped records (org secrets + policy, toolboxes) from an org
-  // or the caller's personal scope into an org.
+  // Move an org's secrets and toolboxes into another org (the caller's
+  // personal org is the usual source).
   const transferOptions = {
     // Same invariant as the org publish-before-pin guard on
     // `PUT /toolboxes/:id/active-version`: a private capture pinned org-wide
@@ -141,15 +139,10 @@ export function createControlRoutes(container: ServerContainer) {
     .get(
       "/preview",
       ({ user, query }) => {
-        const { from, toOrgId } = authorizeTransfer(
-          control,
-          user.id,
+        authorizeTransfer(control, user.id, query.from, query.to, false);
+        return control.ownershipTransferService.preview(
           query.from,
           query.to,
-        );
-        return control.ownershipTransferService.preview(
-          from,
-          toOrgId,
           transferOptions,
         );
       },
@@ -163,15 +156,16 @@ export function createControlRoutes(container: ServerContainer) {
     .post(
       "/",
       ({ user, body }) => {
-        const { from, toOrgId } = authorizeTransfer(
+        authorizeTransfer(
           control,
           user.id,
           body.from,
           body.to,
+          body.selection.secrets.length > 0,
         );
         return control.ownershipTransferService.execute(
-          from,
-          toOrgId,
+          body.from,
+          body.to,
           body.selection,
           transferOptions,
         );
@@ -187,14 +181,18 @@ export function createControlRoutes(container: ServerContainer) {
 
   const organizationRoutes = new Elysia({ prefix: "/organizations" })
     .use(authPlugin)
-    // The caller's orgs + role. `mine` flags THEIR personal org (the spawn
-    // default) — `personal` alone can't: someone else's personal org they
-    // were invited to is personal too.
+    // The caller's orgs + role. `mine` flags THEIR personal org —
+    // `personal` alone can't: someone else's personal org they were invited
+    // to is personal too. `default` flags the team org (`auth.defaultOrg`),
+    // the spawn picker's default.
     .get("/", ({ user }) => {
       const personalOrgId = control.userService.getById(user.id)?.personalOrgId;
-      return control.organizationService
-        .getByUserId(user.id)
-        .map((org) => ({ ...org, mine: org.id === personalOrgId }));
+      const defaultOrgId = control.defaultOrg.defaultOrgId();
+      return control.organizationService.getByUserId(user.id).map((org) => ({
+        ...org,
+        mine: org.id === personalOrgId,
+        default: org.id === defaultOrgId,
+      }));
     })
     .post(
       "/",
@@ -220,10 +218,7 @@ export function createControlRoutes(container: ServerContainer) {
     .patch(
       "/:id",
       ({ user, params, body }) => {
-        control.orgMemberService.requireRole(params.id, user.id, [
-          "owner",
-          "admin",
-        ]);
+        control.orgMemberService.requireOwner(params.id, user.id);
         return control.organizationService.rename(params.id, body);
       },
       {
@@ -234,11 +229,8 @@ export function createControlRoutes(container: ServerContainer) {
       },
     )
     .delete("/:id", ({ user, params, set }) => {
-      control.orgMemberService.requireRole(params.id, user.id, ["owner"]);
-      const owned = control.ownershipTransferService.inventory({
-        type: "org",
-        id: params.id,
-      });
+      control.orgMemberService.requireOwner(params.id, user.id);
+      const owned = control.ownershipTransferService.inventory(params.id);
       const leftovers = Object.entries(owned)
         .filter(([, count]) => count > 0)
         .map(([kind, count]) => `${count} ${kind}`);
@@ -287,7 +279,7 @@ export function createControlRoutes(container: ServerContainer) {
       },
     );
 
-  // Org secrets: list = any member, set/delete = owner/admin. Global
+  // Org secrets: list = any member, set/delete = owner. Global
   // (org-less) secrets hold server-owned values (e.g. the SSH gateway host
   // key), so they are server-managed — manageable over the API only when auth
   // is bypassed (mock/local single-user modes).
@@ -301,7 +293,7 @@ export function createControlRoutes(container: ServerContainer) {
         throw new ForbiddenError("Global secrets are server-managed");
       }
     } else if (write) {
-      control.orgMemberService.requireRole(orgId, userId, ["owner", "admin"]);
+      control.orgMemberService.requireOwner(orgId, userId);
     } else {
       control.orgMemberService.requireMembership(orgId, userId);
     }
@@ -352,25 +344,25 @@ export function createControlRoutes(container: ServerContainer) {
     .use(authPlugin)
     .get(
       "/",
-      ({ user, query }) => {
-        const owner = resolveOwner(control, user.id, query.owner, false);
-        return control.toolboxService.list(owner);
-      },
+      ({ user, query }) =>
+        control.toolboxService.list(
+          resolveToolboxOrg(control, user.id, query.owner),
+        ),
       { query: t.Object({ owner: t.Optional(t.String()) }) },
     )
     .post(
       "/",
       ({ user, query, body }) => {
-        const owner = resolveOwner(control, user.id, query.owner, true);
+        const orgId = resolveToolboxOrg(control, user.id, query.owner);
         // The source is built over at every spawn: check it now, as the writer.
         requireSourceAccess(container, user.id, body.source);
-        const created = control.toolboxService.create(owner, body);
+        const created = control.toolboxService.create(orgId, body);
         const autoInjectCount =
-          control.toolboxService.listAutoInject(owner).length;
+          control.toolboxService.listAutoInject(orgId).length;
         if (autoInjectCount > TOOLBOX_SOFT_CAP) {
           log.warn(
-            { ownerType: owner.type, ownerId: owner.id, autoInjectCount },
-            `${owner.type} exceeds the soft cap of ${TOOLBOX_SOFT_CAP} auto-inject toolboxes — each adds boot latency to every spawn`,
+            { orgId, autoInjectCount },
+            `org exceeds the soft cap of ${TOOLBOX_SOFT_CAP} auto-inject toolboxes — each adds boot latency to every spawn`,
           );
         }
         return created;
@@ -384,7 +376,7 @@ export function createControlRoutes(container: ServerContainer) {
       "/:id",
       ({ user, params, body }) => {
         const existing = control.toolboxService.get(params.id);
-        requireToolboxOwnerAccess(control, existing, user.id);
+        requireToolboxAccess(control, existing, user.id);
         requireSourceAccess(container, user.id, body.source);
         return control.toolboxService.update(params.id, body);
       },
@@ -392,7 +384,7 @@ export function createControlRoutes(container: ServerContainer) {
     )
     .delete("/:id", ({ user, params, set }) => {
       const existing = control.toolboxService.get(params.id);
-      requireToolboxOwnerAccess(control, existing, user.id);
+      requireToolboxAccess(control, existing, user.id);
       control.toolboxService.delete(params.id);
       set.status = 204;
     })
@@ -400,7 +392,7 @@ export function createControlRoutes(container: ServerContainer) {
       "/:id/versions/capture",
       ({ user, params, body, set }) => {
         const tb = control.toolboxService.get(params.id);
-        requireToolboxOwnerAccess(control, tb, user.id);
+        requireToolboxAccess(control, tb, user.id);
         // The sandbox arrives in the body, not a guarded `:id` path.
         requireSandboxAccess(container, user.id, body.sandboxId);
         if (tb.paths.length === 0) {
@@ -424,7 +416,7 @@ export function createControlRoutes(container: ServerContainer) {
             const { ref } = await container.runtime.captureToolset(
               body.sandboxId,
               {
-                name: `tb/${tb.ownerType}/${tb.ownerId}/${tb.slug}`,
+                name: toolboxArtifactName(tb),
                 paths: tb.paths,
                 exclude: [],
                 overrides: [],
@@ -464,7 +456,7 @@ export function createControlRoutes(container: ServerContainer) {
     // for this toolbox.
     .post("/:id/refresh", ({ user, params, set }) => {
       const tb = control.toolboxService.get(params.id);
-      requireToolboxOwnerAccess(control, tb, user.id);
+      requireToolboxAccess(control, tb, user.id);
       const { job } = startToolboxRefresh(container, tb.id, {
         trigger: "manual",
         userId: user.id,
@@ -474,7 +466,7 @@ export function createControlRoutes(container: ServerContainer) {
     })
     .get("/:id/versions", async ({ user, params }) => {
       const tb = control.toolboxService.get(params.id);
-      requireToolboxOwnerAccess(control, tb, user.id);
+      requireToolboxAccess(control, tb, user.id);
       const currentSourceImage = await container.runtime
         .resolveSourceImage(
           tb.source ?? { image: container.runtime.defaultImage() },
@@ -503,7 +495,7 @@ export function createControlRoutes(container: ServerContainer) {
       "/:id/active-version",
       ({ user, params, body }) => {
         const tb = control.toolboxService.get(params.id);
-        requireToolboxOwnerAccess(control, tb, user.id);
+        requireToolboxAccess(control, tb, user.id);
         if (body.versionId === null) {
           control.toolboxService.setActiveVersionId(tb.id, null);
           return { activeVersionId: null };
@@ -515,13 +507,11 @@ export function createControlRoutes(container: ServerContainer) {
         // Org publish-before-pin guard (docs/toolbox-versions.md §5): a
         // private capture pinned org-wide would replay one user's config
         // (and possibly secrets) into every future spawn for the whole org.
-        if (tb.ownerType === "org") {
-          const entry = container.runtime.getToolsetEntry(version.ref);
-          if (entry?.private === true) {
-            throw new ValidationError(
-              "publish this toolset before pinning an org toolbox org-wide",
-            );
-          }
+        const entry = container.runtime.getToolsetEntry(version.ref);
+        if (entry?.private === true) {
+          throw new ValidationError(
+            "publish this toolset before pinning a toolbox org-wide",
+          );
         }
         control.toolboxService.setActiveVersionId(tb.id, version.id);
         return { activeVersionId: version.id };
@@ -537,7 +527,7 @@ export function createControlRoutes(container: ServerContainer) {
     // to the toolbox's owner, unlike the raw `POST /v1/toolsets/publish`.
     .post("/:id/versions/:versionId/publish", ({ user, params }) => {
       const tb = control.toolboxService.get(params.id);
-      requireToolboxOwnerAccess(control, tb, user.id);
+      requireToolboxAccess(control, tb, user.id);
       const version = control.toolboxVersionService.get(params.versionId);
       if (version.toolboxId !== tb.id) {
         throw new ValidationError("version does not belong to this toolbox");
@@ -551,7 +541,7 @@ export function createControlRoutes(container: ServerContainer) {
     })
     .delete("/:id/versions/:versionId", ({ user, params, set }) => {
       const tb = control.toolboxService.get(params.id);
-      requireToolboxOwnerAccess(control, tb, user.id);
+      requireToolboxAccess(control, tb, user.id);
       if (
         control.toolboxService.getActiveVersionId(tb.id) === params.versionId
       ) {
@@ -559,20 +549,20 @@ export function createControlRoutes(container: ServerContainer) {
           "cannot delete the active version; unpin first",
         );
       }
-      control.toolboxVersionService.delete(params.versionId);
+      control.toolboxVersionService.delete(tb.id, params.versionId);
       set.status = 204;
     });
 
   // Server-wide runtime config (the config plane). Not org-scoped: these are
-  // operator knobs for the whole server. Auth-gated (any authenticated caller
-  // can read/set today — there is no server-admin role yet; tighten here once
-  // one exists).
+  // operator knobs for the whole server. Any member can read; setting is for
+  // server admins (owners of the default org).
   const configRoutes = new Elysia({ prefix: "/config" })
     .use(authPlugin)
     .get("/", () => control.serverConfigService.list())
     .put(
       "/:key",
-      ({ params, body }) => {
+      ({ user, params, body }) => {
+        control.defaultOrg.requireServerAdmin(user.id);
         const value = control.serverConfigService.set(params.key, body.value);
         return { key: params.key, value };
       },
@@ -581,20 +571,6 @@ export function createControlRoutes(container: ServerContainer) {
           value: t.Union([t.Boolean(), t.Number(), t.String()]),
         }),
       },
-    );
-
-  const orgPolicyRoutes = new Elysia({ prefix: "/org-policy" })
-    .use(authPlugin)
-    .get("/:orgId", ({ params }) =>
-      control.orgPolicyService.getByOrgId(params.orgId),
-    )
-    .put(
-      "/:orgId",
-      ({ user, params, body }) => {
-        control.orgMemberService.requireRole(params.orgId, user.id, ["owner"]);
-        return control.orgPolicyService.set(params.orgId, body);
-      },
-      { body: t.Record(t.String(), t.Unknown()) },
     );
 
   // The caller's GitHub repositories (their OWN OAuth token, never another
@@ -633,7 +609,6 @@ export function createControlRoutes(container: ServerContainer) {
     .use(transferRoutes)
     .use(secretRoutes)
     .use(configRoutes)
-    .use(orgPolicyRoutes)
     .use(toolboxRoutes)
     .use(githubRoutes);
 }

@@ -2,15 +2,13 @@
  * Bounded spec enrichment — the mutations control performs on a spec as it
  * crosses the seam (design.md §3.2):
  *   (a) secret resolution — replace `{"$secret": name}` references with values;
- *   (b) org-policy injection — append operator-mandated entries (an audit
- *       process, a compliance file) from the org's policy spec;
  *   plus the harness composition, the owner's git attribution, and the
  *   sandbox domain for dev servers' host checks (`injectDevServerHosts`).
  *
- * No merger, no catalog, no fragment resolution — append/substitute steps,
- * deterministic, tiny. A dev hand-crafting a spec against the raw API still
- * gets the mandated pieces, because this runs server-side on every crossing,
- * before `runtime.create(spec)`.
+ * No merger, no catalog, no fragment resolution — substitute/append steps,
+ * deterministic, tiny. The api/ seam merges the spawn's toolboxes (their
+ * `files` included) into the spec BEFORE this runs, so a toolbox file's
+ * `$secret` refs are resolved here like any other.
  */
 import { mergeSpecs, resolveHarness } from "@atelier/compose";
 import { isSecretRef, type SandboxSpec } from "@atelier/spec";
@@ -28,14 +26,12 @@ import { createChildLogger } from "../shared/lib/logger.ts";
 /** Display/routing annotation a composed harness stamps onto the spec. */
 const HARNESS_ANNOTATION = "atelier.dev/harness";
 
-import type { OrgPolicyService } from "./modules/org-policy/index.ts";
 import type { SecretService } from "./modules/secret/index.ts";
 
 const log = createChildLogger("enrichment");
 
 export interface EnrichmentDeps {
   secrets: SecretService;
-  orgPolicy: OrgPolicyService;
 }
 
 /**
@@ -59,30 +55,15 @@ export interface EnrichmentOptions {
 }
 
 /**
- * Compose the winning harness into the spec when it doesn't already declare
- * one. Precedence: the spec's own harness (a `atelier.dev/harness` annotation,
- * composed client-side) > a toolbox-declared harness > the org policy's
- * `harness`. Composition only happens for the two lower tiers; a spec that
- * already carries a harness is returned untouched (it wins).
+ * Compose the toolbox-declared harness into the spec when it doesn't already
+ * declare one: a spec that carries its own harness (a `atelier.dev/harness`
+ * annotation, composed client-side) is returned untouched (it wins).
  */
 function injectHarness(
   spec: SandboxSpec,
-  orgId: string | undefined,
-  orgPolicy: OrgPolicyService,
-  toolboxHarnessId: string | undefined,
+  harnessId: string | undefined,
 ): SandboxSpec {
-  if (spec.annotations?.[HARNESS_ANNOTATION]) return spec;
-
-  const orgFragment = orgId
-    ? (orgPolicy.getByOrgId(orgId)?.fragment as
-        | { harness?: unknown }
-        | undefined)
-    : undefined;
-  const orgHarness =
-    typeof orgFragment?.harness === "string" ? orgFragment.harness : undefined;
-
-  const harnessId = toolboxHarnessId ?? orgHarness;
-  if (!harnessId) return spec;
+  if (spec.annotations?.[HARNESS_ANNOTATION] || !harnessId) return spec;
 
   try {
     // Web-UI options are per-harness and ignored when unknown (`compose()`
@@ -235,43 +216,6 @@ export function reattributeSpec(
   );
 }
 
-/** Append the org's mandated fragment (never overrides the caller's fields). */
-function injectOrgPolicy(
-  spec: SandboxSpec,
-  orgId: string | undefined,
-  orgPolicy: OrgPolicyService,
-): SandboxSpec {
-  if (!orgId) return spec;
-  const policy = orgPolicy.getByOrgId(orgId);
-  if (!policy) return spec;
-  const fragment = policy.fragment as Partial<SandboxSpec>;
-
-  return {
-    ...spec,
-    files: [...(spec.files ?? []), ...(fragment.files ?? [])],
-    processes: [...(spec.processes ?? []), ...(fragment.processes ?? [])],
-    ports: [...(spec.ports ?? []), ...(fragment.ports ?? [])],
-    hooks: {
-      postCreate: [
-        ...(spec.hooks?.postCreate ?? []),
-        ...(fragment.hooks?.postCreate ?? []),
-      ],
-      postStart: [
-        ...(spec.hooks?.postStart ?? []),
-        ...(fragment.hooks?.postStart ?? []),
-      ],
-      onResume: [
-        ...(spec.hooks?.onResume ?? []),
-        ...(fragment.hooks?.onResume ?? []),
-      ],
-      envChanged: [
-        ...(spec.hooks?.envChanged ?? []),
-        ...(fragment.hooks?.envChanged ?? []),
-      ],
-    },
-  };
-}
-
 /** The full enrichment pipeline applied at every seam crossing. */
 export async function enrichSpec(
   spec: SandboxSpec,
@@ -279,13 +223,7 @@ export async function enrichSpec(
   deps: EnrichmentDeps,
   opts: EnrichmentOptions = {},
 ): Promise<SandboxSpec> {
-  const withPolicy = injectOrgPolicy(spec, orgId, deps.orgPolicy);
-  const withHarness = injectHarness(
-    withPolicy,
-    orgId,
-    deps.orgPolicy,
-    opts.toolboxHarnessId,
-  );
+  const withHarness = injectHarness(spec, opts.toolboxHarnessId);
   const withHosts = injectDevServerHosts(withHarness, config.domain.baseDomain);
   const resolved = await resolveSecrets(withHosts, orgId, deps.secrets);
   // Injected last: the credential file carries a GitHub token (not a `$secret`

@@ -1,8 +1,8 @@
 /**
- * Move owner-scoped control records from one owner to an org: an org's
- * secrets + policy, and the toolboxes of an org or of the caller's personal
- * scope. A MOVE, not a copy: ids are kept, so pinned toolbox versions and
- * version history follow the record.
+ * Move an org's secrets and toolboxes into another org (a user's personal
+ * scope is their personal org). A MOVE, not a copy: ids are kept, so pinned
+ * toolbox versions and version history follow the record, and artifacts
+ * (named after the toolbox id) never need renaming.
  *
  * Two phases share one planner: `preview` lists every movable item with the
  * reason it can't move (a name/slug clash in the target, an extra blocker the
@@ -10,16 +10,15 @@
  * that plan and applies it atomically. Everything here is synchronous
  * (bun:sqlite), so plan → validate → write runs without interleaving.
  *
- * Authorization is the caller's job (`api/`): owner/admin on both sides.
+ * Authorization is the caller's job (`api/`).
  */
-import type { ToolboxOwner } from "@atelier/spec";
 import { ConflictError, ValidationError } from "../../../shared/errors.ts";
 import { createChildLogger } from "../../../shared/lib/logger.ts";
 import type { OwnershipTransferRepository } from "./ownership-transfer.repository.ts";
 
 const log = createChildLogger("ownership-transfer");
 
-const TRANSFER_KINDS = ["secrets", "policy", "toolboxes"] as const;
+const TRANSFER_KINDS = ["secrets", "toolboxes"] as const;
 type TransferKind = (typeof TRANSFER_KINDS)[number];
 
 interface TransferItem {
@@ -48,32 +47,30 @@ export interface TransferOptions {
 export class OwnershipTransferService {
   constructor(private readonly repository: OwnershipTransferRepository) {}
 
-  /** How many records of each kind `owner` still owns (secrets + policy
-   * only exist for orgs). Guards org deletion against orphaning them. */
-  inventory(owner: ToolboxOwner): Record<TransferKind, number> {
-    const isOrg = owner.type === "org";
+  /** How many records of each kind `orgId` still owns. Guards org deletion
+   * against orphaning them. */
+  inventory(orgId: string): Record<TransferKind, number> {
     return {
-      secrets: isOrg ? this.repository.listSecrets(owner.id).length : 0,
-      policy: isOrg && this.repository.getPolicyId(owner.id) ? 1 : 0,
-      toolboxes: this.repository.listToolboxes(owner).length,
+      secrets: this.repository.listSecrets(orgId).length,
+      toolboxes: this.repository.listToolboxes(orgId).length,
     };
   }
 
   preview(
-    from: ToolboxOwner,
+    fromOrgId: string,
     toOrgId: string,
     options: TransferOptions = {},
   ): TransferPreview {
-    return this.plan(from, toOrgId, options);
+    return this.plan(fromOrgId, toOrgId, options);
   }
 
   execute(
-    from: ToolboxOwner,
+    fromOrgId: string,
     toOrgId: string,
     selection: TransferSelection,
     options: TransferOptions = {},
   ): TransferResult {
-    const preview = this.plan(from, toOrgId, options);
+    const preview = this.plan(fromOrgId, toOrgId, options);
 
     let total = 0;
     for (const kind of TRANSFER_KINDS) {
@@ -96,76 +93,51 @@ export class OwnershipTransferService {
     if (total === 0) throw new ValidationError("Nothing selected to move");
 
     this.repository.apply({
-      from,
+      fromOrgId,
       toOrgId,
       secretIds: [...new Set(selection.secrets)],
-      policyIds: [...new Set(selection.policy)],
       toolboxIds: [...new Set(selection.toolboxes)],
     });
 
     const moved = Object.fromEntries(
       TRANSFER_KINDS.map((kind) => [kind, new Set(selection[kind]).size]),
     ) as Record<TransferKind, number>;
-    log.info(
-      { fromType: from.type, fromId: from.id, toOrgId, moved },
-      "Ownership transfer applied",
-    );
+    log.info({ fromOrgId, toOrgId, moved }, "Ownership transfer applied");
     return { moved };
   }
 
   private plan(
-    from: ToolboxOwner,
+    fromOrgId: string,
     toOrgId: string,
     options: TransferOptions,
   ): TransferPreview {
-    if (from.type === "org" && from.id === toOrgId) {
+    if (fromOrgId === toOrgId) {
       throw new ValidationError("Source and target organization are the same");
     }
-    const target: ToolboxOwner = { type: "org", id: toOrgId };
 
-    // Secrets + policy are org-only concepts: a personal scope has neither.
-    const secrets: TransferItem[] = [];
-    const policy: TransferItem[] = [];
-    if (from.type === "org") {
-      const taken = new Set(
-        this.repository.listSecrets(toOrgId).map((s) => s.name),
-      );
-      for (const secret of this.repository.listSecrets(from.id)) {
-        secrets.push({
-          id: secret.id,
-          label: secret.name,
-          notes: [],
-          ...(taken.has(secret.name)
-            ? {
-                blocker: "a secret with this name already exists in the target",
-              }
-            : {}),
-        });
-      }
-      const policyId = this.repository.getPolicyId(from.id);
-      if (policyId) {
-        policy.push({
-          id: policyId,
-          label: "Org policy",
-          notes: [],
-          ...(this.repository.getPolicyId(toOrgId)
-            ? { blocker: "the target organization already has a policy" }
-            : {}),
-        });
-      }
-    }
+    const taken = new Set(
+      this.repository.listSecrets(toOrgId).map((s) => s.name),
+    );
+    const secrets = this.repository.listSecrets(fromOrgId).map(
+      (secret): TransferItem => ({
+        id: secret.id,
+        label: secret.name,
+        notes: [],
+        ...(taken.has(secret.name)
+          ? { blocker: "a secret with this name already exists in the target" }
+          : {}),
+      }),
+    );
 
     const takenSlugs = new Set(
-      this.repository.listToolboxes(target).map((t) => t.slug),
+      this.repository.listToolboxes(toOrgId).map((t) => t.slug),
     );
     const toolboxes = this.repository
-      .listToolboxes(from)
+      .listToolboxes(fromOrgId)
       .map((row): TransferItem => {
         const notes: string[] = [];
         if (row.activeVersionLabel !== null) {
           notes.push(`Stays pinned to v${row.activeVersionLabel}.`);
-        } else {
-          notes.push("Rebuilds once under the new owner on its next spawn.");
         }
         if (row.autoInject) {
           notes.push(
@@ -185,6 +157,6 @@ export class OwnershipTransferService {
         };
       });
 
-    return { secrets, policy, toolboxes };
+    return { secrets, toolboxes };
   }
 }

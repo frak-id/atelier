@@ -41,6 +41,14 @@ function mkUser(name: string): AuthUser {
     `${name}@x.test`,
     "",
   );
+  // Toolboxes created without an explicit org land in the personal org.
+  const personal = control.organizationService.create(
+    `ar-${name}`,
+    `ar-personal-${name}`,
+    true,
+  );
+  control.orgMemberService.addMember(personal.id, u.id, "owner");
+  control.userService.setPersonalOrg(u.id, personal.id);
   const user = {
     id: u.id,
     username: `ar-${name}`,
@@ -415,15 +423,21 @@ describe("sandbox routes", () => {
   });
 
   test("toolbox version capture takes the sandbox from the body: guarded", async () => {
-    const tb = control.toolboxService.create(
-      { type: "user", id: users["tok-stranger"]?.id ?? "" },
-      {
-        slug: "mine",
-        description: "d",
-        build: ["true"],
-        paths: [".local"],
-      } as never,
+    const strangerOrg = control.organizationService.create(
+      "Stranger",
+      "ar-stranger-org",
     );
+    control.orgMemberService.addMember(
+      strangerOrg.id,
+      users["tok-stranger"]?.id ?? "",
+      "owner",
+    );
+    const tb = control.toolboxService.create(strangerOrg.id, {
+      slug: "mine",
+      description: "d",
+      build: ["true"],
+      paths: [".local"],
+    } as never);
     calls.length = 0;
     const path = `/api/toolboxes/${tb.id}/versions/capture`;
     const body = { sandboxId: "owned", description: "d" };

@@ -3,13 +3,15 @@
  * (runtime/control/sessions) are wired together. Manual-wiring convention
  * (no DI framework).
  */
-import type {
-  PortEntry,
-  ProcessEntry,
-  RuntimeSurface,
-  ToolboxConfig,
-  ToolboxOwner,
-  ToolsetRef,
+import { mergeSpecs } from "@atelier/compose";
+import {
+  type PortEntry,
+  type ProcessEntry,
+  type RuntimeSurface,
+  type SandboxSpec,
+  type ToolboxConfig,
+  type ToolsetRef,
+  toolboxArtifactName,
 } from "@atelier/spec";
 import { createControlContainer, recipeFingerprint } from "../control/index.ts";
 import {
@@ -42,7 +44,7 @@ import { IdleReaper } from "./idle-reaper.ts";
  * points — any ACP-speaking harness works with neither (the session API is
  * one generic ACP-over-attach view for every harness):
  *  - compose-side `registerHarness`: server-side fallback composition when a
- *    toolbox/org-policy names a harness (client-composed specs bypass it);
+ *    toolbox names a harness (client-composed specs bypass it);
  *  - `registerHarnessDispatch`: only for harnesses that send status text of
  *    their own as message chunks (pi), which tasks leave out of the agent's
  *    reply; unknown harnesses dispatch as is.
@@ -180,27 +182,25 @@ export async function wireBuiltinHarnesses(container: ServerContainer) {
 }
 
 /**
- * Resolve one toolbox (for a given owner) to a `ToolsetRef`, or `undefined`
- * if it can't be resolved this spawn. Shared by `resolveToolboxRefs` (the
- * auto-inject tiers) and `resolveSelectedToolboxes` (explicit selectors) —
- * both need the same pinned-fast-path → build → lazy-record → log-and-skip
- * sequence, just over different toolbox sets.
+ * Resolve one toolbox to a `ToolsetRef`, or `undefined` if it can't be
+ * resolved this spawn. Shared by the auto-inject and explicit-selector tiers
+ * of `resolveSpawnToolboxes` — both need the same pinned-fast-path → build →
+ * lazy-record → log-and-skip sequence.
  *
  * Pinned (docs/toolbox-versions.md §2): resolve straight to the saved ref,
  * skipping `buildToolset` entirely — no build, no content-hash lookup, just
  * the pointer. A dangling pin falls back to the recipe build (same
  * "never fail the whole spawn" resilience as the build path).
  *
- * Each build uses a STABLE registry name keyed on the immutable owner
- * (`tb/${ownerType}/${ownerId}/${slug}`), so renaming an org never churns
- * artifacts or orphans a toolbox's repo (R2). `buildToolset` is content-hash
+ * Each build uses a STABLE registry name keyed on the immutable toolbox id
+ * (`toolboxArtifactName`), so renaming an org or moving the toolbox to
+ * another org never churns artifacts. `buildToolset` is content-hash
  * idempotent + inflight-deduped, so resolving fresh on every spawn (no memo
  * cache, R5) is cheap after the first build. A single toolbox's build
  * failure is logged and skipped — never fails the whole spawn.
  */
 async function resolveToolboxToRef(
   container: ServerContainer,
-  owner: ToolboxOwner,
   config: ToolboxConfig,
 ): Promise<ToolsetRef | undefined> {
   const activeId = container.control.toolboxService.getActiveVersionId(
@@ -216,7 +216,7 @@ async function resolveToolboxToRef(
   }
   try {
     const { ref } = await container.runtime.buildToolset({
-      name: `tb/${owner.type}/${owner.id}/${config.slug}`,
+      name: toolboxArtifactName(config),
       source: config.source,
       build: config.build,
       paths: config.paths,
@@ -225,77 +225,76 @@ async function resolveToolboxToRef(
     return { ref };
   } catch (err) {
     log.error(
-      { err, ownerType: owner.type, ownerId: owner.id, slug: config.slug },
+      { err, orgId: config.orgId, slug: config.slug },
       "toolbox build failed; skipping for this spawn",
     );
     return undefined;
   }
 }
 
-/**
- * Resolve the caller's enabled toolboxes into built `ToolsetRef`s for a spawn
- * (entities-toolbox.md §5). Injection order is `[org enabled asc] → [user
- * enabled asc]`: the org's mandated baseline first, then the caller's personal
- * overlay, so a user's own toolbox shadows an org tool on a path conflict —
- * but only in that user's own sandboxes ("personal dotfiles win"). The
- * explicit `spec.toolsets` still win last (applied by the caller).
- *
- * `orgId` is optional (`undefined` skips the org tier — spawn bare, never
- * throw, Oracle refinement R1); `userId` is always present at the seam.
- */
-export async function resolveToolboxRefs(
-  container: ServerContainer,
-  { orgId, userId }: { orgId?: string; userId: string },
-): Promise<ToolsetRef[]> {
-  const owners: ToolboxOwner[] = [];
-  if (orgId) owners.push({ type: "org", id: orgId });
-  owners.push({ type: "user", id: userId });
-
-  // Resolve everything concurrently — builds are content-hash idempotent and
-  // inflight-deduped, so parallel cold builds each get their own throwaway
-  // pod instead of queuing. `Promise.all` preserves position, so the
-  // org → user, oldest-first injection order is unchanged.
-  const resolved = await Promise.all(
-    owners.map((owner) =>
-      Promise.all(
-        container.control.toolboxService
-          .listAutoInject(owner)
-          .map((config) => resolveToolboxToRef(container, owner, config)),
-      ),
-    ),
-  );
-  return resolved.flat().filter((ref) => ref !== undefined);
+/** What a spawn applies from its toolboxes. */
+export interface SpawnToolboxes {
+  /** Built or pinned toolsets to materialize (toolboxes with `paths`). */
+  refs: ToolsetRef[];
+  /** Every toolbox applied, in precedence order (later wins): the org's
+   * auto-inject ones oldest-first, the picked selectors, then the toolboxes
+   * behind explicit `spec.toolsets` refs. Drives harness, files and surface. */
+  applied: ToolboxConfig[];
 }
 
 /**
- * Build the toolsets for an explicitly-selected set of toolboxes
- * (`tb/<owner>/<slug>` selectors from the spawn UI). Mirrors
- * `resolveToolboxRefs` but for the picked set rather than the auto-inject set,
- * and only for toolboxes that carry files: a process-only toolbox (browser)
- * has no `build`/`paths`, so it produces no toolset — its surface is applied
- * separately from the selector. A single toolbox's build failure is logged
+ * Resolve the toolboxes a spawn applies (entities-toolbox.md §5): the spawn
+ * org's auto-inject toolboxes, then the explicitly picked `tb/<id>`
+ * selectors. `orgId` is optional (`undefined` skips the org tier — spawn
+ * bare, never throw); a selected toolbox must belong to an org the caller is
+ * in. A toolbox without `paths` (process-only, files-only) produces no
+ * toolset but is still applied. A single toolbox's build failure is logged
  * and skipped, never fails the spawn.
  */
-export async function resolveSelectedToolboxes(
+export async function resolveSpawnToolboxes(
   container: ServerContainer,
-  selectors: string[],
-): Promise<ToolsetRef[]> {
-  const resolved = await Promise.all(
-    selectors.map((selector) => {
-      const config = toolboxForRef(container, selector);
-      if (!config || config.build.length === 0 || config.paths.length === 0) {
-        return undefined;
-      }
-      // Build under the toolbox's CURRENT owner (a stale selector may still
-      // name its previous one).
-      return resolveToolboxToRef(
-        container,
-        { type: config.ownerType, id: config.ownerId },
-        config,
-      );
-    }),
+  input: {
+    orgId?: string;
+    userId: string;
+    selectors: string[];
+    toolsets: ToolsetRef[];
+  },
+): Promise<SpawnToolboxes> {
+  const { toolboxService } = container.control;
+  const { orgMemberService } = container.control;
+  const autoInject = input.orgId
+    ? toolboxService.listAutoInject(input.orgId)
+    : [];
+  const selected = input.selectors.flatMap((selector) => {
+    const config = toolboxForRef(container, selector);
+    if (!config) return [];
+    orgMemberService.requireMembership(config.orgId, input.userId);
+    return [config];
+  });
+  // The caller's explicit toolsets are already materialized by the spec; they
+  // only contribute their toolbox's harness/files/surface, and only when the
+  // caller belongs to that toolbox's org.
+  const explicit = input.toolsets.flatMap(({ ref }) => {
+    const config = toolboxForRef(container, ref);
+    const member =
+      config && orgMemberService.getMembership(config.orgId, input.userId);
+    return config && member ? [config] : [];
+  });
+
+  const applied = [
+    ...new Map(
+      [...autoInject, ...selected, ...explicit].map((c) => [c.id, c]),
+    ).values(),
+  ];
+  // Resolve everything concurrently — builds are content-hash idempotent and
+  // inflight-deduped, so parallel cold builds each get their own throwaway
+  // pod instead of queuing. `Promise.all` preserves position.
+  const refs = await Promise.all(
+    [...autoInject, ...selected]
+      .filter((config) => config.paths.length > 0)
+      .map((config) => resolveToolboxToRef(container, config)),
   );
-  return resolved.filter((ref) => ref !== undefined);
+  return { refs: refs.filter((ref) => ref !== undefined), applied };
 }
 
 /**
@@ -367,47 +366,22 @@ export function pruneToolboxVersions(
   }
 }
 
-/** Parse a toolbox toolset ref/name back to its owner+slug (the inverse of the
- * `tb/${ownerType}/${ownerId}/${slug}` naming). Returns undefined for refs
- * that aren't toolbox artifacts. */
-function parseToolboxRef(
-  ref: string,
-): { owner: ToolboxOwner; slug: string } | undefined {
-  const match = ref.match(/(?:^|\/)tb\/(org|user)\/([^/]+)\/([^/@]+)(?:@|$)/);
-  const [, ownerType, ownerId, slug] = match ?? [];
-  if (!ownerType || !ownerId || !slug) return undefined;
-  return {
-    owner: { type: ownerType as ToolboxOwner["type"], id: ownerId },
-    slug,
-  };
+/** The toolbox id in a toolbox artifact ref or selector (`tb/<id>`, with or
+ * without a registry prefix or `@digest`). Artifacts built before artifact
+ * names were keyed on the id (`tb/<ownerType>/<ownerId>/<slug>`) don't match:
+ * their version rows keep resolving through the stored `ref`, they just can't
+ * be mapped back to a toolbox from the name alone. */
+function toolboxIdOfRef(ref: string): string | undefined {
+  return ref.match(/(?:^|\/)tb\/([^/@]+)(?:@|$)/)?.[1];
 }
 
-/**
- * The toolbox behind a `tb/…` selector, artifact ref or registry name.
- *
- * The owner+slug encoded in the name is the fast path, but it's the owner at
- * BUILD time: a toolbox moved to another owner (ownership transfer) keeps its
- * pinned version and older artifacts, all named after the previous owner. The
- * version table maps those back to the toolbox. A digest-pinned ref is an
- * exact artifact identity, so it's looked up there first (a new toolbox later
- * created with the same owner+slug must not claim the moved one's artifact).
- */
+/** The toolbox behind a `tb/<id>` selector, artifact ref or registry name. */
 export function toolboxForRef(
   container: ServerContainer,
   ref: string,
 ): ToolboxConfig | undefined {
-  const parsed = parseToolboxRef(ref);
-  if (!parsed) return undefined;
-  const { toolboxService, toolboxVersionService } = container.control;
-  const byVersion = () => {
-    const id = toolboxVersionService.findToolboxIdByRef(ref);
-    return id ? toolboxService.find(id) : undefined;
-  };
-  const byName = () =>
-    toolboxService.getByOwnerAndSlug(parsed.owner, parsed.slug);
-  return ref.includes("@")
-    ? (byVersion() ?? byName())
-    : (byName() ?? byVersion());
+  const id = toolboxIdOfRef(ref);
+  return id ? container.control.toolboxService.find(id) : undefined;
 }
 
 /**
@@ -422,51 +396,42 @@ export function harnessForToolset(
   return toolboxForRef(container, name)?.harness;
 }
 
-/**
- * Resolve the winning harness a spawn's toolboxes declare (entities-toolbox.md).
- * Considers every toolbox whose toolset is present in this spawn — auto-
- * injected (enabled) and explicitly selected `spec.toolsets` alike. A
- * user-owned toolbox's harness wins over an org-owned one (the personal
- * overlay beats the mandated baseline). Returns undefined when no toolbox
- * declares a harness; the caller then falls back to org policy.
- */
-export function resolveToolboxHarness(
-  container: ServerContainer,
-  refs: { ref: string }[],
-): string | undefined {
-  let userHarness: string | undefined;
-  let orgHarness: string | undefined;
-  for (const { ref } of refs) {
-    const config = toolboxForRef(container, ref);
-    if (!config?.harness) continue;
-    if (config.ownerType === "user") userHarness = config.harness;
-    else orgHarness = config.harness;
-  }
-  return userHarness ?? orgHarness;
+/** The winning harness a spawn's toolboxes declare (entities-toolbox.md): the
+ * last applied toolbox that names one. Undefined when none does. */
+export function toolboxHarness(applied: ToolboxConfig[]): string | undefined {
+  return [...applied].reverse().find((config) => config.harness)?.harness;
 }
 
 /**
- * Collect the processes + ports every toolbox applied to this spawn
- * contributes (entities-toolbox.md). A toolbox is not just files: it can carry
- * a tool's *runtime surface* — vscode's `code-server` process + its port, or
- * the browser stack's kasmvnc/openbox/chromium (binaries baked into the
- * dev-browser base image, so no `build`/`paths`; a browserless base like
- * dev-base won't have them). `refs` is the full applied set (auto-injected
- * + explicitly selected). Returns a spec fragment the caller merges in.
+ * The spec with the applied toolboxes' files merged in (keyed by path: a later
+ * toolbox wins, and the spec's own file wins over every toolbox). Runs BEFORE
+ * enrichment so a toolbox file's `$secret` content resolves there.
  */
-export function resolveToolboxSurface(
-  container: ServerContainer,
-  refs: { ref: string }[],
+export function withToolboxFiles(
+  spec: SandboxSpec,
+  applied: ToolboxConfig[],
+): SandboxSpec {
+  const files = mergeSpecs(
+    ...applied.map((config) => ({ files: config.files })),
+    { files: spec.files },
+  ).files;
+  return files ? { ...spec, files } : spec;
+}
+
+/**
+ * Collect the processes + ports every applied toolbox contributes
+ * (entities-toolbox.md). A toolbox is not just files: it can carry a tool's
+ * *runtime surface* — vscode's `code-server` process + its port, or the
+ * browser stack's kasmvnc/openbox/chromium (binaries baked into the
+ * dev-browser base image, so no `build`/`paths`; a browserless base like
+ * dev-base won't have them). Returns a spec fragment the caller merges in.
+ */
+export function toolboxSurface(
+  applied: ToolboxConfig[],
 ): Required<RuntimeSurface> {
   const processes: ProcessEntry[] = [];
   const ports: PortEntry[] = [];
-  const seen = new Set<string>();
-  for (const { ref } of refs) {
-    const config = toolboxForRef(container, ref);
-    // A toolbox can be present twice (auto-injected + selected, or under an
-    // old and a new name after a move); apply once.
-    if (!config || seen.has(config.id)) continue;
-    seen.add(config.id);
+  for (const config of applied) {
     if (config.processes) processes.push(...config.processes);
     if (config.ports) ports.push(...config.ports);
   }

@@ -2,35 +2,27 @@
  * Entity-scoped toolbox configs (entities-toolbox.md). A toolbox config is the
  * control-plane, editable input to a `ToolsetBuildRequest`
  * (`toolset-spec.ts`) — control/compose knowledge, never seen by `runtime/`.
- * Each toolbox is owned by an `org` or a `user` (see `ToolboxOwner`). At
- * spawn, the caller's org's then the caller's own enabled toolboxes are built
- * into `ToolsetRef`s and prepended to `SandboxSpec.toolsets` (the api/ seam,
- * not this package).
+ * Each toolbox belongs to one org (a user's "personal" toolboxes live in
+ * their personal org). At spawn, the spawn org's auto-inject toolboxes are
+ * built into `ToolsetRef`s and prepended to `SandboxSpec.toolsets`, and their
+ * `files`/processes/ports are merged into the spec (the api/ seam, not this
+ * package).
  */
 import { type Static, Type } from "@sinclair/typebox";
 import {
   SurfacePortsSchema,
   SurfaceProcessesSchema,
 } from "./runtime-surface.ts";
-import { SourceSchema } from "./sandbox-spec.ts";
+import { FileSchema, SourceSchema } from "./sandbox-spec.ts";
 
 /**
- * Toolbox owner axis (entities-toolbox.md). A toolbox belongs to either an
- * `org` (place-scoped, mandated baseline) or a `user` (identity-scoped,
- * personal overlay that follows the user into any org's sandboxes). `owner`
- * is a routing/auth concern — it is derived from the request seam, never
- * carried in a create/patch body.
+ * The registry name a toolbox's artifacts are built under, and the selector a
+ * caller passes to pick it (`SandboxSpec` toolbox selectors). Keyed on the
+ * immutable toolbox id, so moving a toolbox between orgs or renaming its slug
+ * never renames its artifacts.
  */
-export const ToolboxOwnerTypeSchema = Type.Union(
-  [Type.Literal("org"), Type.Literal("user")],
-  { $id: "ToolboxOwnerType" },
-);
-export type ToolboxOwnerType = Static<typeof ToolboxOwnerTypeSchema>;
-
-/** A `{type,id}` owner reference — the single scoping key for a toolbox. */
-export interface ToolboxOwner {
-  type: ToolboxOwnerType;
-  id: string;
+export function toolboxArtifactName(toolbox: { id: string }): string {
+  return `tb/${toolbox.id}`;
 }
 
 /** Lowercase-kebab identity, immutable per owner (delete+recreate to rename). */
@@ -52,6 +44,14 @@ const ToolboxPathsSchema = Type.Array(
   Type.String({ minLength: 1, maxLength: 300 }),
   { maxItems: 100 },
 );
+
+/**
+ * Files written into every sandbox the toolbox applies to: same shape as
+ * `SandboxSpec.files` (content is a string or a `{ "$secret": name }` ref the
+ * server resolves from the spawn org's secrets). A toolbox with only `files`
+ * (no `build`/`paths`) is valid; a spec's own file at the same path wins.
+ */
+const ToolboxFilesSchema = Type.Array(FileSchema, { maxItems: 50 });
 
 /**
  * Update commands a refresh runs (docs/toolbox-versions.md §10), e.g.
@@ -111,7 +111,7 @@ export type ToolboxRefreshStatus = Static<typeof ToolboxRefreshStatusSchema>;
 /**
  * Optional harness this toolbox provides (entities-toolbox.md). A harness id
  * (e.g. "opencode", "pi") the api/ seam composes into the spawn's spec when no
- * higher-precedence harness is present (spec > toolbox > org policy). The
+ * higher-precedence harness is present (the spec's own harness wins over a toolbox's). The
  * toolbox's `build[]`/`paths[]` install the agent binary; this field declares
  * that the toolbox also owns the harness *process*.
  */
@@ -142,6 +142,7 @@ export const ToolboxConfigInputSchema = Type.Object(
     harness: Type.Optional(ToolboxHarnessSchema),
     processes: Type.Optional(SurfaceProcessesSchema),
     ports: Type.Optional(SurfacePortsSchema),
+    files: Type.Optional(ToolboxFilesSchema),
     /**
      * Auto-inject this toolbox into every one of the owner's spawns. When
      * false the toolbox is still fully usable — it just isn't applied unless
@@ -162,8 +163,7 @@ export type ToolboxConfigInput = Static<typeof ToolboxConfigInputSchema>;
 export const ToolboxConfigSchema = Type.Object(
   {
     id: Type.String(),
-    ownerType: ToolboxOwnerTypeSchema,
-    ownerId: Type.String(),
+    orgId: Type.String(),
     slug: ToolboxSlugSchema,
     description: Type.String({ minLength: 1, maxLength: 200 }),
     source: Type.Optional(SourceSchema),
@@ -172,6 +172,7 @@ export const ToolboxConfigSchema = Type.Object(
     harness: Type.Optional(ToolboxHarnessSchema),
     processes: Type.Optional(SurfaceProcessesSchema),
     ports: Type.Optional(SurfacePortsSchema),
+    files: Type.Optional(ToolboxFilesSchema),
     autoInject: Type.Boolean(),
     refresh: RefreshStepsSchema,
     refreshSchedule: Type.Optional(ToolboxRefreshScheduleSchema),
@@ -203,6 +204,7 @@ export const ToolboxConfigPatchSchema = Type.Object(
     harness: Type.Optional(Type.Union([ToolboxHarnessSchema, Type.Null()])),
     processes: Type.Optional(SurfaceProcessesSchema),
     ports: Type.Optional(SurfacePortsSchema),
+    files: Type.Optional(ToolboxFilesSchema),
     autoInject: Type.Optional(Type.Boolean()),
     refresh: Type.Optional(RefreshStepsSchema),
     /** `null` turns the schedule off; an absent key keeps it. */

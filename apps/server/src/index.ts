@@ -41,6 +41,7 @@ const container = createServerContainer();
 // stay authoritative and read-only (see ServerConfigService's env lock).
 bindRuntimeConfig(container.control.serverConfigService);
 await wireBuiltinHarnesses(container);
+container.control.defaultOrg.warnIfDefaultOrgUnset();
 
 // The in-server ssh2 gateway binds its own socket and lives for the process
 // lifetime, so a redeploy drops live SSH sessions (acceptable for a dev tool).

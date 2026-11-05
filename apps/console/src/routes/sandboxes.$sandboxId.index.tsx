@@ -596,16 +596,14 @@ function SaveToolsetForToolboxSection({ sandboxId }: { sandboxId: string }) {
   const { data: orgs, isPending: orgsPending } = useQuery(
     organizationsListQuery(),
   );
-  // Capturing needs toolbox-owner access (mirrors the server's
-  // `requireToolboxOwnerAccess`): always for personal toolboxes,
-  // owner/admin for an org's. Orgs where the caller is a plain member are
-  // skipped — the server would reject the capture anyway.
-  const owners = [
-    { owner: "user", label: "My toolboxes" },
-    ...(orgs ?? [])
-      .filter((org) => org.role === "owner" || org.role === "admin")
-      .map((org) => ({ owner: `org:${org.id}`, label: `${org.name} (org)` })),
-  ];
+  // Any member of an org may capture into its toolboxes (mirrors the
+  // server's `requireToolboxAccess`): the personal org first, then the rest.
+  const owners = [...(orgs ?? [])]
+    .sort((a, b) => Number(b.mine) - Number(a.mine))
+    .map((org) => ({
+      owner: `org:${org.id}`,
+      label: org.mine ? "My toolboxes" : `${org.name} (org)`,
+    }));
   const results = useQueries({
     queries: owners.map(({ owner }) => toolboxesListQuery(owner)),
   });
@@ -652,9 +650,9 @@ function SaveToolsetForToolboxSection({ sandboxId }: { sandboxId: string }) {
           <Skeleton className="h-9 w-full" />
         ) : groups.length === 0 ? (
           <p className="text-sm text-muted-foreground">
-            None of the toolboxes you manage (personal, or in orgs where you are
-            owner/admin) have <code>paths[]</code> configured yet (nothing to
-            capture). Add paths in{" "}
+            None of your toolboxes (personal or in your organizations) have{" "}
+            <code>paths[]</code> configured yet (nothing to capture). Add paths
+            in{" "}
             <Link to="/settings/toolboxes" className="underline">
               Settings → Toolboxes
             </Link>

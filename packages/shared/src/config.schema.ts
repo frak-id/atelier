@@ -72,6 +72,14 @@ export const AuthConfigSchema = Type.Object(
     allowedOrg: Type.Optional(Type.String()),
     /** Allowed GitHub usernames as fallback if org check fails */
     allowedUsers: Type.Array(Type.String(), { default: [] }),
+    /**
+     * Slug of the team organization. It is the default spawn org, the org
+     * every user who passes the GitHub gate joins as `member` on first
+     * login, and its owners are the server admins (config, images, prebuild
+     * deletion). Unset: the caller's personal org is the default and, in
+     * local mode, everyone is an admin.
+     */
+    defaultOrg: Type.Optional(Type.String()),
   },
   { default: {} },
 );
@@ -407,6 +415,7 @@ export const ENV_VAR_MAPPING = {
   ATELIER_JWT_SECRET: "auth.jwtSecret",
   ATELIER_AUTH_ALLOWED_ORG: "auth.allowedOrg",
   ATELIER_AUTH_ALLOWED_USERS: "auth.allowedUsers",
+  ATELIER_DEFAULT_ORG: "auth.defaultOrg",
 
   ATELIER_SERVER_MODE: "server.mode",
   ATELIER_SERVER_PORT: "server.port",

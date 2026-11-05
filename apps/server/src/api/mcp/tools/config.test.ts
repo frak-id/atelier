@@ -14,7 +14,7 @@ import {
 import { mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import type { PrebuildRecord, ToolboxOwner } from "@atelier/spec";
+import type { PrebuildRecord } from "@atelier/spec";
 import type { AuthUser, ControlContainer } from "../../../control/index.ts";
 import { OWNER_ID_METADATA } from "../../../shared/lib/git-attribution.ts";
 import type { ServerContainer } from "../../container.ts";
@@ -145,7 +145,19 @@ function newUser(): AuthUser {
     `cfguser${seq}@example.test`,
     "",
   );
+  // Every user has a personal org (their "personal" toolboxes live there).
+  const personal = control.organizationService.create(
+    u.username,
+    `mcp-cfg-personal-${seq}`,
+    true,
+  );
+  control.orgMemberService.addMember(personal.id, u.id, "owner");
+  control.userService.setPersonalOrg(u.id, personal.id);
   return { id: u.id, username: u.username, email: u.email, avatarUrl: "" };
+}
+
+function personalOrgOf(user: AuthUser): string {
+  return control.userService.getByIdOrThrow(user.id).personalOrgId ?? "";
 }
 
 function newOrg(name: string) {
@@ -169,12 +181,12 @@ async function connectAs(user: AuthUser) {
 }
 
 function addToolbox(
-  owner: ToolboxOwner,
+  orgId: string,
   slug: string,
   autoInject: boolean,
   extra: { build?: string[]; paths?: string[] } = {},
 ) {
-  return control.toolboxService.create(owner, {
+  return control.toolboxService.create(orgId, {
     slug,
     description: `${slug} toolbox`,
     build: extra.build ?? [],
@@ -275,33 +287,38 @@ function world() {
   const org = newOrg("Acme");
   const otherOrg = newOrg("Not mine");
   control.orgMemberService.addMember(org.id, user.id, "member");
-  const userOwner: ToolboxOwner = { type: "user", id: user.id };
-  const orgOwner: ToolboxOwner = { type: "org", id: org.id };
-  const mine = addToolbox(userOwner, "mine", true);
-  const optional = addToolbox(userOwner, "optional", false);
-  const baseline = addToolbox(orgOwner, "baseline", true);
-  const extras = addToolbox(orgOwner, "extras", false);
-  addToolbox({ type: "org", id: otherOrg.id }, "secret", true);
-  return { user, org, otherOrg, mine, optional, baseline, extras };
+  const personal = personalOrgOf(user);
+  const mine = addToolbox(personal, "mine", true);
+  const optional = addToolbox(personal, "optional", false);
+  const baseline = addToolbox(org.id, "baseline", true);
+  const extras = addToolbox(org.id, "extras", false);
+  const secret = addToolbox(otherOrg.id, "secret", true);
+  return { user, org, otherOrg, mine, optional, baseline, extras, secret };
 }
 
 describe("list_toolboxes", () => {
-  test("lists your own AND your orgs' toolboxes, auto-included first", async () => {
+  test("lists every member org's toolboxes (personal included), auto-included first", async () => {
     const w = world();
     const { call } = await connectAs(w.user);
     const res = await call("list_toolboxes");
-    expect(
-      res.data.map((t: { slug: string; appliesTo: string }) => [
-        t.slug,
-        t.appliesTo,
-      ]),
-    ).toEqual([
-      // injection order: org baseline, then your overlay, then the rest
-      ["baseline", "sandboxes-in-org"],
-      ["mine", "every-sandbox"],
-      ["optional", "explicit-only"],
-      ["extras", "explicit-only"],
+    const rows = res.data.map((t: { slug: string; appliesTo: string }) => [
+      t.slug,
+      t.appliesTo,
     ]);
+    // auto-included ones first, then the explicit-only ones
+    expect(rows.slice(0, 2)).toEqual(
+      expect.arrayContaining([
+        ["baseline", "sandboxes-in-org"],
+        ["mine", "sandboxes-in-org"],
+      ]),
+    );
+    expect(rows.slice(2)).toEqual(
+      expect.arrayContaining([
+        ["optional", "explicit-only"],
+        ["extras", "explicit-only"],
+      ]),
+    );
+    expect(rows).toHaveLength(4);
     // another org's toolbox is not visible
     expect(res.raw).not.toContain("secret");
   });
@@ -313,28 +330,22 @@ describe("list_toolboxes", () => {
     const baseline = items.find((t: { slug: string }) => t.slug === "baseline");
     const mine = items.find((t: { slug: string }) => t.slug === "mine");
     expect(baseline).toEqual({
-      selector: `tb/org/${w.org.id}/baseline`,
+      selector: `tb/${w.baseline.id}`,
       id: w.baseline.id,
       slug: "baseline",
       description: "baseline toolbox",
-      scope: "org",
       orgId: w.org.id,
       autoInclude: true,
       appliesTo: "sandboxes-in-org",
       activeVersion: null,
-      // a plain member sees neither the version history nor can manage
-      canManage: false,
-    });
-    expect(mine).toEqual({
-      selector: `tb/user/${w.user.id}/mine`,
-      id: w.mine.id,
-      slug: "mine",
-      description: "mine toolbox",
-      scope: "user",
-      autoInclude: true,
-      appliesTo: "every-sandbox",
-      activeVersion: null,
       versionCount: 0,
+      // any member of the org manages its toolboxes
+      canManage: true,
+    });
+    expect(mine).toMatchObject({
+      selector: `tb/${w.mine.id}`,
+      orgId: personalOrgOf(w.user),
+      appliesTo: "sandboxes-in-org",
       canManage: true,
     });
   });
@@ -405,10 +416,10 @@ describe("list_toolboxes", () => {
     expect(res.raw).not.toContain("capturedBy");
   });
 
-  test("an org admin sees and can manage the org's toolboxes", async () => {
+  test("an org owner sees and can manage the org's toolboxes", async () => {
     const w = world();
     const admin = newUser();
-    control.orgMemberService.addMember(w.org.id, admin.id, "admin");
+    control.orgMemberService.addMember(w.org.id, admin.id, "owner");
     const { call } = await connectAs(admin);
     const baseline = (
       await call("list_toolboxes", { owner: `org:${w.org.id}` })
@@ -431,10 +442,12 @@ describe("manage_toolbox", () => {
       action: "create",
       config: { slug: "fresh", description: "d", build: [], paths: [] },
     });
+    // No `owner`: it lands in the caller's personal org.
     expect(res.data).toMatchObject({
-      selector: `tb/user/${user.id}/fresh`,
+      selector: expect.stringMatching(/^tb\//),
+      orgId: personalOrgOf(user),
       autoInclude: true,
-      appliesTo: "every-sandbox",
+      appliesTo: "sandboxes-in-org",
       canManage: true,
     });
     expect(res.raw).not.toContain("createdAt");
@@ -442,7 +455,7 @@ describe("manage_toolbox", () => {
 
   test("update and delete return small confirmations", async () => {
     const user = newUser();
-    const tb = addToolbox({ type: "user", id: user.id }, "tmp", true);
+    const tb = addToolbox(personalOrgOf(user), "tmp", true);
     const { call } = await connectAs(user);
     const updated = await call("manage_toolbox", {
       action: "update",
@@ -459,23 +472,57 @@ describe("manage_toolbox", () => {
     ).toEqual({ id: tb.id, status: "deleted" });
   });
 
-  test("a plain org member cannot manage the org's toolbox", async () => {
+  test("a member manages the org's toolbox; a non-member is refused", async () => {
     const w = world();
     const { call } = await connectAs(w.user);
-    const res = await call("manage_toolbox", {
+    const ok = await call("manage_toolbox", {
       action: "update",
       id: w.baseline.id,
+      config: { description: "shared edit" },
+    });
+    expect(ok.isError).toBeFalsy();
+    expect(ok.data).toMatchObject({ description: "shared edit" });
+
+    const res = await call("manage_toolbox", {
+      action: "update",
+      id: w.secret.id,
       config: { description: "hijack" },
     });
     expect(res.isError).toBe(true);
     expect(res.data.error).toBe("FORBIDDEN");
   });
 
+  test("create accepts files, secret refs included", async () => {
+    const user = newUser();
+    const { call } = await connectAs(user);
+    const files = [
+      {
+        path: "/home/dev/.config/x/key",
+        content: { $secret: "X_KEY" },
+        mode: "600",
+        owner: "dev",
+      },
+    ];
+    const res = await call("manage_toolbox", {
+      action: "create",
+      config: {
+        slug: "files-only",
+        description: "d",
+        build: [],
+        paths: [],
+        files,
+      },
+    });
+    expect(res.isError).toBeFalsy();
+    const stored = control.toolboxService.get((res.data as { id: string }).id);
+    expect(stored.files).toEqual(files);
+  });
+
   test("capture → publish → pin on an org toolbox, then unpin → delete_version", async () => {
     const owner = newUser();
     const org = newOrg("Pinning");
     control.orgMemberService.addMember(org.id, owner.id, "owner");
-    const tb = addToolbox({ type: "org", id: org.id }, "stack", true, {
+    const tb = addToolbox(org.id, "stack", true, {
       paths: [".config/tool"],
     });
     const { call, calls } = await connectAs(owner);
@@ -547,10 +594,10 @@ describe("manage_toolbox", () => {
 
   test("a version of another toolbox is refused", async () => {
     const user = newUser();
-    const a = addToolbox({ type: "user", id: user.id }, "a", true, {
+    const a = addToolbox(personalOrgOf(user), "a", true, {
       paths: ["a"],
     });
-    const b = addToolbox({ type: "user", id: user.id }, "b", true);
+    const b = addToolbox(personalOrgOf(user), "b", true);
     const { call } = await connectAs(user);
     const cap = await call("manage_toolbox", {
       action: "capture",
@@ -573,7 +620,7 @@ describe("manage_toolbox refresh", () => {
     const owner = newUser();
     const org = newOrg("Refreshing");
     control.orgMemberService.addMember(org.id, owner.id, "owner");
-    const tb = addToolbox({ type: "org", id: org.id }, "pi-web", true, {
+    const tb = addToolbox(org.id, "pi-web", true, {
       paths: ["~/.pi/agent"],
     });
     const { call, calls, jobs } = await connectAs(owner);
@@ -622,7 +669,7 @@ describe("manage_toolbox refresh", () => {
 
   test("refused without update commands; bad schedules are refused", async () => {
     const user = newUser();
-    const tb = addToolbox({ type: "user", id: user.id }, "plain", true, {
+    const tb = addToolbox(personalOrgOf(user), "plain", true, {
       paths: ["~/.x"],
     });
     const { call } = await connectAs(user);
@@ -640,12 +687,12 @@ describe("manage_toolbox refresh", () => {
     expect(bad.data.message).toContain("once an hour");
   });
 
-  test("a plain org member cannot refresh the org's toolbox", async () => {
+  test("a non-member cannot refresh another org's toolbox", async () => {
     const w = world();
     const { call } = await connectAs(w.user);
     const res = await call("manage_toolbox", {
       action: "refresh",
-      id: w.baseline.id,
+      id: w.secret.id,
     });
     expect(res.isError).toBe(true);
     expect(res.data.error).toBe("FORBIDDEN");

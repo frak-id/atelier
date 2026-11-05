@@ -66,10 +66,17 @@ export function createAuthRoutes(container: ServerContainer) {
   const { userService, organizationService, orgMemberService } =
     container.control;
 
-  /** Bootstrap a personal org + owner membership on a user's first login. */
-  function ensurePersonalOrg(userId: string, login: string): void {
+  /** Bootstrap a personal org + owner membership on a user's first login;
+   * a new user also joins the team org (`auth.defaultOrg`) as a member. */
+  function bootstrapOrgs(userId: string, login: string): void {
+    if (!ensurePersonalOrg(userId, login)) return;
+    container.control.defaultOrg.joinDefaultOrg(userId);
+  }
+
+  /** Returns whether the personal org was just created. */
+  function ensurePersonalOrg(userId: string, login: string): boolean {
     const user = userService.getById(userId);
-    if (user?.personalOrgId) return;
+    if (user?.personalOrgId) return false;
     const personalOrg = organizationService.create(
       login,
       login.toLowerCase(),
@@ -77,8 +84,7 @@ export function createAuthRoutes(container: ServerContainer) {
     );
     userService.setPersonalOrg(userId, personalOrg.id);
     orgMemberService.addMember(personalOrg.id, userId, "owner");
-    // Default toolbox seeding disabled for now (toolboxes are created
-    // explicitly, not mandated as an org baseline).
+    return true;
   }
 
   const authRoutes = new Elysia({ prefix: "/auth" })
@@ -102,7 +108,7 @@ export function createAuthRoutes(container: ServerContainer) {
             MOCK_USER.avatarUrl,
             MOCK_USER.accessToken,
           );
-          ensurePersonalOrg(MOCK_USER.githubId, MOCK_USER.username);
+          bootstrapOrgs(MOCK_USER.githubId, MOCK_USER.username);
 
           // Same-origin over http://localhost (console nginx proxies to the
           // server): `SameSite=None` REQUIRES `Secure`, which browsers reject
@@ -214,7 +220,7 @@ export function createAuthRoutes(container: ServerContainer) {
             ghUser.avatar_url,
             accessToken,
           );
-          ensurePersonalOrg(String(ghUser.id), ghUser.login);
+          bootstrapOrgs(String(ghUser.id), ghUser.login);
 
           const token = await signJwt({
             id: String(ghUser.id),
@@ -283,6 +289,8 @@ export function createAuthRoutes(container: ServerContainer) {
         username: user.username,
         avatarUrl: user.avatarUrl,
         email: user.email,
+        // Server admin: the console hides admin-only actions without it.
+        admin: container.control.defaultOrg.isServerAdmin(user.id),
       };
     })
     // Forward-auth for sandbox tool URLs (`ports[].auth: "forward"`), asked by

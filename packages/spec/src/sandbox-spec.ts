@@ -231,14 +231,14 @@ export type SandboxSpec = Static<typeof SandboxSpecSchema>;
 // ── create request (seam input, not the runtime spec) ────────────────────────
 
 /**
- * A selected toolbox, `tb/<ownerType>/<ownerId>/<slug>`. The high-level unit a
+ * A selected toolbox, `tb/<toolboxId>`. The high-level unit a
  * caller picks; the api/ seam resolves it into a materialized toolset ref (if
  * it carries files) and/or its process/port surface + harness. Never reaches
  * the runtime.
  */
 export const ToolboxSelectorSchema = Type.String({
-  pattern: "^tb/(org|user)/[^/]+/[a-z0-9]+(-[a-z0-9]+)*$",
-  description: "Selected toolbox: tb/<ownerType>/<ownerId>/<slug>.",
+  pattern: "^tb/[^/@]+$",
+  description: "Selected toolbox: tb/<toolboxId>.",
 });
 export type ToolboxSelector = Static<typeof ToolboxSelectorSchema>;
 

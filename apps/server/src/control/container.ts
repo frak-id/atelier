@@ -1,12 +1,13 @@
 /**
  * Control's composition root. Manual-wiring convention (AGENTS.md "DI: Manual
  * wiring in container.ts"), scoped to exactly what design.md §3.1 assigns to
- * control/: identity, orgs, quotas, secrets, org policy, and the
- * enrichment pipeline.
+ * control/: identity, orgs, secrets, toolboxes, and the enrichment
+ * pipeline.
  */
 
 import { isAuthBypassed } from "../shared/lib/config.ts";
 import { AuthService } from "./auth.ts";
+import { createDefaultOrg } from "./default-org.ts";
 import {
   type EnrichmentOptions,
   enrichSpec,
@@ -19,10 +20,6 @@ import {
   OrgMemberRepository,
   OrgMemberService,
 } from "./modules/org-member/index.ts";
-import {
-  OrgPolicyRepository,
-  OrgPolicyService,
-} from "./modules/org-policy/index.ts";
 import {
   OrganizationRepository,
   OrganizationService,
@@ -57,7 +54,6 @@ export function createControlContainer() {
   const apiKeyRepository = new ApiKeyRepository();
   const sshKeyRepository = new SshKeyRepository();
   const secretRepository = new SecretRepository();
-  const orgPolicyRepository = new OrgPolicyRepository();
   const serverConfigRepository = new ServerConfigRepository();
   const toolboxRepository = new ToolboxRepository();
   const toolboxVersionRepository = new ToolboxVersionRepository();
@@ -71,7 +67,6 @@ export function createControlContainer() {
   const apiKeyService = new ApiKeyService(apiKeyRepository);
   const sshKeyService = new SshKeyService(sshKeyRepository);
   const secretService = new SecretService(secretRepository);
-  const orgPolicyService = new OrgPolicyService(orgPolicyRepository);
   const serverConfigService = new ServerConfigService(serverConfigRepository);
   const idlePolicyService = new IdlePolicyService(serverConfigService);
   const toolboxService = new ToolboxService(toolboxRepository);
@@ -83,6 +78,11 @@ export function createControlContainer() {
   );
   const authService = new AuthService({ apiKeyService, userService });
   const gitHubRepoService = new GitHubRepoService({ userService });
+
+  const defaultOrg = createDefaultOrg({
+    organizationService,
+    orgMemberService,
+  });
 
   const accessDeps: SandboxAccessDeps = {
     isAuthBypassed,
@@ -97,7 +97,6 @@ export function createControlContainer() {
     apiKeyService,
     sshKeyService,
     secretService,
-    orgPolicyService,
     serverConfigService,
     idlePolicyService,
     toolboxService,
@@ -105,22 +104,15 @@ export function createControlContainer() {
     authService,
     gitHubRepoService,
     ownershipTransferService,
+    /** `auth.defaultOrg`: default spawn org, auto-join, server admins. */
+    defaultOrg,
     /** Bound seam-crossing enrichment \u2014 the only function `api/` calls
      * before handing a spec to `runtime.create()`. */
     enrichSpec: (
       spec: Parameters<typeof enrichSpec>[0],
       orgId?: string,
       opts?: EnrichmentOptions,
-    ) =>
-      enrichSpec(
-        spec,
-        orgId,
-        {
-          secrets: secretService,
-          orgPolicy: orgPolicyService,
-        },
-        opts,
-      ),
+    ) => enrichSpec(spec, orgId, { secrets: secretService }, opts),
     /** Re-attribute a stored spec to a new owner (fork); pure, no deps. */
     reattributeSpec,
     /** The SSH public keys allowed into one sandbox (see sandbox-access.ts). */

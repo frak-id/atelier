@@ -3,6 +3,7 @@ import { useQuery } from "@tanstack/react-query";
 import { type ParseError, parse as parseJsonc } from "jsonc-parser";
 import { Loader2, Plus } from "lucide-react";
 import { type FormEvent, useState } from "react";
+import { currentUserQuery } from "@/api/queries/auth";
 import {
   toolsetsListQuery,
   useBuildToolset,
@@ -82,6 +83,9 @@ export function ToolsetsSection({
 function ToolsetRow({ toolset }: { toolset: ToolsetEntry }) {
   const publish = usePublishToolset();
   const remove = useRemoveToolset();
+  // Publishing and removing raw toolsets are server-admin actions.
+  const { data: currentUser } = useQuery(currentUserQuery());
+  const isAdmin = currentUser?.admin === true;
   return (
     <Card>
       <CardContent className="flex flex-col gap-2 p-3">
@@ -100,7 +104,7 @@ function ToolsetRow({ toolset }: { toolset: ToolsetEntry }) {
             {formatRelativeTime(toolset.createdAt)}
           </span>
           <div className="ml-auto flex gap-1">
-            {toolset.private ? (
+            {isAdmin && toolset.private ? (
               <Button
                 size="sm"
                 variant="outline"
@@ -110,14 +114,16 @@ function ToolsetRow({ toolset }: { toolset: ToolsetEntry }) {
                 Publish
               </Button>
             ) : null}
-            <Button
-              size="sm"
-              variant="ghost"
-              disabled={remove.isPending}
-              onClick={() => remove.mutate(toolset.ref)}
-            >
-              Remove
-            </Button>
+            {isAdmin ? (
+              <Button
+                size="sm"
+                variant="ghost"
+                disabled={remove.isPending}
+                onClick={() => remove.mutate(toolset.ref)}
+              >
+                Remove
+              </Button>
+            ) : null}
           </div>
         </div>
         <span className="truncate font-mono text-xs text-muted-foreground">

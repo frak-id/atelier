@@ -33,11 +33,7 @@ import {
 } from "@atelier/spec";
 import { Elysia, sse, t } from "elysia";
 import type { JobRecord } from "../runtime/index.ts";
-import {
-  ForbiddenError,
-  NotFoundError,
-  ValidationError,
-} from "../shared/errors.ts";
+import { NotFoundError, ValidationError } from "../shared/errors.ts";
 import {
   buildGitAttributionFiles,
   OWNER_ID_METADATA,
@@ -48,11 +44,11 @@ import { defaultMemoryMb, defaultVcpus } from "../shared/lib/runtime-config.ts";
 import { createAuthPlugin } from "./auth.plugin.ts";
 import {
   harnessForToolset,
-  resolveSelectedToolboxes,
-  resolveToolboxHarness,
-  resolveToolboxRefs,
-  resolveToolboxSurface,
+  resolveSpawnToolboxes,
   type ServerContainer,
+  toolboxHarness,
+  toolboxSurface,
+  withToolboxFiles,
 } from "./container.ts";
 import {
   accessibleSandboxes,
@@ -69,33 +65,6 @@ import {
 } from "./ws-relay.ts";
 
 const log = createChildLogger("v1-routes");
-
-/**
- * S3: `/v1/images*` builds seed images on the operator's builder and
- * registers external refs — gate build/register/delete behind an elevated
- * role. There is genuinely no server-wide admin/operator role today
- * (see `control.routes.ts`'s `configRoutes` comment: "no server-admin role
- * yet"). This reuses control's existing org-scoped RBAC primitive
- * (`OrgMemberService.requireRole`, `OrgMemberRole = owner|admin|member|
- * viewer`) as the smallest correct proxy: the caller must be `owner` or
- * `admin` of at least one organization they belong to. Revisit once a real
- * server-wide admin role exists — this is an explicit assumption, not a new
- * permissions system.
- */
-function requireImageOperator(
-  control: ServerContainer["control"],
-  userId: string,
-): void {
-  const isOperator = control.orgMemberService
-    .getByUserId(userId)
-    .some((m) => m.role === "owner" || m.role === "admin");
-  if (!isOperator) {
-    throw new ForbiddenError(
-      "Building or managing images requires an owner/admin role in at " +
-        "least one organization.",
-    );
-  }
-}
 
 /** A short, human label for a sandbox-create job's queue row — the spec's
  * opaque name/workspace metadata when present, else its source. */
@@ -160,10 +129,11 @@ function ownerFilter(owner: string | undefined, userId: string) {
 }
 
 /**
- * The org a spawn runs in (whose secrets, policy and auto-injected toolboxes
- * it gets). An explicit `requested` org must be one the caller belongs to.
- * Absent, it's the caller's personal org, else their oldest membership, else
- * none (spawn bare — an org-less user still gets their own toolboxes).
+ * The org a spawn runs in (whose secrets and auto-injected toolboxes it
+ * gets). An explicit `requested` org must be one the caller belongs to.
+ * Absent, it's the default org (`auth.defaultOrg`) when the caller is in it,
+ * else their personal org, else their oldest membership, else none (spawn
+ * bare).
  */
 export function resolveOrgId(
   control: ServerContainer["control"],
@@ -175,6 +145,10 @@ export function resolveOrgId(
     return requested;
   }
   const memberships = control.orgMemberService.getByUserId(userId);
+  const defaultOrgId = control.defaultOrg.defaultOrgId();
+  if (defaultOrgId && memberships.some((m) => m.orgId === defaultOrgId)) {
+    return defaultOrgId;
+  }
   const personal = control.userService.getById(userId)?.personalOrgId;
   if (personal && memberships.some((m) => m.orgId === personal)) {
     return personal;
@@ -283,39 +257,31 @@ export async function createSandboxForUser(
     email: user.email,
     githubToken: control.userService.resolveGitHubToken(user.id),
   };
-  // Auto-inject org (baseline) then user (personal overlay) toolboxes,
-  // oldest-first (R6), then the explicitly-picked ones.
-  const [autoInjectRefs, selectedRefs] = await Promise.all([
-    resolveToolboxRefs(container, { orgId, userId: user.id }),
-    resolveSelectedToolboxes(container, selectors),
-  ]);
-  // Every toolbox applied to this spawn, as parseable `tb/…` handles — auto-
-  // injected refs, picked selectors (incl. process-only ones with no
-  // toolset), and any explicit `spec.toolsets`. Drives harness + surface
-  // resolution.
-  const applied = [
-    ...autoInjectRefs,
-    ...selectors.map((ref) => ({ ref })),
-    ...(spec.toolsets ?? []),
-  ];
-  // Harness precedence: spec > toolbox > org policy.
-  const toolboxHarnessId = resolveToolboxHarness(container, applied);
-  const enriched = await control.enrichSpec(spec, orgId, {
-    toolboxHarnessId,
-    owner,
-  });
+  // The org's auto-inject toolboxes, then the picked ones. Their files are
+  // merged into the spec BEFORE enrichment so `$secret` refs resolve there;
+  // the spec's own file at the same path wins.
+  const { refs: toolboxRefs, applied } = await resolveSpawnToolboxes(
+    container,
+    { orgId, userId: user.id, selectors, toolsets: spec.toolsets ?? [] },
+  );
+  const enriched = await control.enrichSpec(
+    withToolboxFiles(spec, applied),
+    orgId,
+    {
+      toolboxHarnessId: toolboxHarness(applied),
+      owner,
+    },
+  );
   // Dedupe materialized refs (a toolbox can be both auto-injected and
   // picked) so the agent never extracts the same artifact twice.
   const seen = new Set<string>();
-  const toolsets = [
-    ...autoInjectRefs,
-    ...selectedRefs,
-    ...(enriched.toolsets ?? []),
-  ].filter((t) => {
-    if (seen.has(t.ref)) return false;
-    seen.add(t.ref);
-    return true;
-  });
+  const toolsets = [...toolboxRefs, ...(enriched.toolsets ?? [])].filter(
+    (t) => {
+      if (seen.has(t.ref)) return false;
+      seen.add(t.ref);
+      return true;
+    },
+  );
   // The runtime surface: the prebuild's dev servers, then the toolboxes'
   // tools, then the spec's own (see `spawnSurface` for who wins). A recipe
   // that declares dev servers brings its own; otherwise they're the stored
@@ -329,7 +295,7 @@ export async function createSandboxForUser(
         : "snapshot" in spec.source
           ? runtime.prebuildSurface(spec.source.snapshot)
           : undefined,
-    toolboxes: resolveToolboxSurface(container, applied),
+    toolboxes: toolboxSurface(applied),
     own: enriched,
   });
   if (surface.shadowed.length > 0) {
@@ -540,7 +506,7 @@ export function createV1Routes(container: ServerContainer) {
       .post(
         "/images",
         async ({ body, user, set }) => {
-          requireImageOperator(control, user.id);
+          control.defaultOrg.requireServerAdmin(user.id);
           const record = await container.images.buildSeed(body.seed, {
             force: body.force,
           });
@@ -557,7 +523,7 @@ export function createV1Routes(container: ServerContainer) {
       .post(
         "/images/register",
         ({ body, user }) => {
-          requireImageOperator(control, user.id);
+          control.defaultOrg.requireServerAdmin(user.id);
           return container.images.registerExternal(body.name, body.ref);
         },
         { body: t.Object({ name: t.String(), ref: t.String() }) },
@@ -565,7 +531,7 @@ export function createV1Routes(container: ServerContainer) {
       .delete(
         "/images/:name",
         ({ params, user, set }) => {
-          requireImageOperator(control, user.id);
+          control.defaultOrg.requireServerAdmin(user.id);
           container.images.deleteImage(params.name);
           set.status = 204;
         },
@@ -625,7 +591,8 @@ export function createV1Routes(container: ServerContainer) {
       )
       .delete(
         "/prebuilds/:ref",
-        async ({ params, set }) => {
+        async ({ params, user, set }) => {
+          control.defaultOrg.requireServerAdmin(user.id);
           await runtime.deletePrebuild(params.ref);
           set.status = 204;
         },
@@ -658,12 +625,18 @@ export function createV1Routes(container: ServerContainer) {
       )
       .post(
         "/toolsets/publish",
-        async ({ body }) => runtime.publishToolset((body as ToolsetRef).ref),
+        async ({ body, user }) => {
+          // Unscoped by toolbox: server admins only (a toolbox's own versions
+          // publish through `/api/toolboxes/:id/versions/:versionId/publish`).
+          control.defaultOrg.requireServerAdmin(user.id);
+          return runtime.publishToolset((body as ToolsetRef).ref);
+        },
         { body: ToolsetRefSchema },
       )
       .delete(
         "/toolsets",
-        async ({ query, set }) => {
+        async ({ query, user, set }) => {
+          control.defaultOrg.requireServerAdmin(user.id);
           // Throws ConflictError when a live/paused sandbox still has this
           // ref mounted (toolset-overlay-squashfs.md §7) — the shared
           // onError handler (api/index.ts) maps SandboxError subclasses to

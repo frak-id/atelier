@@ -9,6 +9,7 @@ import {
   type SpecEditorApi,
   SpecEditorShell,
 } from "@/components/spec-editor-shell";
+import { ToolboxFilesField } from "@/components/toolbox-files-field";
 import { Button } from "@/components/ui/button";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Input } from "@/components/ui/input";
@@ -84,6 +85,9 @@ function toInput(toolbox?: ToolboxConfig): ToolboxConfigInput {
     harness: toolbox.harness,
     processes: toolbox.processes,
     ports: toolbox.ports,
+    ...(toolbox.files && toolbox.files.length > 0
+      ? { files: toolbox.files }
+      : {}),
     autoInject: toolbox.autoInject,
     ...(toolbox.refresh.length > 0 ? { refresh: toolbox.refresh } : {}),
     ...(toolbox.refreshSchedule
@@ -147,6 +151,7 @@ export function ToolboxEditor({
             harness: value.harness ? value.harness : null,
             processes: value.processes ?? [],
             ports: value.ports ?? [],
+            files: value.files ?? [],
             refresh: value.refresh ?? [],
             refreshSchedule: value.refreshSchedule || null,
           },
@@ -344,11 +349,11 @@ function ToolboxVisualForm({
           checked={spec.autoInject ?? false}
           onChange={(e) => onChange({ ...spec, autoInject: e.target.checked })}
         />
-        Auto-inject into every spawn
+        Auto-inject into every spawn in this org
       </label>
       <p className="-mt-2 text-xs text-muted-foreground">
         Off = the toolbox is still fully usable, just opt-in (select it per
-        spawn). On = applied to all of this owner's sandboxes.
+        spawn). On = applied to every sandbox spawned in this organization.
       </p>
 
       <div className="space-y-2 border-t pt-3">
@@ -367,6 +372,24 @@ function ToolboxVisualForm({
           onValidityChange={onValidityChange}
           defaults={{ lazy: true, port: 8080 }}
           emptyText="Files only: this toolbox runs nothing."
+        />
+      </div>
+
+      <div className="space-y-2 border-t pt-3">
+        <div className="space-y-1">
+          <Label>Files (optional)</Label>
+          <p className="text-xs text-muted-foreground">
+            Written into every sandbox this toolbox applies to, e.g. a config
+            file holding an API key. Pick "Secret" to read the content from an
+            organization secret instead of storing it here. A toolbox with only
+            files is fine.
+          </p>
+        </div>
+        <ToolboxFilesField
+          value={spec.files ?? []}
+          onChange={(files) =>
+            onChange({ ...spec, files: files.length > 0 ? files : undefined })
+          }
         />
       </div>
     </div>

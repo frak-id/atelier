@@ -12,10 +12,11 @@
  * `action=refresh`, and the per-toolbox schedule (`runDueToolboxRefreshes`,
  * ticked from index.ts).
  */
-import type {
-  ToolboxConfig,
-  ToolboxRefreshStatus,
-  ToolboxRefreshTrigger,
+import {
+  type ToolboxConfig,
+  type ToolboxRefreshStatus,
+  type ToolboxRefreshTrigger,
+  toolboxArtifactName,
 } from "@atelier/spec";
 import { recipeFingerprint } from "../control/index.ts";
 import type { JobRecord } from "../runtime/index.ts";
@@ -52,13 +53,6 @@ export type ToolboxRefreshOutcome =
       pinned: boolean;
     }
   | { outcome: "unchanged"; versionId?: string };
-
-/** The registry name a toolbox's artifacts are pushed under. */
-function artifactName(
-  tb: Pick<ToolboxConfig, "ownerType" | "ownerId" | "slug">,
-): string {
-  return `tb/${tb.ownerType}/${tb.ownerId}/${tb.slug}`;
-}
 
 /** Throw a `ValidationError` unless the toolbox can be refreshed. */
 export function assertRefreshable(tb: ToolboxConfig): void {
@@ -131,7 +125,7 @@ async function currentDeliverable(
   onLog?.("No pinned version: starting from the recipe build.");
   const { ref } = await runtime.buildToolset(
     {
-      name: artifactName(tb),
+      name: toolboxArtifactName(tb),
       source: tb.source,
       build: tb.build,
       paths: tb.paths,
@@ -197,7 +191,7 @@ export async function runToolboxRefresh(
     const base = await currentDeliverable(container, tb, onLog);
     const result = await runtime.refreshToolset(
       {
-        name: artifactName(tb),
+        name: toolboxArtifactName(tb),
         ...(tb.source ? { source: tb.source } : {}),
         base: { ref: base.ref },
         steps: tb.refresh,
@@ -222,11 +216,11 @@ export async function runToolboxRefresh(
     if (!current) {
       throw new Error("the toolbox was deleted while it was refreshing");
     }
-    // An org toolbox's pin reaches every member's sandbox, which the org
+    // A toolbox's pin reaches every member's sandbox, which the org
     // publish-before-pin guard requires to be a published artifact. A
     // refresh builds on the version already shared there, so its output is
     // shared the same way.
-    if (current.ownerType === "org") runtime.publishToolset(result.ref);
+    runtime.publishToolset(result.ref);
     const sourceImage = await runtime
       .resolveSourceImage(current.source ?? { image: runtime.defaultImage() })
       .catch(() => undefined);

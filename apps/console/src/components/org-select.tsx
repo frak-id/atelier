@@ -7,7 +7,8 @@ import { NativeSelect } from "@/components/ui/native-select";
  * Native select over the caller's organizations. `value` is the selected org
  * id, or "" for the optional no-org scope (`noneLabel`); omit `noneLabel` to
  * force a concrete org choice. `markPersonal` suffixes the caller's personal
- * org's name with "(personal)" so a default selection reads clearly.
+ * org's name with "(personal)" and the team org's with "(default)" so a
+ * default selection reads clearly.
  */
 export function OrgSelect({
   id,
@@ -35,7 +36,11 @@ export function OrgSelect({
         {noneLabel !== undefined ? <option value="">{noneLabel}</option> : null}
         {orgs?.map((org) => (
           <option key={org.id} value={org.id}>
-            {markPersonal && org.mine ? `${org.name} (personal)` : org.name}
+            {markPersonal && org.mine
+              ? `${org.name} (personal)`
+              : markPersonal && org.default
+                ? `${org.name} (default)`
+                : org.name}
           </option>
         ))}
       </NativeSelect>

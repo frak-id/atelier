@@ -37,13 +37,6 @@ export class ToolboxVersionService {
     return this.repository.getById(id);
   }
 
-  /** Which toolbox recorded this artifact ref (or bare registry name).
-   * Lets the spawn seam map an artifact named after a toolbox's PREVIOUS
-   * owner (it was moved; refs are immutable) back to the toolbox. */
-  findToolboxIdByRef(refOrName: string): string | undefined {
-    return this.repository.findToolboxIdByRef(refOrName);
-  }
-
   create(
     toolboxId: string,
     input: {
@@ -70,10 +63,13 @@ export class ToolboxVersionService {
     return this.repository.create(record);
   }
 
-  delete(id: string): void {
-    this.get(id);
+  /** Delete a version of `toolboxId` (404 when it belongs to another one). */
+  delete(toolboxId: string, id: string): void {
+    if (this.get(id).toolboxId !== toolboxId) {
+      throw new NotFoundError("ToolboxVersion", id);
+    }
     this.repository.delete(id);
-    log.info({ versionId: id }, "Toolbox version deleted");
+    log.info({ toolboxId, versionId: id }, "Toolbox version deleted");
   }
 
   /** Whether this exact artifact ref already has a version row for this

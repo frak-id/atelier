@@ -35,15 +35,14 @@ export const Route = createFileRoute("/settings/secrets")({
  * server-managed and not editable from here. */
 function SecretsPage() {
   return (
-    <OwnerScopeSections includeUser={false}>
+    <OwnerScopeSections>
       {(scope) => <SecretsSection key={scope.owner} scope={scope} />}
     </OwnerScopeSections>
   );
 }
 
 function SecretsSection({ scope }: { scope: OwnerScope }) {
-  // Org-only page (`includeUser={false}`): every scope has an org id.
-  const orgId = scope.orgId ?? "";
+  const orgId = scope.orgId;
   const [createOpen, setCreateOpen] = useState(false);
   const {
     data: secrets,
@@ -57,10 +56,16 @@ function SecretsSection({ scope }: { scope: OwnerScope }) {
       scope={scope}
       count={secrets?.length}
       actions={
-        <Button size="sm" variant="outline" onClick={() => setCreateOpen(true)}>
-          <Plus />
-          Add secret
-        </Button>
+        scope.isOwner ? (
+          <Button
+            size="sm"
+            variant="outline"
+            onClick={() => setCreateOpen(true)}
+          >
+            <Plus />
+            Add secret
+          </Button>
+        ) : undefined
       }
     >
       {isPending ? (
@@ -74,7 +79,11 @@ function SecretsSection({ scope }: { scope: OwnerScope }) {
       ) : (
         <div className="space-y-2">
           {secrets.map((secret) => (
-            <SecretRow key={secret.id} secret={secret} />
+            <SecretRow
+              key={secret.id}
+              secret={secret}
+              canDelete={scope.isOwner}
+            />
           ))}
         </div>
       )}
@@ -90,8 +99,10 @@ function SecretsSection({ scope }: { scope: OwnerScope }) {
 
 function SecretRow({
   secret,
+  canDelete,
 }: {
   secret: { id: string; name: string; updatedAt: string };
+  canDelete: boolean;
 }) {
   const deleteSecret = useDeleteSecret();
   const [confirmOpen, setConfirmOpen] = useState(false);
@@ -106,19 +117,21 @@ function SecretRow({
             {formatRelativeTime(secret.updatedAt)}
           </span>
         </div>
-        <Button
-          variant="outline"
-          size="icon"
-          disabled={deleteSecret.isPending}
-          onClick={() => setConfirmOpen(true)}
-          aria-label="Delete secret"
-        >
-          {deleteSecret.isPending ? (
-            <Loader2 className="animate-spin" />
-          ) : (
-            <Trash2 />
-          )}
-        </Button>
+        {canDelete ? (
+          <Button
+            variant="outline"
+            size="icon"
+            disabled={deleteSecret.isPending}
+            onClick={() => setConfirmOpen(true)}
+            aria-label="Delete secret"
+          >
+            {deleteSecret.isPending ? (
+              <Loader2 className="animate-spin" />
+            ) : (
+              <Trash2 />
+            )}
+          </Button>
+        ) : null}
       </CardContent>
       <ConfirmDialog
         open={confirmOpen}

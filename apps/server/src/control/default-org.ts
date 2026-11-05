@@ -1,0 +1,78 @@
+/**
+ * The team organization named by `auth.defaultOrg` (a slug). It is the default
+ * spawn org, the org a new user joins as `member` on first login, and its
+ * owners are the server admins (config, images, prebuild deletion).
+ *
+ * With no `defaultOrg` configured there is no admin concept: everyone is an
+ * admin (today's behavior; `warnIfDefaultOrgUnset` flags it in production).
+ * Auth-bypassed modes (local) are single-user: everyone is an admin there too.
+ */
+import { ForbiddenError } from "../shared/errors.ts";
+import { config, isAuthBypassed, isProduction } from "../shared/lib/config.ts";
+import { createChildLogger } from "../shared/lib/logger.ts";
+import type { OrgMemberService } from "./modules/org-member/index.ts";
+import type { OrganizationService } from "./modules/organization/index.ts";
+
+const log = createChildLogger("default-org");
+
+export interface DefaultOrgDeps {
+  organizationService: OrganizationService;
+  orgMemberService: OrgMemberService;
+}
+
+export function createDefaultOrg({
+  organizationService,
+  orgMemberService,
+}: DefaultOrgDeps) {
+  /** The configured team org, when it is set and exists. */
+  const defaultOrgId = (): string | undefined => {
+    const slug = config.auth.defaultOrg;
+    return slug ? organizationService.getBySlug(slug)?.id : undefined;
+  };
+
+  const isServerAdmin = (userId: string): boolean => {
+    if (isAuthBypassed() || !config.auth.defaultOrg) return true;
+    const orgId = defaultOrgId();
+    if (!orgId) return false;
+    return orgMemberService.getMembership(orgId, userId)?.role === "owner";
+  };
+
+  return {
+    defaultOrgId,
+    isServerAdmin,
+    requireServerAdmin(userId: string): void {
+      if (!isServerAdmin(userId)) {
+        throw new ForbiddenError(
+          "Only the owners of the default organization can do this",
+        );
+      }
+    },
+    /**
+     * First-login hook: add `userId` to the team org as `member`. A fresh
+     * install has no such org yet: it is created with this user as its owner
+     * (the first person through the GitHub gate administers the server).
+     */
+    joinDefaultOrg(userId: string): void {
+      const slug = config.auth.defaultOrg;
+      if (!slug) return;
+      const existing = organizationService.getBySlug(slug);
+      if (!existing) {
+        const org = organizationService.create(slug, slug);
+        orgMemberService.addMember(org.id, userId, "owner");
+        log.info({ slug, userId }, "Default organization created");
+        return;
+      }
+      if (!orgMemberService.getMembership(existing.id, userId)) {
+        orgMemberService.addMember(existing.id, userId, "member");
+      }
+    },
+    warnIfDefaultOrgUnset(): void {
+      if (isProduction() && !config.auth.defaultOrg) {
+        log.warn(
+          "auth.defaultOrg is not set: every user is a server admin and " +
+            "sandboxes default to the caller's personal org",
+        );
+      }
+    },
+  };
+}

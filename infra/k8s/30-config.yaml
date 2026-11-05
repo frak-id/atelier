@@ -41,7 +41,8 @@ data:
         }
       },
       "auth": {
-        "allowedOrg": "frak-id"
+        "allowedOrg": "frak-id",
+        "defaultOrg": "frak"
       },
       "server": {
         "mode": "production",

@@ -57,10 +57,6 @@ export const queryKeys = {
     preview: (from: string, to: string) =>
       [...queryKeys.transfers.all, "preview", from, to] as const,
   },
-  orgPolicy: {
-    all: ["org-policy"] as const,
-    detail: (orgId: string) => [...queryKeys.orgPolicy.all, orgId] as const,
-  },
   toolsets: {
     all: ["toolsets"] as const,
     list: () => [...queryKeys.toolsets.all, "list"] as const,
@@ -90,7 +86,7 @@ export const queryKeys = {
   toolboxes: {
     all: ["toolboxes"] as const,
     list: (owner?: string) =>
-      [...queryKeys.toolboxes.all, "list", owner ?? "user"] as const,
+      [...queryKeys.toolboxes.all, "list", owner ?? "me"] as const,
   },
   toolboxVersions: {
     all: ["toolbox-versions"] as const,

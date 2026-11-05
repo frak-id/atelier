@@ -1,17 +1,12 @@
-import type {
-  ToolboxConfig,
-  ToolboxOwner,
-  ToolboxRefreshStatus,
-} from "@atelier/spec";
+import type { ToolboxConfig, ToolboxRefreshStatus } from "@atelier/spec";
 import { and, asc, eq, isNotNull, lte } from "drizzle-orm";
 import { getDatabase } from "../../db/client.ts";
-import { entityToolboxes } from "../../db/schema.ts";
+import { toolboxes } from "../../db/schema.ts";
 
-function rowToConfig(row: typeof entityToolboxes.$inferSelect): ToolboxConfig {
+function rowToConfig(row: typeof toolboxes.$inferSelect): ToolboxConfig {
   return {
     id: row.id,
-    ownerType: row.ownerType,
-    ownerId: row.ownerId,
+    orgId: row.orgId,
     slug: row.slug,
     description: row.description,
     source: row.source ?? undefined,
@@ -20,6 +15,7 @@ function rowToConfig(row: typeof entityToolboxes.$inferSelect): ToolboxConfig {
     harness: row.harness ?? undefined,
     processes: row.processes ?? undefined,
     ports: row.ports ?? undefined,
+    files: row.files ?? undefined,
     autoInject: row.autoInject === 1,
     refresh: row.refresh,
     refreshSchedule: row.refreshSchedule ?? undefined,
@@ -30,32 +26,24 @@ function rowToConfig(row: typeof entityToolboxes.$inferSelect): ToolboxConfig {
   };
 }
 
-/** The single owner predicate shared by every scoped query. */
-function ownerFilter(owner: ToolboxOwner) {
-  return and(
-    eq(entityToolboxes.ownerType, owner.type),
-    eq(entityToolboxes.ownerId, owner.id),
-  );
-}
-
 export class ToolboxRepository {
-  list(owner: ToolboxOwner): ToolboxConfig[] {
+  list(orgId: string): ToolboxConfig[] {
     return getDatabase()
       .select()
-      .from(entityToolboxes)
-      .where(ownerFilter(owner))
-      .orderBy(asc(entityToolboxes.createdAt))
+      .from(toolboxes)
+      .where(eq(toolboxes.orgId, orgId))
+      .orderBy(asc(toolboxes.createdAt))
       .all()
       .map(rowToConfig);
   }
 
   /** Auto-inject toolboxes, oldest-first (entities-toolbox.md R6). */
-  listAutoInject(owner: ToolboxOwner): ToolboxConfig[] {
+  listAutoInject(orgId: string): ToolboxConfig[] {
     return getDatabase()
       .select()
-      .from(entityToolboxes)
-      .where(and(ownerFilter(owner), eq(entityToolboxes.autoInject, 1)))
-      .orderBy(asc(entityToolboxes.createdAt))
+      .from(toolboxes)
+      .where(and(eq(toolboxes.orgId, orgId), eq(toolboxes.autoInject, 1)))
+      .orderBy(asc(toolboxes.createdAt))
       .all()
       .map(rowToConfig);
   }
@@ -63,31 +51,27 @@ export class ToolboxRepository {
   getById(id: string): ToolboxConfig | undefined {
     const row = getDatabase()
       .select()
-      .from(entityToolboxes)
-      .where(eq(entityToolboxes.id, id))
+      .from(toolboxes)
+      .where(eq(toolboxes.id, id))
       .get();
     return row ? rowToConfig(row) : undefined;
   }
 
-  getByOwnerAndSlug(
-    owner: ToolboxOwner,
-    slug: string,
-  ): ToolboxConfig | undefined {
+  getByOrgAndSlug(orgId: string, slug: string): ToolboxConfig | undefined {
     const row = getDatabase()
       .select()
-      .from(entityToolboxes)
-      .where(and(ownerFilter(owner), eq(entityToolboxes.slug, slug)))
+      .from(toolboxes)
+      .where(and(eq(toolboxes.orgId, orgId), eq(toolboxes.slug, slug)))
       .get();
     return row ? rowToConfig(row) : undefined;
   }
 
   create(record: ToolboxConfig): ToolboxConfig {
     getDatabase()
-      .insert(entityToolboxes)
+      .insert(toolboxes)
       .values({
         id: record.id,
-        ownerType: record.ownerType,
-        ownerId: record.ownerId,
+        orgId: record.orgId,
         slug: record.slug,
         description: record.description,
         source: record.source,
@@ -96,6 +80,7 @@ export class ToolboxRepository {
         harness: record.harness,
         processes: record.processes,
         ports: record.ports,
+        files: record.files,
         autoInject: record.autoInject ? 1 : 0,
         refresh: record.refresh,
         refreshSchedule: record.refreshSchedule ?? null,
@@ -115,14 +100,14 @@ export class ToolboxRepository {
   listDueForRefresh(nowIso: string): ToolboxConfig[] {
     return getDatabase()
       .select()
-      .from(entityToolboxes)
+      .from(toolboxes)
       .where(
         and(
-          isNotNull(entityToolboxes.nextRefreshAt),
-          lte(entityToolboxes.nextRefreshAt, nowIso),
+          isNotNull(toolboxes.nextRefreshAt),
+          lte(toolboxes.nextRefreshAt, nowIso),
         ),
       )
-      .orderBy(asc(entityToolboxes.nextRefreshAt))
+      .orderBy(asc(toolboxes.nextRefreshAt))
       .all()
       .map(rowToConfig);
   }
@@ -130,18 +115,18 @@ export class ToolboxRepository {
   /** Scheduler bookkeeping, not a config edit: `updatedAt` stays put. */
   setNextRefreshAt(id: string, nextRefreshAt: string | null): void {
     getDatabase()
-      .update(entityToolboxes)
+      .update(toolboxes)
       .set({ nextRefreshAt })
-      .where(eq(entityToolboxes.id, id))
+      .where(eq(toolboxes.id, id))
       .run();
   }
 
   /** Record a finished refresh's outcome (not a config edit either). */
   setLastRefresh(id: string, status: ToolboxRefreshStatus): void {
     getDatabase()
-      .update(entityToolboxes)
+      .update(toolboxes)
       .set({ lastRefresh: status })
-      .where(eq(entityToolboxes.id, id))
+      .where(eq(toolboxes.id, id))
       .run();
   }
 
@@ -192,14 +177,13 @@ export class ToolboxRepository {
       refreshSchedule,
       nextRefreshAt,
       id: existing.id,
-      ownerType: existing.ownerType,
-      ownerId: existing.ownerId,
+      orgId: existing.orgId,
       slug: existing.slug,
       createdAt: existing.createdAt,
       updatedAt: new Date().toISOString(),
     };
     getDatabase()
-      .update(entityToolboxes)
+      .update(toolboxes)
       .set({
         description: updated.description,
         // Force `null` (not `undefined`) so a cleared override actually
@@ -210,13 +194,14 @@ export class ToolboxRepository {
         harness: updated.harness ?? null,
         processes: updated.processes,
         ports: updated.ports,
+        files: updated.files,
         autoInject: updated.autoInject ? 1 : 0,
         refresh: updated.refresh,
         refreshSchedule: updated.refreshSchedule ?? null,
         nextRefreshAt: updated.nextRefreshAt ?? null,
         updatedAt: updated.updatedAt,
       })
-      .where(eq(entityToolboxes.id, id))
+      .where(eq(toolboxes.id, id))
       .run();
     return updated;
   }
@@ -224,10 +209,7 @@ export class ToolboxRepository {
   delete(id: string): boolean {
     const existing = this.getById(id);
     if (!existing) return false;
-    getDatabase()
-      .delete(entityToolboxes)
-      .where(eq(entityToolboxes.id, id))
-      .run();
+    getDatabase().delete(toolboxes).where(eq(toolboxes.id, id)).run();
     return true;
   }
 
@@ -236,18 +218,18 @@ export class ToolboxRepository {
    * versions endpoint. */
   getActiveVersionId(toolboxId: string): string | null {
     const row = getDatabase()
-      .select({ activeVersionId: entityToolboxes.activeVersionId })
-      .from(entityToolboxes)
-      .where(eq(entityToolboxes.id, toolboxId))
+      .select({ activeVersionId: toolboxes.activeVersionId })
+      .from(toolboxes)
+      .where(eq(toolboxes.id, toolboxId))
       .get();
     return row?.activeVersionId ?? null;
   }
 
   setActiveVersionId(toolboxId: string, versionId: string | null): void {
     getDatabase()
-      .update(entityToolboxes)
+      .update(toolboxes)
       .set({ activeVersionId: versionId })
-      .where(eq(entityToolboxes.id, toolboxId))
+      .where(eq(toolboxes.id, toolboxId))
       .run();
   }
 }

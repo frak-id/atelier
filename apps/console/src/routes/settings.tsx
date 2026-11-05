@@ -10,7 +10,6 @@ const TABS = [
   { to: "/settings/secrets", label: "Secrets" },
   { to: "/settings/users", label: "Users" },
   { to: "/settings/organizations", label: "Organizations" },
-  { to: "/settings/policy", label: "Org Policy" },
   { to: "/settings/toolboxes", label: "Toolboxes & Toolsets" },
   { to: "/settings/prebuilds", label: "Prebuilds" },
   { to: "/settings/images", label: "Images" },

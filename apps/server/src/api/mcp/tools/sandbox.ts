@@ -163,7 +163,7 @@ export function registerSandboxTools(
           .optional()
           .describe(
             "Extra toolbox selectors to apply (`selector` from " +
-              "`list_toolboxes`, e.g. tb/org/<orgId>/<slug>). Auto-included " +
+              "`list_toolboxes`, e.g. tb/<toolboxId>). Auto-included " +
               "toolboxes are applied without listing them.",
           ),
         prebuild: z

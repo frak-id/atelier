@@ -10,8 +10,8 @@ import { errorMessage } from "./error";
 import { queryKeys } from "./keys";
 
 /**
- * `owner` is the `?owner=` scope: `user` (the caller's own toolboxes, the
- * default) or `org:<id>`. Absent → the caller's own toolboxes.
+ * `owner` is the `?owner=` scope: `org:<id>`, or `me` (the caller's personal
+ * org, the default when absent).
  */
 export function toolboxesListQuery(owner?: string) {
   return queryOptions({
