@@ -19,7 +19,7 @@ excludes=("${@:1:exclude_count}")
 paths=("${@:exclude_count+1}")
 
 grep_args=()
-for glob in "${excludes[@]}"; do
+for glob in ${excludes[@]+"${excludes[@]}"}; do
     grep_args+=("--exclude=$glob")
 done
 while IFS= read -r dir; do
@@ -28,7 +28,7 @@ done <<<"$SCAN_EXCLUDE_DIRS"
 
 cd "$HOME_DIR"
 # grep exits 1 on "no match": fine. Anything above 1 is a real failure.
-grep -rIlE "$SECRET_PATTERN" "${grep_args[@]}" -- "${paths[@]}" 2>/dev/null ||
+grep -rIlE "$SECRET_PATTERN" ${grep_args[@]+"${grep_args[@]}"} -- ${paths[@]+"${paths[@]}"} 2>/dev/null ||
     {
         rc=$?
         [ "$rc" -le 1 ] || exit "$rc"

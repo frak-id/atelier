@@ -17,6 +17,14 @@ export interface ToolResult {
   raw: string;
 }
 
+function parseJson(raw: string): ToolResult["data"] {
+  try {
+    return JSON.parse(raw || "null");
+  } catch {
+    return undefined;
+  }
+}
+
 export async function connectMcp(register: (server: McpServer) => void) {
   const server = new McpServer({ name: "test", version: "0" });
   register(server);
@@ -36,7 +44,9 @@ export async function connectMcp(register: (server: McpServer) => void) {
       const result = await client.callTool({ name, arguments: args });
       const [block] = result.content as { type: string; text: string }[];
       const raw = block?.text ?? "";
-      const data = JSON.parse(raw || "null");
+      // Tool results are JSON; the SDK's own input-validation errors (bad
+      // enum, wrong type) are plain `MCP error …` text, kept in `raw`.
+      const data = parseJson(raw);
       // The structured mirror always carries the same data as the text.
       if (result.structuredContent !== undefined) {
         expect(result.structuredContent).toEqual(data);
@@ -48,7 +58,7 @@ export async function connectMcp(register: (server: McpServer) => void) {
       return (await client.listTools()).tools;
     },
     async toolNames(): Promise<string[]> {
-      return (await this.tools()).map((t) => t.name);
+      return (await client.listTools()).tools.map((t) => t.name);
     },
     async close() {
       await client.close();

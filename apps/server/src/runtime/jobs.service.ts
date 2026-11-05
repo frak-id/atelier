@@ -93,6 +93,7 @@ export class JobService {
   /** Live cancellation handles for every RUNNING job (pooled or tracked),
    * keyed by id. Populated when a job starts, deleted when it settles. */
   private readonly controllers = new Map<string, AbortController>();
+  private readonly settleWaiters = new Map<string, (job: JobRecord) => void>();
   /** Ephemeral per-job log tails (in-memory only, LRU-capped). */
   private readonly logs = new Map<string, string[]>();
   /** Pooled jobs accepted but not yet started (no slot free), FIFO. */
@@ -196,15 +197,23 @@ export class JobService {
     fn: (signal: AbortSignal, log: JobLog) => Promise<T>,
   ): Promise<T> {
     return new Promise<T>((resolve, reject) => {
-      this.dispatch(options, async (signal, log) => {
+      let result: T;
+      let failure: unknown;
+      const job = this.dispatch(options, async (signal, log) => {
         try {
-          const result = await fn(signal, log);
-          resolve(result);
+          result = await fn(signal, log);
           return result;
         } catch (err) {
-          reject(err);
+          failure = err;
           throw err;
         }
+      });
+      // Resolve only once the job row is terminal, so the caller never sees
+      // its result while the feed still shows the job running; this also
+      // rejects a job canceled while queued (its body never runs).
+      this.settleWaiters.set(job.id, (settled) => {
+        if (settled.status === "succeeded") resolve(result);
+        else reject(failure ?? new Error(settled.error ?? settled.status));
       });
     });
   }
@@ -406,7 +415,11 @@ export class JobService {
     });
     this.controllers.delete(id);
     this.pooledInFlight.delete(id);
-    if (updated) this.emit(updated);
+    if (updated) {
+      this.emit(updated);
+      this.settleWaiters.get(id)?.(updated);
+      this.settleWaiters.delete(id);
+    }
     // A freed slot (or a canceled queued job) may let the next one start.
     this.pump();
     return updated;

@@ -33,6 +33,7 @@ async function connect(tasks: AgentTaskService, userId: string) {
     server,
     {
       tasks,
+      sandboxOps: { ensureRunning: async () => undefined },
       runtime: { getLabels: () => ({ metadata: {}, annotations: {} }) },
       control: { canAccessSandbox: () => true },
     } as unknown as ServerContainer,
@@ -75,6 +76,7 @@ describe("agent task tools", () => {
       server,
       {
         tasks,
+        sandboxOps: { ensureRunning: async () => undefined },
         runtime: { getLabels: () => ({ metadata: {}, annotations: {} }) },
         control: { canAccessSandbox: () => true },
       } as unknown as ServerContainer,
@@ -278,7 +280,7 @@ describe("agent task tools", () => {
         .isError,
     ).toBe(true);
     expect((await mallory("get_task", {})).data).toEqual({ tasks: [] });
-    expect((await alice("get_task", {})).data).toHaveLength(1);
+    expect((await alice("get_task", {})).data.tasks).toHaveLength(1);
   });
 
   test("send_prompt needs exactly one of sandboxId and taskId", async () => {
@@ -347,9 +349,9 @@ describe("agent task tools", () => {
     expect(readFilter.data.message).toContain("`status`");
 
     // The valid forms still work after the rejected ones.
-    expect((await call("get_task", { status: "running" })).data).toHaveLength(
-      1,
-    );
+    expect(
+      (await call("get_task", { status: "running" })).data.tasks,
+    ).toHaveLength(1);
     expect((await call("get_task", { taskId: data.taskId })).isError).toBe(
       false,
     );

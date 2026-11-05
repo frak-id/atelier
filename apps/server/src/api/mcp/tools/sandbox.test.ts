@@ -188,7 +188,8 @@ function fakeRuntime() {
     // createSandboxForUser
     prebuildSurface: () => undefined,
     listPrebuilds: () => bakes,
-    prebuild: async (spec: Record<string, unknown>) => {
+    cachedPrebuild: async () => undefined,
+    prebuildForSpawn: async (spec: Record<string, unknown>) => {
       calls.baked.push(spec);
       return { ref: "snap-fresh" };
     },
@@ -264,6 +265,9 @@ async function setup() {
     list: () => listed().map((row) => ({ ...row, metadata: owned })),
   });
   const jobs = new JobService();
+  // The job feed lives in the shared control DB: start each test from an
+  // empty one so feed assertions only see this test's jobs.
+  jobs.pruneTerminal(-60_000);
   const toolboxOps = new ToolboxOps({
     runtime: fake.runtime,
     control,
@@ -687,6 +691,7 @@ describe("sandbox_lifecycle", () => {
     const { call } = await setup();
     const res = await call("sandbox_lifecycle", { id: "s", action: "destroy" });
     expect(res.isError).toBe(true);
+    expect(res.raw).toContain("Input validation error");
   });
 
   test("waitSeconds only applies to pause/resume/snapshot", async () => {

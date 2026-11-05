@@ -36,13 +36,13 @@ name=$(mktemp -u "atelier-toolset.XXXXXX.$BLOB_EXT")
 trap 'rm -rf "$stage" 2>/dev/null ||:; rm -f "$name" 2>/dev/null ||:' EXIT
 
 rsync_args=(-aH)
-for glob in "${excludes[@]}"; do
+for glob in ${excludes[@]+"${excludes[@]}"}; do
     rsync_args+=("--exclude=$glob")
 done
-for p in "${paths[@]}"; do
+for p in ${paths[@]+"${paths[@]}"}; do
     parent="$stage/$(dirname "$p")"
     mkdir -p "$parent"
-    rsync "${rsync_args[@]}" "$HOME_DIR/$p" "$parent/"
+    rsync ${rsync_args[@]+"${rsync_args[@]}"} "$HOME_DIR/$p" "$parent/"
 done
 
 # Note the argument order differs: mkfs.erofs <img> <dir>, mksquashfs <dir> <img>.
