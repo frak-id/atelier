@@ -11,6 +11,7 @@
  * because the artifact normalizes them anyway.
  */
 import { ValidationError } from "../shared/errors.ts";
+import { shQuote } from "./registry/builder/builder.types.ts";
 
 /** Mirror of the agent's `DEFAULT_EXCLUDES` (apps/agent/src/toolset.rs):
  * basenames/globs dropped from every capture at any depth. Keep in sync; a
@@ -33,10 +34,6 @@ const CAPTURE_EXCLUDES = [
 ];
 
 const HOME = "/home/dev";
-
-function shQuote(value: string): string {
-  return `'${value.replaceAll("'", `'\\''`)}'`;
-}
 
 /** A declared path made relative to `/home/dev`, with the agent's rules
  * (`rel_to_home`): `~/`, `$HOME/` and `/home/dev/` prefixes, nothing outside

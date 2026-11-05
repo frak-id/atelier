@@ -15,6 +15,7 @@ export {
   getSharedSshPipeKeyOpenSSH,
 } from "./kube/index.ts";
 export { createImageBuilder, ImageBuilderService } from "./registry/index.ts";
+export { resourceName } from "./resource-name.ts";
 export { RuntimeService } from "./runtime.service.ts";
 export type { JobRecord } from "./store.ts";
 export {

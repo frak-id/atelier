@@ -5,12 +5,19 @@
  * per-sandbox op lock, and destroy's snapshot-row GC. These pin the L1-L5
  * audit fixes so a regression fails loudly.
  */
-import { describe, expect, test } from "bun:test";
+import { beforeEach, describe, expect, test } from "bun:test";
 import type { SandboxSpec } from "@atelier/spec";
 import { ConflictError, NotFoundError } from "../shared/errors.ts";
 import { RuntimeService } from "./runtime.service.ts";
-import { FakeBackend, fakeRuntimeDeps } from "./runtime.test-support.ts";
+import {
+  FakeAgentClient,
+  FakeBackend,
+  fakeRuntimeDeps,
+} from "./runtime.test-support.ts";
 import * as stores from "./store.ts";
+import { useTestDatabase } from "./test-database.ts";
+
+beforeEach(() => useTestDatabase());
 
 const spec: SandboxSpec = {
   source: { image: "registry.test/base:1" },
@@ -18,10 +25,10 @@ const spec: SandboxSpec = {
 };
 
 function makeRuntime() {
-  const sandboxes = new stores.InMemorySandboxStore();
-  const snapshots = new stores.InMemorySnapshotStore();
-  const toolsets = new stores.InMemoryToolsetStore();
-  const sandboxToolsetRefs = new stores.InMemorySandboxToolsetRefStore();
+  const sandboxes = new stores.DrizzleSandboxStore();
+  const snapshots = new stores.DrizzleSnapshotStore();
+  const toolsets = new stores.DrizzleToolsetStore();
+  const sandboxToolsetRefs = new stores.DrizzleSandboxToolsetRefStore();
   const runtime = new RuntimeService({
     ...fakeRuntimeDeps(),
     sandboxes,
@@ -203,14 +210,14 @@ describe("RuntimeService lifecycle", () => {
 
   test("resume reuses the live volume when it still exists", async () => {
     const backend = new FakeBackend();
-    const sandboxes = new stores.InMemorySandboxStore();
+    const sandboxes = new stores.DrizzleSandboxStore();
     const runtime = new RuntimeService({
       ...fakeRuntimeDeps(),
       backend,
       sandboxes,
-      snapshots: new stores.InMemorySnapshotStore(),
-      toolsets: new stores.InMemoryToolsetStore(),
-      sandboxToolsetRefs: new stores.InMemorySandboxToolsetRefStore(),
+      snapshots: new stores.DrizzleSnapshotStore(),
+      toolsets: new stores.DrizzleToolsetStore(),
+      sandboxToolsetRefs: new stores.DrizzleSandboxToolsetRefStore(),
     });
     await runtime.create(spec, { id: "sb1" });
     await runtime.pause("sb1");
@@ -356,6 +363,7 @@ describe("prebuild processes/ports", () => {
     // The same recipe re-baked after a push: another hash, another ref.
     snapshots.put({
       hash: "h-newer",
+      kind: "prebuild",
       ref: "snap-newer",
       image: "registry.test/base:1",
       spec: { ...baked, metadata: { repo: "acme/mono" } },
@@ -411,11 +419,12 @@ describe("prebuild creator", () => {
     expect(snapshots.get(ref)?.createdBy).toBe("alice");
   });
 
-  test("the staleness refresh re-bakes with the creator's own token", async () => {
+  test("the staleness check hands back the creator's own token to re-bake with", async () => {
     const { runtime, snapshots } = makeRuntime();
     // A prebuild whose key no longer matches: upstream moved.
     snapshots.put({
       hash: "h-stale",
+      kind: "prebuild",
       ref: "snap-stale",
       image: "registry.test/base:1",
       spec: baked,
@@ -423,25 +432,26 @@ describe("prebuild creator", () => {
       createdAt: new Date().toISOString(),
     });
     const asked: string[] = [];
-    const rebakes: { githubToken?: string; createdBy?: string }[] = [];
-    const prebuild = runtime.prebuild.bind(runtime);
-    runtime.prebuild = (s, options = {}) => {
-      rebakes.push({
-        githubToken: options.githubToken,
-        createdBy: options.createdBy,
-      });
-      return prebuild(s, options);
-    };
-
-    await runtime.refreshStalePrebuilds((userId) => {
+    const stale = await runtime.prebuilds.findStale((userId) => {
       asked.push(userId);
       return `tok-${userId}`;
     });
 
     expect(asked).toEqual(["alice"]);
-    expect(rebakes).toEqual([{ githubToken: "tok-alice", createdBy: "alice" }]);
-    const fresh = runtime.listPrebuilds().find((p) => p.ref !== "snap-stale");
-    expect(fresh && snapshots.get(fresh.ref)?.createdBy).toBe("alice");
+    expect(stale).toHaveLength(1);
+    expect(stale[0]).toMatchObject({
+      ref: "snap-stale",
+      githubToken: "tok-alice",
+      createdBy: "alice",
+    });
+    // Re-baking with what it returned records the creator on the fresh one.
+    const fresh = await runtime.prebuild(stale[0]?.spec ?? baked, {
+      githubToken: stale[0]?.githubToken,
+      createdBy: stale[0]?.createdBy,
+    });
+    expect(snapshots.get(fresh.ref)?.createdBy).toBe("alice");
+    // Nothing is stale any more.
+    expect(await runtime.prebuilds.findStale()).toEqual([]);
   });
 });
 
@@ -472,14 +482,14 @@ describe("display annotations", () => {
 
   test("a rename made during a resume survives it", async () => {
     const backend = new FakeBackend();
-    const sandboxes = new stores.InMemorySandboxStore();
+    const sandboxes = new stores.DrizzleSandboxStore();
     const runtime = new RuntimeService({
       ...fakeRuntimeDeps(),
       backend,
       sandboxes,
-      snapshots: new stores.InMemorySnapshotStore(),
-      toolsets: new stores.InMemoryToolsetStore(),
-      sandboxToolsetRefs: new stores.InMemorySandboxToolsetRefStore(),
+      snapshots: new stores.DrizzleSnapshotStore(),
+      toolsets: new stores.DrizzleToolsetStore(),
+      sandboxToolsetRefs: new stores.DrizzleSandboxToolsetRefStore(),
     });
     await runtime.create(spec, { id: "sb1" });
     await runtime.pause("sb1");
@@ -503,13 +513,14 @@ describe("list() repos", () => {
   });
 
   function putPrebuild(
-    snapshots: InstanceType<typeof stores.InMemorySnapshotStore>,
+    snapshots: InstanceType<typeof stores.DrizzleSnapshotStore>,
     ref: string,
     repos: ReturnType<typeof repo>[],
     parent?: string,
   ) {
     snapshots.put({
       hash: `h-${ref}`,
+      kind: "prebuild",
       ref,
       image: "registry.test/base:1",
       parent,
@@ -667,10 +678,10 @@ describe("fork()", () => {
     const runtime = new RuntimeService({
       ...fakeRuntimeDeps(),
       backend,
-      sandboxes: new stores.InMemorySandboxStore(),
-      snapshots: new stores.InMemorySnapshotStore(),
-      toolsets: new stores.InMemoryToolsetStore(),
-      sandboxToolsetRefs: new stores.InMemorySandboxToolsetRefStore(),
+      sandboxes: new stores.DrizzleSandboxStore(),
+      snapshots: new stores.DrizzleSnapshotStore(),
+      toolsets: new stores.DrizzleToolsetStore(),
+      sandboxToolsetRefs: new stores.DrizzleSandboxToolsetRefStore(),
     });
     await runtime.create({ ...spec, env: { A: "1" } }, { id: "src" });
     const boot = backend.boot.bind(backend);
@@ -700,15 +711,15 @@ describe("fork()", () => {
     backend.volumes.snapshot = async (_pvc, _ref, l) => {
       labels.push(l);
     };
-    const sandboxes = new stores.InMemorySandboxStore();
-    const snapshots = new stores.InMemorySnapshotStore();
+    const sandboxes = new stores.DrizzleSandboxStore();
+    const snapshots = new stores.DrizzleSnapshotStore();
     const runtime = new RuntimeService({
       ...fakeRuntimeDeps(),
       backend,
       sandboxes,
       snapshots,
-      toolsets: new stores.InMemoryToolsetStore(),
-      sandboxToolsetRefs: new stores.InMemorySandboxToolsetRefStore(),
+      toolsets: new stores.DrizzleToolsetStore(),
+      sandboxToolsetRefs: new stores.DrizzleSandboxToolsetRefStore(),
     });
     await runtime.create(spec, { id: "src" });
     await runtime.fork("src", forkWith(), { id: "dst" });
@@ -741,8 +752,8 @@ describe("fork()", () => {
     await runtime.fork("src", forkWith(), { id: "dst" });
     await runtime.destroy("src");
     await runtime.pause("dst");
-    // Disk gone too: resume must clone from a snapshot that still exists.
-    sandboxes.update("dst", { pvcName: undefined });
+    // No live disk (the fake volume backend has none): resume must clone from
+    // a snapshot that still exists.
     await runtime.resume("dst");
     expect(sandboxes.get("dst")?.status).toBe("running");
   });
@@ -772,14 +783,14 @@ describe("fork()", () => {
     backend.volumes.snapshot = async () => {
       await gate;
     };
-    const sandboxes = new stores.InMemorySandboxStore();
+    const sandboxes = new stores.DrizzleSandboxStore();
     const runtime = new RuntimeService({
       ...fakeRuntimeDeps(),
       backend,
       sandboxes,
-      snapshots: new stores.InMemorySnapshotStore(),
-      toolsets: new stores.InMemoryToolsetStore(),
-      sandboxToolsetRefs: new stores.InMemorySandboxToolsetRefStore(),
+      snapshots: new stores.DrizzleSnapshotStore(),
+      toolsets: new stores.DrizzleToolsetStore(),
+      sandboxToolsetRefs: new stores.DrizzleSandboxToolsetRefStore(),
     });
     await runtime.create(spec, { id: "src" });
 
@@ -799,15 +810,15 @@ describe("fork()", () => {
     backend.volumes.snapshot = async () => {
       throw new Error("snapshot boom");
     };
-    const sandboxes = new stores.InMemorySandboxStore();
-    const snapshots = new stores.InMemorySnapshotStore();
+    const sandboxes = new stores.DrizzleSandboxStore();
+    const snapshots = new stores.DrizzleSnapshotStore();
     const runtime = new RuntimeService({
       ...fakeRuntimeDeps(),
       backend,
       sandboxes,
       snapshots,
-      toolsets: new stores.InMemoryToolsetStore(),
-      sandboxToolsetRefs: new stores.InMemorySandboxToolsetRefStore(),
+      toolsets: new stores.DrizzleToolsetStore(),
+      sandboxToolsetRefs: new stores.DrizzleSandboxToolsetRefStore(),
     });
     await runtime.create(spec, { id: "src" });
     await expect(
@@ -829,15 +840,15 @@ describe("fork()", () => {
 
   test("a failing boot keeps the copy's snapshot: `error`, then resumable", async () => {
     const backend = new FakeBackend();
-    const sandboxes = new stores.InMemorySandboxStore();
-    const snapshots = new stores.InMemorySnapshotStore();
+    const sandboxes = new stores.DrizzleSandboxStore();
+    const snapshots = new stores.DrizzleSnapshotStore();
     const runtime = new RuntimeService({
       ...fakeRuntimeDeps(),
       backend,
       sandboxes,
       snapshots,
-      toolsets: new stores.InMemoryToolsetStore(),
-      sandboxToolsetRefs: new stores.InMemorySandboxToolsetRefStore(),
+      toolsets: new stores.DrizzleToolsetStore(),
+      sandboxToolsetRefs: new stores.DrizzleSandboxToolsetRefStore(),
     });
     await runtime.create(spec, { id: "src" });
     const realBoot = backend.boot.bind(backend);
@@ -858,9 +869,11 @@ describe("fork()", () => {
       runtime.fork("src", forkWith(), { id: "dst" }),
     ).rejects.toThrow("boot boom");
     expect(sandboxes.get("dst")?.status).toBe("error");
-    // Pod-level teardown only: the label sweep would delete the snapshot.
+    // The backend cleans up after its own boot failure (the real one keeps
+    // the disk and snapshot of a `preserveDisk` boot); the runtime adds no
+    // second teardown, and never the label sweep that deletes the snapshot.
     expect(sweeps).toBe(0);
-    expect(restartableDeletes).toBe(1);
+    expect(restartableDeletes).toBe(0);
     expect(snapshots.list().filter((s) => s.sandboxId === "dst")).toHaveLength(
       1,
     );
@@ -963,14 +976,14 @@ describe("fork()", () => {
     backend.cleanup = async () => {
       throw new Error("sweep boom");
     };
-    const sandboxes = new stores.InMemorySandboxStore();
+    const sandboxes = new stores.DrizzleSandboxStore();
     const runtime = new RuntimeService({
       ...fakeRuntimeDeps(),
       backend,
       sandboxes,
-      snapshots: new stores.InMemorySnapshotStore(),
-      toolsets: new stores.InMemoryToolsetStore(),
-      sandboxToolsetRefs: new stores.InMemorySandboxToolsetRefStore(),
+      snapshots: new stores.DrizzleSnapshotStore(),
+      toolsets: new stores.DrizzleToolsetStore(),
+      sandboxToolsetRefs: new stores.DrizzleSandboxToolsetRefStore(),
     });
     await runtime.create(spec, { id: "src" });
     await expect(
@@ -979,28 +992,77 @@ describe("fork()", () => {
     expect(sandboxes.get("dst")?.status).toBe("error");
   });
 
-  test("a failing boot teardown does not mask the boot error", async () => {
-    const backend = new FakeBackend();
-    const sandboxes = new stores.InMemorySandboxStore();
-    const runtime = new RuntimeService({
-      ...fakeRuntimeDeps(),
-      backend,
-      sandboxes,
-      snapshots: new stores.InMemorySnapshotStore(),
-      toolsets: new stores.InMemoryToolsetStore(),
-      sandboxToolsetRefs: new stores.InMemorySandboxToolsetRefStore(),
+  test("a failure after boot tears the pod down once: pod-level for a fork, a sweep for a create", async () => {
+    const agent = new FakeAgentClient();
+    agent.runHook = async () => ({
+      success: false,
+      results: [{ command: "setup", exitCode: 1, stdout: "", stderr: "nope" }],
     });
-    await runtime.create(spec, { id: "src" });
-    backend.boot = async () => {
-      throw new Error("boot boom");
+    const backend = new FakeBackend();
+    const calls = { sweeps: 0, restartable: 0 };
+    backend.cleanup = async () => {
+      calls.sweeps++;
+      return true;
     };
     backend.deleteRestartable = async () => {
-      throw new Error("teardown boom");
+      calls.restartable++;
     };
+    const sandboxes = new stores.DrizzleSandboxStore();
+    const runtime = new RuntimeService({
+      ...fakeRuntimeDeps(),
+      agent,
+      backend,
+      sandboxes,
+      snapshots: new stores.DrizzleSnapshotStore(),
+      toolsets: new stores.DrizzleToolsetStore(),
+      sandboxToolsetRefs: new stores.DrizzleSandboxToolsetRefStore(),
+    });
+    await expect(runtime.create(spec, { id: "a" })).rejects.toThrow(
+      "postCreate hook failed",
+    );
+    expect(sandboxes.get("a")?.status).toBe("error");
+    expect(calls).toEqual({ sweeps: 1, restartable: 0 });
+
+    sandboxes.create({
+      id: "src",
+      spec,
+      status: "running",
+      image: "registry.test/base:1",
+      generated: {},
+      metadata: {},
+      createdAt: new Date().toISOString(),
+      updatedAt: new Date().toISOString(),
+    });
     await expect(
       runtime.fork("src", forkWith(), { id: "dst" }),
-    ).rejects.toThrow("boot boom");
-    expect(sandboxes.get("dst")?.status).toBe("error");
+    ).rejects.toThrow("postCreate hook failed");
+    expect(calls).toEqual({ sweeps: 1, restartable: 1 });
+  });
+
+  test("a failing teardown after boot does not mask the error", async () => {
+    const agent = new FakeAgentClient();
+    agent.runHook = async () => ({
+      success: false,
+      results: [{ command: "setup", exitCode: 1, stdout: "", stderr: "nope" }],
+    });
+    const backend = new FakeBackend();
+    backend.cleanup = async () => {
+      throw new Error("teardown boom");
+    };
+    const sandboxes = new stores.DrizzleSandboxStore();
+    const runtime = new RuntimeService({
+      ...fakeRuntimeDeps(),
+      agent,
+      backend,
+      sandboxes,
+      snapshots: new stores.DrizzleSnapshotStore(),
+      toolsets: new stores.DrizzleToolsetStore(),
+      sandboxToolsetRefs: new stores.DrizzleSandboxToolsetRefStore(),
+    });
+    await expect(runtime.create(spec, { id: "a" })).rejects.toThrow(
+      "postCreate hook failed",
+    );
+    expect(sandboxes.get("a")?.status).toBe("error");
   });
 
   test("an unknown or non-snapshottable source creates no copy record", async () => {

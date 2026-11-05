@@ -19,6 +19,7 @@ import {
   kubeClient,
 } from "./kube/index.ts";
 import { buildPortIngresses } from "./ports.ts";
+import { resourceName } from "./resource-name.ts";
 
 const log = createChildLogger("runtime-boot");
 
@@ -37,8 +38,8 @@ export interface BootInput {
    * path: `pause()` deletes the pod but keeps the PVC, so the live disk (not
    * a snapshot clone) is the boot source and a create would 409. */
   reusePvc?: boolean;
-  /** On boot failure, tear down only the restartable resources (pod/service/
-   * ingresses) instead of the full label sweep — the resume path: the
+  /** On boot failure, tear down only the restartable resources (the pod; the
+   * Service and Ingresses stay) instead of the full label sweep — the resume path: the
    * PVC and the pause VolumeSnapshot both carry the sandbox label, and a
    * full sweep would destroy the paused disk a retry needs. */
   preserveDisk?: boolean;
@@ -77,8 +78,8 @@ export async function bootSandbox(
   input: BootInput,
   agent: AgentClient,
 ): Promise<BootOutput> {
-  const podName = `sandbox-${sandboxId}`;
-  const pvcName = `sandbox-${sandboxId}`;
+  const podName = resourceName(sandboxId);
+  const pvcName = podName;
   const usedSnapshot = Boolean(input.snapshotName);
   // Blank only when WE create it here without a snapshot dataSource — a
   // reused (resume) or snapshot-cloned PVC already carries ext4 and must never
@@ -258,11 +259,11 @@ function createSandboxResources(
         },
       }),
     ),
-    kubeClient.createResource(
+    kubeClient.applyResource(
       buildSandboxService(sandboxId, { ports: spec.ports ?? [] }),
     ),
     ...buildPortIngresses(sandboxId, spec.ports).map((resource) =>
-      kubeClient.createResource(resource),
+      kubeClient.applyResource(resource),
     ),
   ];
 }
@@ -270,18 +271,13 @@ function createSandboxResources(
 export async function deleteRestartableResources(
   sandboxId: string,
 ): Promise<void> {
-  const podName = `sandbox-${sandboxId}`;
-  const deletions: Array<[string, string]> = [
-    ["Pod", podName],
-    ["Service", `sandbox-${sandboxId}`],
-  ];
-  for (const [kind, name] of deletions) {
-    try {
-      await kubeClient.deleteResource(kind, name);
-    } catch {}
-  }
+  // Only the pod: the Service and Ingresses stay, so a paused sandbox's tool
+  // URLs still reach the ingress and its forward-auth/wake middleware, which
+  // resumes it (a Service without endpoints answers 503, after the
+  // middleware ran). `bootSandbox` applies them again on resume.
+  const podName = resourceName(sandboxId);
   try {
-    await kubeClient.deleteLabeledIngresses(`atelier.dev/sandbox=${sandboxId}`);
+    await kubeClient.deleteResource("Pod", podName);
   } catch {}
   await kubeClient.waitForResourceDeleted("Pod", podName, {
     timeout: POD_DELETE_TIMEOUT_MS,

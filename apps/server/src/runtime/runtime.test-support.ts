@@ -148,6 +148,7 @@ class FakeVolumeBackend implements VolumeBackend {
     _labels: Record<string, string>,
   ): Promise<void> {}
   async deleteSnapshot(_ref: string): Promise<void> {}
+  async reownSnapshot(_ref: string, _ownerId: string): Promise<void> {}
   async volumeExists(_pvcName: string): Promise<boolean> {
     return false;
   }

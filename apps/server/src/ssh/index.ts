@@ -6,9 +6,11 @@
  * check forbids that inside `runtime/`.
  */
 import type { ServerContainer } from "../api/container.ts";
+import { ensureResuming, isResuming, waitForRunning } from "../api/wake.ts";
 import {
   ensureSharedSshPipeKey,
   getSharedSshPipeKeyOpenSSH,
+  resourceName,
 } from "../runtime/index.ts";
 import { config } from "../shared/lib/config.ts";
 import { createChildLogger } from "../shared/lib/logger.ts";
@@ -22,6 +24,9 @@ import {
 export type { InServerSshGateway } from "./proxy.ts";
 
 const log = createChildLogger("ssh-gateway");
+
+/** How long an SSH connection to a paused sandbox waits for its resume. */
+const WAKE_TIMEOUT_MS = 3 * 60 * 1000;
 
 /**
  * Boot the in-server ssh2 gateway from the composition root (production mode
@@ -37,12 +42,28 @@ export async function startSshGateway(
   const hostKey = await ensureInServerHostKey(container.control.secretService);
 
   const namespace = config.kubernetes.namespace;
-  const resolveUpstream = (sandboxId: string): UpstreamTarget | null => {
+  const resolveUpstream = async (
+    sandboxId: string,
+  ): Promise<UpstreamTarget | null> => {
     // Dial the sandbox's Service DNS on port 22 (stable across pod restarts,
     // no pod-IP race).
     if (!/^[a-z0-9-]+$/i.test(sandboxId)) return null;
+    // A paused sandbox is resumed on connect, and the connection waits for
+    // it (bounded; past that the connection is closed).
+    if (container.runtime.getStatus(sandboxId) === "paused") {
+      log.info({ sandboxId }, "ssh to a paused sandbox; resuming it");
+      ensureResuming(container, sandboxId);
+      const running = await waitForRunning(
+        () => container.runtime.getStatus(sandboxId),
+        {
+          waking: () => isResuming(container, sandboxId),
+          timeoutMs: WAKE_TIMEOUT_MS,
+        },
+      );
+      if (!running) return null;
+    }
     return {
-      host: `sandbox-${sandboxId}.${namespace}.svc`,
+      host: `${resourceName(sandboxId)}.${namespace}.svc`,
       port: 22,
       // Pin against the sshd host key the agent reported at this sandbox's
       // last boot/resume, when known (a cheap in-memory store read, see

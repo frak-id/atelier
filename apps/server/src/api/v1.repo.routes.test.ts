@@ -27,6 +27,8 @@ const users: Record<string, AuthUser> = {};
 let captured: SandboxSpec[] | undefined;
 let bakedFor: PrebuildSpec[];
 let existingBakes: unknown[];
+/** When set, the fresh bake "fails" and the last good one is used. */
+let fallbackWarning: string | undefined;
 
 function mkUser(name: string): void {
   users[`tok-${name}`] = {
@@ -56,10 +58,10 @@ beforeAll(async () => {
 
   runtime = new RuntimeService({
     ...fakeRuntimeDeps(),
-    sandboxes: new stores.InMemorySandboxStore(),
-    snapshots: new stores.InMemorySnapshotStore(),
-    toolsets: new stores.InMemoryToolsetStore(),
-    sandboxToolsetRefs: new stores.InMemorySandboxToolsetRefStore(),
+    sandboxes: new stores.DrizzleSandboxStore(),
+    snapshots: new stores.DrizzleSnapshotStore(),
+    toolsets: new stores.DrizzleToolsetStore(),
+    sandboxToolsetRefs: new stores.DrizzleSandboxToolsetRefStore(),
   });
   const realCreate = runtime.create.bind(runtime);
   runtime.create = (async (spec: SandboxSpec, options: never) => {
@@ -70,9 +72,13 @@ beforeAll(async () => {
   existingBakes = [];
   bakedFor = [];
   runtime.listPrebuilds = (() => existingBakes) as never;
-  runtime.prebuild = (async (spec: PrebuildSpec) => {
+  // A spawn looks the bake up, then runs it as a job (`prebuildForSpawn`).
+  runtime.cachedPrebuild = (async () => undefined) as never;
+  runtime.prebuildForSpawn = (async (spec: PrebuildSpec) => {
     bakedFor.push(spec);
-    return { ref: "snap:fresh" };
+    return fallbackWarning
+      ? { ref: "snap:last-good", hash: "h", warning: fallbackWarning }
+      : { ref: "snap:fresh", hash: "h" };
   }) as never;
   jobs = new JobService();
   const control = createControlContainer();
@@ -201,6 +207,35 @@ describe("`repo` on the create body", () => {
     expect(captured[0]?.source).toEqual({ snapshot: "snap:fresh" });
     expect(captured[0]).not.toHaveProperty("repo");
     expect(captured[0]).not.toHaveProperty("prebuild");
+    captured = undefined;
+  });
+
+  test("a failed fresh bake boots from the last good one and says so", async () => {
+    captured = [];
+    existingBakes = [];
+    bakedFor.length = 0;
+    fallbackWarning = "could not build the current prebuild";
+    const res = await call("alice", "POST", "/v1/sandboxes", { ...body, repo });
+    fallbackWarning = undefined;
+    expect(res.status).toBe(202);
+    const id = ((await res.json()) as { id: string }).id;
+    await settle(id);
+    expect(captured[0]?.source).toEqual({ snapshot: "snap:last-good" });
+    const job = jobs.get(id);
+    expect(job.status).toBe("succeeded");
+    expect(job.result).toMatchObject({
+      warnings: ["could not build the current prebuild"],
+    });
+    captured = undefined;
+  });
+
+  test("a spawn's bake is a prebuild job in the feed", async () => {
+    captured = [];
+    existingBakes = [];
+    const res = await call("alice", "POST", "/v1/sandboxes", { ...body, repo });
+    await settle(((await res.json()) as { id: string }).id);
+    const kinds = jobs.list().map((job) => job.kind);
+    expect(kinds).toContain("prebuild");
     captured = undefined;
   });
 

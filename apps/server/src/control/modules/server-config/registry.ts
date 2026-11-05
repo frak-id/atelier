@@ -162,13 +162,27 @@ const CONFIG_REGISTRY = {
     label: "Prebuild retention",
     description:
       "How many superseded, unused prebuild snapshots to keep per prebuild " +
-      "lineage (history for spawning older versions). 0 auto-prunes every " +
-      "unused snapshot; 3 keeps the last three. In-use snapshots are never " +
-      "pruned.",
+      "lineage (history for spawning older versions). 0 keeps only the " +
+      "newest snapshot of each lineage; 3 keeps the last three. In-use " +
+      "snapshots are never pruned.",
     envVar: "ATELIER_PREBUILD_PRUNE_KEEP",
     default: 3,
     parseEnv: nonNegativeInt,
     validate: nonNegativeInt,
+  } satisfies ConfigDef<number>,
+
+  "snapshot.manualKeep": {
+    key: "snapshot.manualKeep",
+    type: "number",
+    label: "Manual snapshot retention",
+    description:
+      "How many manual snapshots to keep per sandbox. Taking a new one " +
+      "deletes the oldest beyond this count; a snapshot another sandbox " +
+      "boots from is never deleted.",
+    envVar: "ATELIER_SNAPSHOT_MANUAL_KEEP",
+    default: 5,
+    parseEnv: positiveInt,
+    validate: positiveInt,
   } satisfies ConfigDef<number>,
 
   // ── image registry + builder (the "where/how images are stored & built"
@@ -517,6 +531,7 @@ export type ConfigKey = keyof typeof CONFIG_REGISTRY;
 export interface ConfigValues {
   "prebuild.gitTracking": boolean;
   "prebuild.pruneKeep": number;
+  "snapshot.manualKeep": number;
   "kubernetes.registryUrl": string;
   "imageBuilder.kind": "docker" | "buildkit";
   "imageBuilder.image": string;
@@ -559,6 +574,7 @@ export function isConfigKey(key: string): key is ConfigKey {
 const PLANE_ONLY_KEYS = new Set<ConfigKey>([
   "prebuild.gitTracking",
   "prebuild.pruneKeep",
+  "snapshot.manualKeep",
   "sandbox.idle.mode",
   "sandbox.idle.minutes",
   "sandbox.idle.network",

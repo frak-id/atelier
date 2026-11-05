@@ -12,9 +12,12 @@
 # Forward-auth: `kubernetes.vsCodeIngressAnnotations` (the name predates the
 # generic ports model) is put on every tool Ingress whose port says
 # `auth: "forward"`; it points at the Traefik middleware in
-# 80-forward-auth.yaml. Read at server start and applied when an Ingress is
-# created, so sandboxes booted before a change keep their old Ingress until
-# they are paused and resumed.
+# 80-forward-auth.yaml. `kubernetes.wakeIngressAnnotations` is the same for
+# every other public port (prebuild dev-server previews): a middleware that
+# only resumes a paused sandbox on access, never asking for a login. Both are
+# read at server start and applied when an Ingress is created, so sandboxes
+# booted before a change keep their old Ingress until they are paused and
+# resumed (a resume re-applies them).
 #
 # SSH note: `listenPort` (2222) is what the in-server ssh2 gateway binds inside
 # the pod (== Service targetPort). `port` (30222) is what clients dial and is
@@ -60,6 +63,9 @@ data:
         "defaultVolumeSize": "20Gi",
         "vsCodeIngressAnnotations": {
           "traefik.ingress.kubernetes.io/router.middlewares": "atelier-v2-sandboxes-atelier-forward-auth@kubernetescrd"
+        },
+        "wakeIngressAnnotations": {
+          "traefik.ingress.kubernetes.io/router.middlewares": "atelier-v2-sandboxes-atelier-wake@kubernetescrd"
         }
       },
       "imageBuilder": {

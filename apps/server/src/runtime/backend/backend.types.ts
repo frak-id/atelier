@@ -48,6 +48,12 @@ export interface VolumeBackend {
   ): Promise<void>;
   /** Best-effort delete of a snapshot artifact (an already-gone one is fine). */
   deleteSnapshot(ref: string): Promise<void>;
+  /**
+   * Hand a sandbox-scoped snapshot to another sandbox: rewrite its
+   * `atelier.dev/sandbox` owner label so the new owner's teardown sweeps it
+   * and the old owner's no longer does.
+   */
+  reownSnapshot(ref: string, ownerId: string): Promise<void>;
   /** Does the sandbox's live disk still exist? (`resume`'s PVC-reuse check). */
   volumeExists(pvcName: string): Promise<boolean>;
 }

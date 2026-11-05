@@ -3,11 +3,18 @@
 # middleware through the `kubernetes.vsCodeIngressAnnotations` config
 # (30-config.yaml). Prebuild dev-server previews stay public for now: the
 # server drops their `auth: "forward"` at spawn (apps/server/src/api/
-# spawn-surface.ts). Traefik asks
-# the server's `GET /auth/forward` before each request: a signed-in Atelier
-# session (the `sandbox_token` cookie, scoped to the base domain) passes, a
-# browser without one is sent through the GitHub login and back, anything
-# else gets 401 (apps/server/src/api/forward-auth.ts).
+# spawn-surface.ts), and they get the `atelier-wake` middleware below
+# instead. Traefik asks the server's `GET /auth/forward` before each
+# request: a signed-in Atelier session (the `sandbox_token` cookie, scoped to
+# the base domain) passes, a browser without one is sent through the GitHub
+# login and back, anything else gets 401 (apps/server/src/api/
+# forward-auth.ts).
+#
+# Auto-resume: both checks also wake a PAUSED sandbox. A paused sandbox keeps
+# its Service (no endpoints) and Ingresses, so the request reaches the
+# middleware; the server starts a resume and answers 503 (an auto-refreshing
+# "Waking up sandbox…" page for browser page loads, `Retry-After` for the
+# rest) until the sandbox runs.
 #
 # Lives in the sandboxes namespace, next to the Ingresses that reference it:
 # Traefik's CRD provider resolves `<namespace>-<name>@kubernetescrd` and
@@ -28,4 +35,19 @@ spec:
     address: http://atelier-v2.atelier-v2-system.svc.cluster.local:4000/auth/forward
     # Traefik sets X-Forwarded-* from the request it received; never trust a
     # client-supplied copy.
+    trustForwardHeader: false
+---
+# Wake-only check for public preview URLs (no `auth: "forward"`): `GET
+# /auth/wake` never asks for a login. 200 when the sandbox runs; a paused
+# one is resumed and answered 503 as above.
+apiVersion: traefik.io/v1alpha1
+kind: Middleware
+metadata:
+  name: atelier-wake
+  namespace: atelier-v2-sandboxes
+  labels:
+    app.kubernetes.io/name: atelier-v2
+spec:
+  forwardAuth:
+    address: http://atelier-v2.atelier-v2-system.svc.cluster.local:4000/auth/wake
     trustForwardHeader: false

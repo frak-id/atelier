@@ -16,6 +16,7 @@ import {
 import { cleanupSandboxResources } from "../cleanup.ts";
 import { buildVolumeSnapshot, kubeClient } from "../kube/index.ts";
 import { buildPortIngresses, buildPortUrls, sshUrl } from "../ports.ts";
+import { resourceName } from "../resource-name.ts";
 import type {
   AgentEndpoint,
   SandboxBackend,
@@ -55,6 +56,19 @@ class CsiVolumeBackend implements VolumeBackend {
       .catch((err) => log.warn({ ref, err }, "VolumeSnapshot delete failed"));
   }
 
+  async reownSnapshot(ref: string, ownerId: string): Promise<void> {
+    // A CRD: only a merge patch is accepted.
+    await kubeClient.patchResource(
+      "VolumeSnapshot",
+      ref,
+      {
+        metadata: { labels: { "atelier.dev/sandbox": ownerId } },
+      },
+      undefined,
+      "merge",
+    );
+  }
+
   volumeExists(pvcName: string): Promise<boolean> {
     return kubeClient.resourceExists("PersistentVolumeClaim", pvcName);
   }
@@ -82,7 +96,7 @@ export class KubernetesBackend implements SandboxBackend {
   }
 
   computeExists(id: string): Promise<boolean> {
-    return kubeClient.resourceExists("Pod", `sandbox-${id}`);
+    return kubeClient.resourceExists("Pod", resourceName(id));
   }
 
   async exposePort(id: string, port: PortEntry): Promise<void> {
@@ -91,7 +105,7 @@ export class KubernetesBackend implements SandboxBackend {
     // doesn't exist and Traefik 404s until a pause/resume rebuilds the Service.
     // Strategic merge on `spec.ports` (merge key: `port`) appends without
     // clobbering the existing entries.
-    await kubeClient.patchResource("Service", `sandbox-${id}`, {
+    await kubeClient.patchResource("Service", resourceName(id), {
       spec: {
         ports: [{ name: port.name, port: port.port, targetPort: port.port }],
       },
@@ -113,7 +127,7 @@ export class KubernetesBackend implements SandboxBackend {
     // (same cluster network). `null` while the pod is unscheduled/has no IP so
     // the caller can poll. Fixed ports: agent = config.ports.agent, attach =
     // the well-known 9997 (the pod exposes both).
-    const host = await kubeClient.getPodIp(`sandbox-${id}`);
+    const host = await kubeClient.getPodIp(resourceName(id));
     if (!host) return null;
     return {
       host,

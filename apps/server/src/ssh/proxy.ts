@@ -66,7 +66,8 @@ export interface InServerSshGatewayDeps {
   authorizedKeys: (sandboxId: string) => string[];
   /**
    * Resolve the upstream `pod:22` for a sandbox id (the SSH username), or
-   * `null` when the sandbox is unknown / not running.
+   * `null` when the sandbox is unknown / not running. May take minutes: a
+   * paused sandbox is resumed and awaited first.
    */
   resolveUpstream: (
     sandboxId: string,
@@ -366,6 +367,28 @@ async function connectUpstream(
   sandboxId: string,
   deps: InServerSshGatewayDeps,
 ): Promise<void> {
+  const upstream = new Client();
+  const pending: Array<() => void> = [];
+  let ready = false;
+
+  // Buffer channel requests that arrive before the upstream is ready. The
+  // listeners go up BEFORE the upstream is resolved: resolving a paused
+  // sandbox waits for its resume, and a channel opened meanwhile must not be
+  // refused for lack of a listener.
+  const whenReady = (fn: () => void) => {
+    if (ready) fn();
+    else pending.push(fn);
+  };
+
+  const onClientData = () => deps.onActivity?.(sandboxId);
+  client.on("session", (accept) =>
+    whenReady(() => handleSession(accept, upstream, onClientData)),
+  );
+  client.on("tcpip", (accept, rejectFn, info) =>
+    whenReady(() => handleTcpip(accept, rejectFn, upstream, info)),
+  );
+  client.on("close", () => upstream.end());
+
   let target: UpstreamTarget | null;
   try {
     target = await deps.resolveUpstream(sandboxId);
@@ -379,24 +402,6 @@ async function connectUpstream(
     return;
   }
 
-  const upstream = new Client();
-  const pending: Array<() => void> = [];
-  let ready = false;
-
-  // Buffer channel requests that arrive before the upstream is ready.
-  const whenReady = (fn: () => void) => {
-    if (ready) fn();
-    else pending.push(fn);
-  };
-
-  const onClientData = () => deps.onActivity?.(sandboxId);
-  client.on("session", (accept) =>
-    whenReady(() => handleSession(accept, upstream, onClientData)),
-  );
-  client.on("tcpip", (accept, rejectFn, info) =>
-    whenReady(() => handleTcpip(accept, rejectFn, upstream, info)),
-  );
-
   upstream.on("ready", () => {
     ready = true;
     for (const fn of pending.splice(0)) fn();
@@ -406,7 +411,6 @@ async function connectUpstream(
     client.end();
   });
   upstream.on("close", () => client.end());
-  client.on("close", () => upstream.end());
 
   upstream.connect({
     host: target.host,

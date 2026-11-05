@@ -29,7 +29,7 @@ afterEach(() => {
 });
 
 // The kube calls a boot makes besides the creates/deletes each test captures:
-// the shared SSH key Secret read, and the teardown's ingress sweep + wait.
+// the shared SSH key Secret read, and the teardown's wait.
 beforeEach(() => {
   spies.push(
     spyOn(kubeClient, "get").mockResolvedValue({
@@ -37,7 +37,6 @@ beforeEach(() => {
         "ssh-publickey": Buffer.from("ssh-ed25519 AAAA").toString("base64"),
       },
     }),
-    spyOn(kubeClient, "deleteLabeledIngresses").mockResolvedValue(undefined),
     spyOn(kubeClient, "waitForResourceDeleted").mockResolvedValue(true),
   );
 });

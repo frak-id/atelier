@@ -75,12 +75,41 @@ export const CreateSandboxResponseSchema = Type.Object(
     id: Type.String(),
     urls: Type.Array(SandboxUrlSchema),
     generated: Type.Optional(GeneratedSchema),
+    warnings: Type.Optional(
+      Type.Array(Type.String(), {
+        description:
+          "Non-fatal notes about the spawn, e.g. that it booted from the " +
+          "last good prebuild because a fresh one could not be built.",
+      }),
+    ),
   },
   { additionalProperties: false, $id: "CreateSandboxResponse" },
 );
 export type CreateSandboxResponse = Static<typeof CreateSandboxResponseSchema>;
 
 // ── get ──────────────────────────────────────────────────────────────────────
+
+/** The snapshot a sandbox booted from: what it contains and how old it is. */
+export const SandboxBootedFromSchema = Type.Object(
+  {
+    ref: Type.String(),
+    kind: Type.Union([
+      Type.Literal("prebuild"),
+      Type.Literal("pause"),
+      Type.Literal("manual"),
+      Type.Literal("fork"),
+    ]),
+    image: Type.String(),
+    repoHeads: Type.Optional(
+      Type.Record(Type.String(), Type.String(), {
+        description: "Remote HEAD of each baked repo, by clone path.",
+      }),
+    ),
+    builtAt: Type.String(),
+  },
+  { additionalProperties: false },
+);
+export type SandboxBootedFrom = Static<typeof SandboxBootedFromSchema>;
 
 export const SandboxStateSchema = Type.Object(
   {
@@ -91,6 +120,7 @@ export const SandboxStateSchema = Type.Object(
     generated: Type.Optional(GeneratedSchema),
     metadata: Type.Optional(Type.Record(Type.String(), Type.String())),
     annotations: Type.Optional(Type.Record(Type.String(), Type.String())),
+    bootedFrom: Type.Optional(SandboxBootedFromSchema),
   },
   { additionalProperties: false, $id: "SandboxState" },
 );

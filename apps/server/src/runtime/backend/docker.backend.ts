@@ -15,10 +15,12 @@
 
 import type { PortEntry, SandboxSpec } from "@atelier/spec";
 import { customAlphabet } from "nanoid";
+import { ValidationError } from "../../shared/errors.ts";
 import { createChildLogger } from "../../shared/lib/logger.ts";
 import { AGENT_ATTACH_PORT, type AgentClient } from "../agent/index.ts";
 import type { BootInput, BootOutput } from "../boot.ts";
 import { provisionAgent } from "../boot-agent.ts";
+import { resourceName } from "../resource-name.ts";
 import type {
   AgentEndpoint,
   SandboxBackend,
@@ -67,7 +69,7 @@ export class DockerBackend implements SandboxBackend {
   }
 
   private containerName(id: string): string {
-    return `sandbox-${id}`;
+    return resourceName(id);
   }
 
   /** Container ports to publish: infra (agent/attach/terminal/ssh) + every
@@ -157,18 +159,39 @@ export class DockerBackend implements SandboxBackend {
 
   async deleteRestartable(id: string): Promise<void> {
     // Remove the container, keep the volume dir (pause / resume-rollback).
-    await this.docker(["rm", "-f", this.containerName(id)]);
+    await this.removeContainer(id);
   }
 
-  async cleanup(id: string): Promise<boolean> {
-    try {
-      await this.docker(["rm", "-f", this.containerName(id)]);
-      await this.local.deleteVolume(this.containerName(id));
-      return true;
-    } catch (error) {
-      log.warn({ id, error }, "Docker cleanup incomplete");
-      return false;
+  /** `docker rm -f` the sandbox's container; one that is already gone is
+   * fine, any other failure throws. */
+  private async removeContainer(id: string): Promise<void> {
+    const res = await this.docker(["rm", "-f", this.containerName(id)]);
+    if (res.code !== 0 && !res.stderr.includes("No such container")) {
+      throw new Error(
+        `docker rm ${this.containerName(id)} failed: ${res.stderr}`,
+      );
     }
+  }
+
+  /** Remove the container, the live volume and every snapshot volume the
+   * sandbox owns. Keeps going past a failed step so one leak doesn't hide
+   * the others; false when any step failed (destroy then keeps the record). */
+  async cleanup(id: string): Promise<boolean> {
+    const steps = [
+      () => this.removeContainer(id),
+      () => this.local.deleteVolume(this.containerName(id)),
+      () => this.local.deleteSnapshotsOwnedBy(id),
+    ];
+    let clean = true;
+    for (const step of steps) {
+      try {
+        await step();
+      } catch (error) {
+        clean = false;
+        log.warn({ id, error }, "Docker cleanup incomplete");
+      }
+    }
+    return clean;
   }
 
   async computeExists(id: string): Promise<boolean> {
@@ -183,13 +206,14 @@ export class DockerBackend implements SandboxBackend {
 
   async exposePort(id: string, port: PortEntry): Promise<void> {
     // Docker cannot publish a new host port on an already-running container.
-    // Ports declared in the spec are published at boot; a truly live-added
-    // public port needs a container recreate. Surface it rather than failing
-    // silently (see the implementation log's step-5 limitations).
-    log.warn(
-      { id, port: port.name },
-      "exposePort is a no-op on the Docker backend; declare the port in the " +
-        "spec at boot (live port publish needs a container recreate)",
+    // Every port the spec declared (public or not) is published at boot, so
+    // exposing one of those is already done; any other needs a container
+    // recreate, so say no instead of recording a port that has no route.
+    if ((await this.hostPort(id, port.port)) != null) return;
+    throw new ValidationError(
+      `Cannot expose port ${port.port} (${port.name}) on the running Docker ` +
+        `sandbox ${id}: declare it in the spec at create time (live port ` +
+        "publishing needs a container recreate).",
     );
   }
 

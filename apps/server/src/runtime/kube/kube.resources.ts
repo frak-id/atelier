@@ -4,6 +4,7 @@ import {
   storageClass,
   volumeSnapshotClass,
 } from "../../shared/lib/runtime-config.ts";
+import { resourceName } from "../resource-name.ts";
 
 export type KubeResource = {
   apiVersion: string;
@@ -127,7 +128,7 @@ export function buildSandboxPod(options: SandboxPodOptions): KubeResource {
     apiVersion: "v1",
     kind: "Pod",
     metadata: {
-      name: `sandbox-${options.sandboxId}`,
+      name: resourceName(options.sandboxId),
       namespace,
       labels,
     },
@@ -217,7 +218,7 @@ export function buildSandboxService(
     apiVersion: "v1",
     kind: "Service",
     metadata: {
-      name: `sandbox-${sandboxId}`,
+      name: resourceName(sandboxId),
       namespace,
       labels: sandboxLabels(sandboxId),
     },
@@ -287,7 +288,7 @@ export function buildToolIngress(options: ToolIngressOptions): KubeResource {
                 pathType: "Prefix",
                 backend: {
                   service: {
-                    name: `sandbox-${options.sandboxId}`,
+                    name: resourceName(options.sandboxId),
                     port: { number: options.port },
                   },
                 },

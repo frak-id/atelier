@@ -23,6 +23,7 @@ import {
   SANDBOX_NAME_ANNOTATION,
   SANDBOX_ORG_ANNOTATION,
   type SandboxSpec,
+  type SnapshotRef,
   SurfacePortsSchema,
   SurfaceProcessesSchema,
   type ToolsetBuildRequest,
@@ -240,12 +241,35 @@ export async function createSandboxForUser(
   // A template built from a prebuild carries the recipe, not a pinned ref:
   // resolve it to the current snapshot (idempotent — a cache hit when
   // unchanged) so an updated prebuild is picked up here.
+  const warnings: string[] = [];
   if (prebuild) {
     onProgress?.("resolving prebuild…");
-    const snapshot = await runtime.prebuild(prebuild, {
+    const options = {
       githubToken: control.userService.resolveGitHubToken(user.id),
       createdBy: user.id,
-    });
+    };
+    // A cached prebuild is a plain lookup. A bake is a pooled job (in the
+    // feed, bounded by `jobs.concurrency`, cancellable); if the fresh build
+    // fails the spawn falls back to the recipe's last good one.
+    const snapshot: SnapshotRef & { warning?: string } =
+      (await runtime.cachedPrebuild(prebuild, options)) ??
+      (await container.jobs.dispatchAndWait(
+        {
+          kind: "prebuild",
+          target: prebuildJobTarget(prebuild),
+          metadata: prebuild.metadata,
+        },
+        (signal, log) =>
+          runtime.prebuildForSpawn(prebuild, {
+            ...options,
+            signal,
+            onLog: log,
+          }),
+      ));
+    if (snapshot.warning) {
+      warnings.push(snapshot.warning);
+      onProgress?.(`warning: ${snapshot.warning}`);
+    }
     spec = { ...spec, source: { snapshot: snapshot.ref } };
   }
   if (selectors.length > 0) onProgress?.("resolving toolboxes…");
@@ -318,7 +342,8 @@ export async function createSandboxForUser(
         }
       : {}),
   };
-  return runtime.create(withToolboxes, { id, onProgress });
+  const created = await runtime.create(withToolboxes, { id, onProgress });
+  return warnings.length > 0 ? { ...created, warnings } : created;
 }
 
 /**
@@ -381,7 +406,7 @@ export function forkSandboxForUser(
  * A sandbox with no recorded owner gets no token (never someone else's).
  * Throws `NotFoundError` for an unknown sandbox.
  */
-async function withFreshCredentials(
+export async function withFreshCredentials(
   container: ServerContainer,
   id: string,
   body: ResumeRequest = {},

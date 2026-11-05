@@ -29,7 +29,7 @@ import { ConflictError, NotFoundError } from "../shared/errors.ts";
 import { safeNanoid } from "../shared/lib/id.ts";
 import { createChildLogger } from "../shared/lib/logger.ts";
 import {
-  InMemoryJobStore,
+  DrizzleJobStore,
   isJobTerminal,
   type JobKind,
   type JobRecord,
@@ -103,7 +103,7 @@ export class JobService {
   private readonly listeners = new Set<JobListener>();
 
   constructor(deps: JobServiceDeps = {}) {
-    this.store = deps.store ?? new InMemoryJobStore();
+    this.store = deps.store ?? new DrizzleJobStore();
     const c = deps.concurrency;
     const read = typeof c === "function" ? c : () => c ?? 4;
     this.concurrency = () => Math.max(1, read());
@@ -183,6 +183,30 @@ export class JobService {
     this.waiting.push({ id: job.id, fn });
     this.pump();
     return this.store.get(job.id) ?? job;
+  }
+
+  /**
+   * POOLED run the caller awaits: a `dispatch` whose result (or failure) is
+   * returned inline. The job is in the feed, bounded by the pool and
+   * cancellable like any pooled build; for work that is a step of a larger
+   * request (a spawn's prebuild) rather than a fire-and-forget route.
+   */
+  dispatchAndWait<T>(
+    options: JobDispatchOptions,
+    fn: (signal: AbortSignal, log: JobLog) => Promise<T>,
+  ): Promise<T> {
+    return new Promise<T>((resolve, reject) => {
+      this.dispatch(options, async (signal, log) => {
+        try {
+          const result = await fn(signal, log);
+          resolve(result);
+          return result;
+        } catch (err) {
+          reject(err);
+          throw err;
+        }
+      });
+    });
   }
 
   /**

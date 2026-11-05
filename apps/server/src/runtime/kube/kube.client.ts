@@ -123,6 +123,27 @@ export class KubeClient {
     return this.create<KubeResource>(path, resource);
   }
 
+  /** Create `resource`, or merge-patch it onto the existing object of that
+   * name (a paused sandbox keeps its Service and Ingresses, so a resume finds
+   * them in place). */
+  async applyResource(
+    resource: KubeResource,
+    namespace = this.namespace,
+  ): Promise<void> {
+    try {
+      await this.createResource(resource, namespace);
+    } catch (err) {
+      if (!(err instanceof KubeApiError) || err.status !== 409) throw err;
+      await this.patchResource(
+        resource.kind,
+        resource.metadata.name,
+        resource,
+        namespace,
+        "merge",
+      );
+    }
+  }
+
   async deleteResource(
     kind: string,
     name: string,
@@ -214,24 +235,6 @@ export class KubeClient {
         `Labeled-resource sweep incomplete (${failures.join("; ")})`,
         500,
       );
-    }
-  }
-
-  async deleteLabeledIngresses(
-    labelSelector: string,
-    namespace = this.namespace,
-  ): Promise<void> {
-    const selector = encodeURIComponent(labelSelector);
-    const base = `/apis/networking.k8s.io/v1/namespaces/${namespace}/ingresses`;
-    const list = await this.list<{
-      items?: Array<{ metadata?: { name?: string } }>;
-    }>(`${base}?labelSelector=${selector}`);
-
-    for (const item of list.items ?? []) {
-      const name = item.metadata?.name;
-      // Per-item catch so one stale entry (e.g. a concurrent destroy 404)
-      // doesn't abort the sweep and leak the remaining ingresses.
-      if (name) await this.delete(`${base}/${name}`).catch(() => {});
     }
   }
 

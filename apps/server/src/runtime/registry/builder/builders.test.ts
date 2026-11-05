@@ -5,14 +5,15 @@
  * lock the parts that must stay correct regardless.
  */
 
-import { describe, expect, test } from "bun:test";
+import { beforeEach, describe, expect, test } from "bun:test";
 import { Buffer } from "node:buffer";
 import { randomUUID } from "node:crypto";
 import { mkdtemp, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { ValidationError } from "../../../shared/errors.ts";
-import { InMemoryImageStore } from "../../store.ts";
+import { DrizzleImageStore } from "../../store.ts";
+import { useTestDatabase } from "../../test-database.ts";
 import { ImageBuilderService } from "../image-builder.service.ts";
 import {
   formatBuildArgs,
@@ -350,8 +351,10 @@ describe("DockerImageBuilder digest resolution", () => {
 // ── local Docker mode: empty registry => bare tag, no push ─────────────────
 
 describe("ImageBuilderService build (local, no registry)", () => {
+  beforeEach(() => useTestDatabase());
+
   async function buildOnce(registry: string) {
-    const store = new InMemoryImageStore();
+    const store = new DrizzleImageStore();
     let captured: ImageBuildRequest | undefined;
     let done: Promise<unknown> | undefined;
     const service = new ImageBuilderService({
@@ -395,8 +398,10 @@ describe("ImageBuilderService build (local, no registry)", () => {
 // ── C1: deleteImage refuses while a build is in flight ─────────────────────
 
 describe("ImageBuilderService.deleteImage", () => {
+  beforeEach(() => useTestDatabase());
+
   function makeService() {
-    const store = new InMemoryImageStore();
+    const store = new DrizzleImageStore();
     return {
       store,
       service: new ImageBuilderService({

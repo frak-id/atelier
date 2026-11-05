@@ -87,6 +87,8 @@ export const PrebuildRecordSchema = Type.Object(
     metadata: Type.Optional(Type.Record(Type.String(), Type.String())),
     /** The original request, so the console/checker can replay/refresh it. */
     spec: Type.Optional(PrebuildSpecSchema),
+    /** Remote HEAD of each baked repo (by clone path) at bake time. */
+    repoHeads: Type.Optional(Type.Record(Type.String(), Type.String())),
     /** True when a sandbox boots from this snapshot or a prebuild is chained
      * on it — such a snapshot cannot be deleted. */
     inUse: Type.Optional(Type.Boolean()),

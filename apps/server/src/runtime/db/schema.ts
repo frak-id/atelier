@@ -26,8 +26,11 @@ export const sandboxes = sqliteTable("sandboxes", {
   generated: text("generated").notNull(),
   /** JSON: opaque pass-through, threaded for observability, never read. */
   metadata: text("metadata").notNull(),
-  podName: text("pod_name"),
-  pvcName: text("pvc_name"),
+  /** The resolved boot image (digest-pinned where possible) at create. Pause,
+   * resume and image lookups use it instead of re-resolving `spec.source`,
+   * which breaks once a source snapshot is gone or the registry is down.
+   * Null on rows that predate the column: they resolve the source. */
+  image: text("image"),
   /** VolumeSnapshot ref the last `pause()` produced — the resume boot source. */
   pauseSnapshotRef: text("pause_snapshot_ref"),
   createdAt: text("created_at").notNull(),
@@ -45,6 +48,11 @@ export const snapshots = sqliteTable(
     image: text("image").notNull(),
     /** Parent snapshot ref in the chain, if this snapshot was derived. */
     parent: text("parent"),
+    /** What produced the row: `prebuild` (shared, content-keyed), `pause`
+     * (a sandbox's resume source), `manual` (an explicit snapshot) or `fork`
+     * (the copy's boot source). The default only serves the migration that
+     * added the column (existing rows are backfilled); every write sets it. */
+    kind: text("kind").notNull().default("manual"),
     /** Owning sandbox for sandbox-scoped snapshots (pause/manual) — their
      * VolumeSnapshots carry the sandbox label and are swept on destroy, so
      * the rows must go with them. Null for shared prebuild snapshots. */
@@ -53,6 +61,9 @@ export const snapshots = sqliteTable(
     metadata: text("metadata"),
     /** JSON: the original PrebuildSpec, so a prebuild can be replayed/refreshed. */
     spec: text("spec"),
+    /** JSON: each repo's remote HEAD (by `clonePath`) the prebuild was keyed
+     * on — what the snapshot contains. Null for non-prebuild rows. */
+    repoHeads: text("repo_heads"),
     /** Opaque id of the user who baked the prebuild: the staleness refresh
      * uses that user's own GitHub token to reach private repos. */
     createdBy: text("created_by"),
@@ -143,8 +154,6 @@ export const toolsets = sqliteTable(
     ref: text("ref").notNull(),
     /** JSON: home path-sets the artifact materializes into. */
     paths: text("paths").notNull(),
-    /** JSON: env fragment merged at compose time (nullable). */
-    env: text("env"),
     /** JSON: `ToolsetProvenance` (built | captured). */
     provenance: text("provenance").notNull(),
     /** 1 = private-to-capturer (captures default), 0 = published. */

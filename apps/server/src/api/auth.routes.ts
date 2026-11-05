@@ -28,7 +28,16 @@ import {
 } from "../shared/lib/config.ts";
 import { createChildLogger } from "../shared/lib/logger.ts";
 import type { ServerContainer } from "./container.ts";
-import { decideForwardAuth, isReturnUrl } from "./forward-auth.ts";
+import {
+  decideForwardAuth,
+  decideWake,
+  type ForwardedRequest,
+  isReturnUrl,
+  sandboxIdFromHost,
+  WAKE_RETRY_AFTER_SECONDS,
+  wakePage,
+} from "./forward-auth.ts";
+import { ensureResuming } from "./wake.ts";
 
 const log = createChildLogger("auth-routes");
 
@@ -86,6 +95,40 @@ export function createAuthRoutes(container: ServerContainer) {
     orgMemberService.addMember(personalOrg.id, userId, "owner");
     return true;
   }
+
+  /** The 200/503 answer to "may this request reach the sandbox now?": a
+   * paused sandbox is resumed and the caller told to retry. */
+  function wakeReply(
+    sandboxId: string | undefined,
+    forwarded: ForwardedRequest,
+    set: { status?: number | string; headers: Record<string, unknown> },
+  ): string | { error: string; message: string } {
+    const status = sandboxId
+      ? container.runtime.getStatus(sandboxId)
+      : undefined;
+    const decision = decideWake(status, forwarded);
+    if (decision.status === 200 || !sandboxId) return "";
+    ensureResuming(container, sandboxId);
+    set.status = 503;
+    set.headers["retry-after"] = String(WAKE_RETRY_AFTER_SECONDS);
+    if (!decision.page) {
+      return {
+        error: "SANDBOX_WAKING",
+        message: "The sandbox is waking up; retry shortly",
+      };
+    }
+    set.headers["content-type"] = "text/html; charset=utf-8";
+    return wakePage();
+  }
+
+  /** The X-Forwarded-* view of the request the ingress is asking about. */
+  const forwardedOf = (headers: Record<string, string | undefined>) => ({
+    proto: headers["x-forwarded-proto"],
+    host: headers["x-forwarded-host"],
+    uri: headers["x-forwarded-uri"],
+    method: headers["x-forwarded-method"],
+    accept: headers.accept,
+  });
 
   const authRoutes = new Elysia({ prefix: "/auth" })
     .get(
@@ -298,27 +341,47 @@ export function createAuthRoutes(container: ServerContainer) {
     // load without a session is sent to the login, the rest gets 401.
     .get("/forward", async ({ cookie, headers, set, redirect }) => {
       const token = cookie.sandbox_token?.value as string | undefined;
-      const signedIn =
-        isAuthBypassed() || (token ? (await verifyJwt(token)) !== null : false);
+      const user = token ? await verifyJwt(token) : null;
+      const signedIn = isAuthBypassed() || user !== null;
+      const forwarded = forwardedOf(headers);
       const decision = decideForwardAuth({
         signedIn,
-        forwarded: {
-          proto: headers["x-forwarded-proto"],
-          host: headers["x-forwarded-host"],
-          uri: headers["x-forwarded-uri"],
-          method: headers["x-forwarded-method"],
-          accept: headers.accept,
-        },
+        forwarded,
         loginUrl: deriveCallbackUrl("/auth/github"),
         baseDomain: config.domain.baseDomain,
         allowHttp: !isProduction(),
       });
       set.headers["cache-control"] = "no-store";
       if (decision.status === 302) return redirect(decision.location);
+      if (decision.status === 200) {
+        // Signed in: a paused sandbox the caller may reach wakes up.
+        const sandboxId = sandboxIdFromHost(
+          forwarded.host,
+          config.domain.baseDomain,
+        );
+        const labels = sandboxId
+          ? container.runtime.getLabels(sandboxId)
+          : undefined;
+        const mayWake =
+          labels !== undefined &&
+          (isAuthBypassed() ||
+            (user !== null &&
+              container.control.canAccessSandbox(user.id, labels)));
+        return mayWake ? wakeReply(sandboxId, forwarded, set) : "";
+      }
       set.status = decision.status;
-      return decision.status === 200
-        ? ""
-        : { error: "UNAUTHORIZED", message: "Sign in to Atelier first" };
+      return { error: "UNAUTHORIZED", message: "Sign in to Atelier first" };
+    })
+    // Wake-only check for public preview URLs (no login, ever): 200 while the
+    // sandbox runs, a paused one is resumed and answered 503 like above.
+    .get("/wake", ({ headers, set }) => {
+      set.headers["cache-control"] = "no-store";
+      const forwarded = forwardedOf(headers);
+      return wakeReply(
+        sandboxIdFromHost(forwarded.host, config.domain.baseDomain),
+        forwarded,
+        set,
+      );
     })
     .get("/verify", async ({ cookie, set }) => {
       const token = cookie.sandbox_token?.value as string | undefined;

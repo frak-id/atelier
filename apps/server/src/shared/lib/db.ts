@@ -43,3 +43,8 @@ export function getDatabase(): BunSQLiteDatabase {
   }
   return db;
 }
+
+/** Swap the shared connection (tests run on an in-memory database). */
+export function setDatabase(next: BunSQLiteDatabase | null): void {
+  db = next;
+}

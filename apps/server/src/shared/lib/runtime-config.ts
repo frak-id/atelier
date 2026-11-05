@@ -47,6 +47,12 @@ export function defaultImage(): string {
     : config.sandbox.defaultImage;
 }
 
+/** How many manual snapshots a sandbox keeps (older unused ones are
+ * deleted when a new one is taken). */
+export function snapshotManualKeep(): number {
+  return service ? service.get("snapshot.manualKeep") : 5;
+}
+
 /** vCPUs a sandbox gets when its create request omits `resources.vcpus`. */
 export function defaultVcpus(): number {
   return service

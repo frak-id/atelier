@@ -25,7 +25,7 @@ let app: Elysia;
 let runtime: InstanceType<typeof import("../runtime/index.ts").RuntimeService>;
 let jobs: InstanceType<typeof import("../runtime/index.ts").JobService>;
 let sandboxes: InstanceType<
-  typeof import("../runtime/store.ts").InMemorySandboxStore
+  typeof import("../runtime/store.ts").DrizzleSandboxStore
 >;
 let releaseSnapshot: () => void = () => {};
 
@@ -52,14 +52,14 @@ beforeAll(async () => {
   backend.volumes.snapshot = async () => {
     await gate;
   };
-  sandboxes = new stores.InMemorySandboxStore();
+  sandboxes = new stores.DrizzleSandboxStore();
   runtime = new RuntimeService({
     ...fakeRuntimeDeps(),
     backend,
     sandboxes,
-    snapshots: new stores.InMemorySnapshotStore(),
-    toolsets: new stores.InMemoryToolsetStore(),
-    sandboxToolsetRefs: new stores.InMemorySandboxToolsetRefStore(),
+    snapshots: new stores.DrizzleSnapshotStore(),
+    toolsets: new stores.DrizzleToolsetStore(),
+    sandboxToolsetRefs: new stores.DrizzleSandboxToolsetRefStore(),
   });
   jobs = new JobService();
   const container = {

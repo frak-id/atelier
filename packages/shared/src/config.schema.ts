@@ -136,6 +136,12 @@ export const KubernetesConfigSchema = Type.Object(
     vsCodeIngressAnnotations: Type.Record(Type.String(), Type.String(), {
       default: {},
     }),
+    /** Annotations for public ingresses WITHOUT forward-auth (prebuild dev-
+     * server previews): the wake-only middleware that resumes a paused
+     * sandbox on access without asking for a login. */
+    wakeIngressAnnotations: Type.Record(Type.String(), Type.String(), {
+      default: {},
+    }),
   },
   { default: {} },
 );

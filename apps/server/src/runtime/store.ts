@@ -4,11 +4,11 @@
  * `snapshots(hash, parent, ref)` — with NO FK to any identity table. Callers
  * are just "authenticated principals" to it.
  *
- * `InMemory*` stores keep `runtime/` runnable standalone (tests, the
- * future extraction seam). `Drizzle*` stores persist to the same sqlite file
- * `control/` uses, in their own tables — see `./db/schema.ts`. Both sets
- * implement the same synchronous interface (bun:sqlite/drizzle bun-sqlite
- * queries are synchronous, and `RuntimeService` calls them as such).
+ * The `Drizzle*` stores persist to the same sqlite file `control/` uses, in
+ * their own tables — see `./db/schema.ts`. The interface is synchronous
+ * (bun:sqlite/drizzle bun-sqlite queries are synchronous, and
+ * `RuntimeService` calls them as such). Tests run the same stores over an
+ * in-memory database (`test-database.ts`).
  */
 import type {
   Generated,
@@ -35,8 +35,9 @@ export interface SandboxRecord {
   generated: Generated;
   /** Opaque, pass-through. Threaded for observability, never read. */
   metadata: Record<string, string>;
-  podName?: string;
-  pvcName?: string;
+  /** The resolved boot image, fixed at create. Unset on records that predate
+   * it: those resolve `spec.source` instead. */
+  image?: string;
   /** VolumeSnapshot ref the last `pause()` produced — what `resume()` boots
    * from. Cleared on successful resume (the PVC is live again). */
   pauseSnapshotRef?: string;
@@ -44,22 +45,29 @@ export interface SandboxRecord {
   updatedAt: string;
 }
 
+/** What produced a snapshot row. */
+export type SnapshotKind = "prebuild" | "pause" | "manual" | "fork";
+
 export interface SnapshotRecord {
   hash: string;
+  kind: SnapshotKind;
   /** VolumeSnapshot name to clone a PVC from. */
   ref: string;
   /** Base OCI image the snapshot was built on (pods boot from this exact image). */
   image: string;
   parent?: string;
-  /** Owning sandbox for sandbox-scoped snapshots (pause/manual). Their
+  /** Owning sandbox for sandbox-scoped snapshots (pause/manual/fork). Their
    * VolumeSnapshots carry the `atelier.dev/sandbox` label — destroy's sweep
-   * deletes them, so their rows are deleted alongside. Unset for shared
-   * prebuild snapshots (component label only; survive sandbox destroy). */
+   * deletes them, so their rows are deleted alongside (unless another
+   * sandbox boots from one: destroy re-owns it). Unset for shared prebuild
+   * snapshots (component label only; survive sandbox destroy). */
   sandboxId?: string;
   /** Opaque `PrebuildSpec.metadata` pass-through (workspace, repo, branch…). */
   metadata?: Record<string, string>;
   /** The original request, so a prebuild can be replayed/refreshed. */
   spec?: PrebuildSpec;
+  /** Each repo's remote HEAD (by `clonePath`) the prebuild was keyed on. */
+  repoHeads?: Record<string, string>;
   /** Opaque id of the user who baked this prebuild. The staleness refresh
    * has no caller, so it re-resolves (and re-bakes) with that user's own
    * GitHub token: private repos are unreachable without one. */
@@ -208,194 +216,13 @@ export interface JobStore {
   deleteTerminalBefore(beforeIso: string): number;
 }
 
-// ── in-memory (tests, standalone runtime/) ─────────────────────────────────
-
-export class InMemorySandboxStore implements SandboxStore {
-  private readonly rows = new Map<string, SandboxRecord>();
-
-  create(record: SandboxRecord): void {
-    this.rows.set(record.id, record);
-  }
-  get(id: string): SandboxRecord | undefined {
-    return this.rows.get(id);
-  }
-  update(id: string, patch: Partial<SandboxRecord>) {
-    const row = this.rows.get(id);
-    if (!row) return undefined;
-    const next = { ...row, ...patch, updatedAt: new Date().toISOString() };
-    this.rows.set(id, next);
-    return next;
-  }
-  delete(id: string): void {
-    this.rows.delete(id);
-  }
-  list(): SandboxRecord[] {
-    return [...this.rows.values()];
-  }
-}
-
-export class InMemoryToolsetStore implements ToolsetStore {
-  private readonly byHash = new Map<string, ToolsetRecord>();
-  private readonly byRef = new Map<string, ToolsetRecord>();
-
-  getByHash(hash: string): ToolsetRecord | undefined {
-    return this.byHash.get(hash);
-  }
-  getByRef(ref: string): ToolsetRecord | undefined {
-    return this.byRef.get(ref);
-  }
-  put(record: ToolsetRecord): void {
-    const prior = this.byHash.get(record.hash);
-    if (prior && prior.ref !== record.ref) this.byRef.delete(prior.ref);
-    this.byHash.set(record.hash, record);
-    this.byRef.set(record.ref, record);
-  }
-  list(): ToolsetRecord[] {
-    return [...this.byHash.values()];
-  }
-  delete(hash: string): void {
-    const prior = this.byHash.get(hash);
-    this.byHash.delete(hash);
-    if (prior) this.byRef.delete(prior.ref);
-  }
-}
-
-export class InMemorySandboxToolsetRefStore implements SandboxToolsetRefStore {
-  private readonly bySandbox = new Map<string, SandboxToolsetRefEntry[]>();
-
-  putForSandbox(sandboxId: string, entries: SandboxToolsetRefEntry[]): void {
-    this.bySandbox.set(sandboxId, entries);
-  }
-  deleteBySandbox(sandboxId: string): void {
-    this.bySandbox.delete(sandboxId);
-  }
-  referencedRefs(): Set<string> {
-    const refs = new Set<string>();
-    for (const entries of this.bySandbox.values()) {
-      for (const e of entries) refs.add(e.ref);
-    }
-    return refs;
-  }
-}
-
-export class InMemorySnapshotStore implements SnapshotStore {
-  private readonly byRef = new Map<string, SnapshotRecord>();
-  private readonly byHash = new Map<string, SnapshotRecord>();
-
-  getByHash(hash: string): SnapshotRecord | undefined {
-    return this.byHash.get(hash);
-  }
-  get(ref: string): SnapshotRecord | undefined {
-    return this.byRef.get(ref);
-  }
-  put(record: SnapshotRecord): void {
-    this.byRef.set(record.ref, record);
-    this.byHash.set(record.hash, record);
-  }
-  list(): SnapshotRecord[] {
-    return [...this.byRef.values()];
-  }
-  deleteBySandbox(sandboxId: string): void {
-    for (const record of this.byRef.values()) {
-      if (record.sandboxId === sandboxId) this.delete(record.ref);
-    }
-  }
-  delete(ref: string): void {
-    const prior = this.byRef.get(ref);
-    this.byRef.delete(ref);
-    if (prior) this.byHash.delete(prior.hash);
-  }
-}
-
-export class InMemoryImageStore implements ImageStore {
-  private readonly byName = new Map<string, ImageRecord>();
-
-  get(name: string): ImageRecord | undefined {
-    return this.byName.get(name);
-  }
-  put(record: ImageRecord): void {
-    this.byName.set(record.name, record);
-  }
-  update(name: string, patch: Partial<ImageRecord>): ImageRecord | undefined {
-    const existing = this.byName.get(name);
-    if (!existing) return undefined;
-    const next: ImageRecord = {
-      ...existing,
-      ...patch,
-      updatedAt: new Date().toISOString(),
-    };
-    this.byName.set(name, next);
-    return next;
-  }
-  list(): ImageRecord[] {
-    return [...this.byName.values()];
-  }
-  delete(name: string): void {
-    this.byName.delete(name);
-  }
-}
-
-export class InMemoryJobStore implements JobStore {
-  private readonly rows = new Map<string, JobRecord>();
-
-  create(record: JobRecord): void {
-    this.rows.set(record.id, record);
-  }
-  get(id: string): JobRecord | undefined {
-    return this.rows.get(id);
-  }
-  update(id: string, patch: Partial<JobRecord>): JobRecord | undefined {
-    const existing = this.rows.get(id);
-    if (!existing) return undefined;
-    const next: JobRecord = {
-      ...existing,
-      ...patch,
-      updatedAt: new Date().toISOString(),
-    };
-    this.rows.set(id, next);
-    return next;
-  }
-  list(limit?: number): JobRecord[] {
-    const sorted = [...this.rows.values()].sort((a, b) =>
-      b.createdAt.localeCompare(a.createdAt),
-    );
-    return limit === undefined ? sorted : sorted.slice(0, limit);
-  }
-  failActive(reason: string): string[] {
-    const ids: string[] = [];
-    for (const row of this.rows.values()) {
-      if (isJobTerminal(row.status)) continue;
-      this.update(row.id, {
-        status: "failed",
-        error: reason,
-        finishedAt: new Date().toISOString(),
-      });
-      ids.push(row.id);
-    }
-    return ids;
-  }
-  deleteTerminalBefore(beforeIso: string): number {
-    let removed = 0;
-    for (const row of [...this.rows.values()]) {
-      if (!isJobTerminal(row.status)) continue;
-      if (row.createdAt >= beforeIso) continue;
-      this.rows.delete(row.id);
-      removed++;
-    }
-    return removed;
-  }
-}
-
-// ── sqlite/drizzle-backed (persistent) ─────────────────────────────────────
-
 interface SandboxRow {
   id: string;
   spec: string;
   status: string;
   generated: string;
   metadata: string;
-  podName: string | null;
-  pvcName: string | null;
+  image: string | null;
   pauseSnapshotRef: string | null;
   createdAt: string;
   updatedAt: string;
@@ -408,8 +235,7 @@ function rowToRecord(row: SandboxRow): SandboxRecord {
     status: row.status as SandboxStatus,
     generated: JSON.parse(row.generated) as Generated,
     metadata: JSON.parse(row.metadata) as Record<string, string>,
-    podName: row.podName ?? undefined,
-    pvcName: row.pvcName ?? undefined,
+    image: row.image ?? undefined,
     pauseSnapshotRef: row.pauseSnapshotRef ?? undefined,
     createdAt: row.createdAt,
     updatedAt: row.updatedAt,
@@ -423,8 +249,7 @@ function recordToRow(record: SandboxRecord): SandboxRow {
     status: record.status,
     generated: JSON.stringify(record.generated),
     metadata: JSON.stringify(record.metadata),
-    podName: record.podName ?? null,
-    pvcName: record.pvcName ?? null,
+    image: record.image ?? null,
     pauseSnapshotRef: record.pauseSnapshotRef ?? null,
     createdAt: record.createdAt,
     updatedAt: record.updatedAt,
@@ -479,11 +304,13 @@ export class DrizzleSandboxStore implements SandboxStore {
 interface SnapshotRow {
   ref: string;
   hash: string;
+  kind: string;
   image: string;
   parent: string | null;
   sandboxId: string | null;
   metadata: string | null;
   spec: string | null;
+  repoHeads: string | null;
   createdBy: string | null;
   createdAt: string;
 }
@@ -492,6 +319,7 @@ function snapshotRowToRecord(row: SnapshotRow): SnapshotRecord {
   return {
     ref: row.ref,
     hash: row.hash,
+    kind: row.kind as SnapshotKind,
     image: row.image,
     parent: row.parent ?? undefined,
     sandboxId: row.sandboxId ?? undefined,
@@ -499,6 +327,9 @@ function snapshotRowToRecord(row: SnapshotRow): SnapshotRecord {
       ? (JSON.parse(row.metadata) as Record<string, string>)
       : undefined,
     spec: row.spec ? (JSON.parse(row.spec) as PrebuildSpec) : undefined,
+    repoHeads: row.repoHeads
+      ? (JSON.parse(row.repoHeads) as Record<string, string>)
+      : undefined,
     createdBy: row.createdBy ?? undefined,
     createdAt: row.createdAt,
   };
@@ -508,11 +339,13 @@ function snapshotRecordToRow(record: SnapshotRecord): SnapshotRow {
   return {
     ref: record.ref,
     hash: record.hash,
+    kind: record.kind,
     image: record.image,
     parent: record.parent ?? null,
     sandboxId: record.sandboxId ?? null,
     metadata: record.metadata ? JSON.stringify(record.metadata) : null,
     spec: record.spec ? JSON.stringify(record.spec) : null,
+    repoHeads: record.repoHeads ? JSON.stringify(record.repoHeads) : null,
     createdBy: record.createdBy ?? null,
     createdAt: record.createdAt,
   };
@@ -687,7 +520,6 @@ interface ToolsetRow {
   name: string;
   ref: string;
   paths: string;
-  env: string | null;
   provenance: string;
   private: number;
   createdAt: string;
@@ -699,7 +531,6 @@ function toolsetRowToRecord(row: ToolsetRow): ToolsetRecord {
     name: row.name,
     ref: row.ref,
     paths: JSON.parse(row.paths) as string[],
-    env: row.env ? (JSON.parse(row.env) as Record<string, string>) : undefined,
     provenance: JSON.parse(row.provenance) as ToolsetEntry["provenance"],
     private: row.private !== 0,
     createdAt: row.createdAt,
@@ -712,7 +543,6 @@ function toolsetRecordToRow(record: ToolsetRecord): ToolsetRow {
     name: record.name,
     ref: record.ref,
     paths: JSON.stringify(record.paths),
-    env: record.env ? JSON.stringify(record.env) : null,
     provenance: JSON.stringify(record.provenance),
     private: record.private ? 1 : 0,
     createdAt: record.createdAt,
