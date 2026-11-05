@@ -77,7 +77,8 @@ definitions (opencode, pi) and the spec merge live in
 
 Create, fork, pause, resume, snapshot and destroy run as jobs in the job feed
 (`GET /v1/jobs`, SSE at `/v1/jobs/events`), whether they come from HTTP or
-MCP. The orchestration lives in `api/app/sandbox-ops.ts`; the mechanism stays
+MCP. A caller sees the jobs they started, the jobs on sandboxes they can
+access, and, as a server admin, all of them. The orchestration lives in `api/app/sandbox-ops.ts`; the mechanism stays
 in `runtime/`.
 
 **Pause and resume.** `pause()` syncs, snapshots, records the pause snapshot
@@ -93,9 +94,10 @@ which prebuild, snapshot or image it started from.
 
 **Snapshots.** Each snapshot has a kind: `prebuild`, `pause`, `fork` or
 `manual`. `snapshot.manualKeep` (default 5) keeps the newest manual snapshots
-per sandbox and never deletes one another sandbox boots from. Destroying a
-sandbox re-owns snapshots that other sandboxes still boot from before it
-sweeps its own.
+per sandbox and never deletes one another sandbox boots from. Resume keeps a
+pause snapshot another sandbox boots from. Destroying a sandbox re-owns
+snapshots that other sandboxes still boot from before it sweeps its own, and
+is refused (409) while a prebuild is chained on one of its snapshots.
 
 **Live changes.** Adding a port or process, or patching env, needs a running
 sandbox and runs under the per-sandbox operation lock. `reconcileOnStartup()`
@@ -107,8 +109,8 @@ A paused sandbox wakes when something uses it:
 
 | Access | Path |
 |--------|------|
-| Tool URL with `auth: "forward"` | Traefik asks `GET /auth/forward`; a signed-in caller who can access the sandbox triggers a resume and gets 503 until it runs |
-| Public preview URL | Traefik asks `GET /auth/wake` (middleware `atelier-wake`), which needs no login |
+| Tool URL with `auth: "forward"` | Traefik asks `GET /auth/forward`; a signed-in caller who can access the sandbox triggers a resume and gets 503 until it runs (403 without access) |
+| Public preview URL | Traefik asks `GET /auth/wake` (middleware `atelier-wake`), which needs no login and only wakes for the sandbox's own preview hosts |
 | SSH | The gateway resumes and waits up to 3 minutes |
 | Operations | `exec`, files, process actions and `send_prompt` resume the sandbox (`SandboxOps.ensureRunning`, up to 120 s) |
 
@@ -452,7 +454,8 @@ Conventions (`api/mcp/format.ts`):
   `{tasks}`, `{prebuilds}`).
 - **No credentials or internals.** `get_sandbox` never returns `generated`
   (agent password, pod IP, host keys). `manage_prebuilds` omits env values and
-  file contents of the recipe.
+  file contents of the recipe. In production an unexpected (non-`SandboxError`)
+  failure is logged and returned as `Internal server error`.
 - **Merged operations.** `get_sandbox` reads one sandbox or lists them;
   `sandbox_lifecycle` covers pause, resume, snapshot, fork and keep awake;
   `send_prompt` starts a task or continues one; `get_task` reads or lists.

@@ -5,6 +5,10 @@ import {
   type Stream,
 } from "@agentclientprotocol/sdk";
 import { safeNanoid } from "../../shared/lib/id.ts";
+import { createChildLogger } from "../../shared/lib/logger.ts";
+import { redactAgentUrl } from "../../shared/lib/redact.ts";
+
+const log = createChildLogger("acp-stream");
 
 const CANCEL_REQUEST_METHOD = "$/cancel_request";
 
@@ -72,7 +76,10 @@ export function connectAcpWebSocket(url: string): AcpTransport {
   const errorReadable = () => {
     if (settled) return;
     settled = true;
-    readableController?.error(new Error(`ACP WebSocket error: ${url}`));
+    // No URL in the message: it carries the agent token and the pod IP, and
+    // the error ends up in task records and tool results.
+    log.debug({ url: redactAgentUrl(url) }, "ACP WebSocket error");
+    readableController?.error(new Error("ACP WebSocket error"));
   };
 
   ws.addEventListener("close", closeReadable);
@@ -89,7 +96,10 @@ export function connectAcpWebSocket(url: string): AcpTransport {
     );
     ws.addEventListener(
       "error",
-      () => reject(new Error(`ACP WebSocket failed to connect: ${url}`)),
+      () => {
+        log.debug({ url: redactAgentUrl(url) }, "ACP WebSocket connect failed");
+        reject(new Error("ACP WebSocket failed to connect"));
+      },
       { once: true },
     );
   });

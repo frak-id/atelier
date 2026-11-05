@@ -1,6 +1,6 @@
 import { describe, expect, test } from "bun:test";
 import type { AnyMessage, Stream } from "@agentclientprotocol/sdk";
-import { scopeToConnection } from "./acp-stream.ts";
+import { connectAcpWebSocket, scopeToConnection } from "./acp-stream.ts";
 
 /** An in-memory inner stream: what the scoped side writes lands in `sent`,
  * and `deliver` plays agent output into it. */
@@ -119,5 +119,21 @@ describe("scopeToConnection", () => {
       method: "$/cancel_request",
       params: { requestId: "c1:0" },
     });
+  });
+});
+
+describe("connectAcpWebSocket", () => {
+  test("a failed connect never puts the URL or its agent token in the error", async () => {
+    const transport = connectAcpWebSocket(
+      "ws://127.0.0.1:1/attach/acp?mode=rw&token=s3cret-token",
+    );
+    const error = await transport.ready.then(
+      () => undefined,
+      (err: unknown) => err as Error,
+    );
+    expect(error).toBeInstanceOf(Error);
+    expect(error?.message).toBe("ACP WebSocket failed to connect");
+    expect(error?.message).not.toContain("s3cret-token");
+    transport.close();
   });
 });

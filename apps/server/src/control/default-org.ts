@@ -7,7 +7,7 @@
  * admin. Production refuses to start without it (`validateConfig`).
  * Auth-bypassed modes (local) are single-user: everyone is an admin there too.
  */
-import { ForbiddenError } from "../shared/errors.ts";
+import { ForbiddenError, ValidationError } from "../shared/errors.ts";
 import { config, isAuthBypassed } from "../shared/lib/config.ts";
 import { createChildLogger } from "../shared/lib/logger.ts";
 import type { OrgMemberService } from "./modules/org-member/index.ts";
@@ -37,9 +37,47 @@ export function createDefaultOrg({
     return orgMemberService.getMembership(orgId, userId)?.role === "owner";
   };
 
+  /** The team org is found by its slug, so its slug is its identity: whoever
+   * holds that slug is the server admin. */
+  const isDefaultSlug = (slug: string): boolean => {
+    const reserved = config.auth.defaultOrg;
+    return !!reserved && slug.toLowerCase() === reserved.toLowerCase();
+  };
+
   return {
     defaultOrgId,
     isServerAdmin,
+    /** `POST /api/organizations`: nobody creates the default slug through the
+     * API (`joinDefaultOrg` bootstraps the org itself on a fresh install). */
+    assertSlugCreatable(slug: string): void {
+      if (isDefaultSlug(slug)) {
+        throw new ValidationError(
+          `Slug '${slug}' is reserved for the default organization`,
+        );
+      }
+    },
+    /** `PATCH /api/organizations/:id`: the default org keeps its slug, and no
+     * other org may take it over. */
+    assertSlugChangeAllowed(orgId: string, slug: string | undefined): void {
+      const org = organizationService.getByIdOrThrow(orgId);
+      if (slug === undefined || slug === org.slug) return;
+      if (isDefaultSlug(org.slug)) {
+        throw new ValidationError(
+          "The default organization's slug can't be changed",
+        );
+      }
+      if (isDefaultSlug(slug)) {
+        throw new ValidationError(
+          `Slug '${slug}' is reserved for the default organization`,
+        );
+      }
+    },
+    /** `DELETE /api/organizations/:id`: the default org can't be deleted. */
+    assertDeletable(orgId: string): void {
+      if (isDefaultSlug(organizationService.getByIdOrThrow(orgId).slug)) {
+        throw new ValidationError("The default organization can't be deleted");
+      }
+    },
     requireServerAdmin(userId: string): void {
       if (!isServerAdmin(userId)) {
         throw new ForbiddenError(

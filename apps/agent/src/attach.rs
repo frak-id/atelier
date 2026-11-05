@@ -418,27 +418,33 @@ async fn handle_conn(
     terminals: Arc<TerminalRegistry>,
     auth: Arc<Auth>,
 ) {
-    // A terminal session also needs its PTY master (resize target).
-    let (endpoint, terminal_master) = if target.terminal {
-        let Some(master) = terminals.master(&target.name).await else {
-            return;
-        };
-        (
-            registry.get(&terminal_key(&target.name)).await,
-            Some(master),
-        )
-    } else {
-        (registry.get(&target.name).await, None)
-    };
-    let Some(endpoint) = endpoint else {
-        return;
-    };
-    let Ok(ws) = accept_hdr_async(
+    // Authorize the upgrade FIRST: an unauthenticated peer gets the same 401
+    // whatever the name, so it can't probe which endpoints and terminals
+    // exist (an unknown name used to close silently, a known one answered 401).
+    let Ok(mut ws) = accept_hdr_async(
         crate::activity::control::Counted::new(stream),
         auth.upgrade_guard(),
     )
     .await
     else {
+        return;
+    };
+    // A terminal session also needs its PTY master (resize target).
+    let (endpoint, terminal_master) = if target.terminal {
+        let master = terminals.master(&target.name).await;
+        match master {
+            Some(master) => (
+                registry.get(&terminal_key(&target.name)).await,
+                Some(master),
+            ),
+            None => (None, None),
+        }
+    } else {
+        (registry.get(&target.name).await, None)
+    };
+    let Some(endpoint) = endpoint else {
+        // Authenticated, but nothing by that name: close the socket.
+        let _ = ws.close(None).await;
         return;
     };
     let (mut sink, mut source) = ws.split();
@@ -590,5 +596,66 @@ mod tests {
         // Slot is free again for a fresh writer.
         let c = slot.try_acquire(false).await.expect("free slot acquires");
         assert!(slot.is_holder(c).await);
+    }
+
+    /// One upgrade request against `handle_conn` (registries empty), answered
+    /// with the raw response text. `token` rides the query like the runtime's
+    /// relays do.
+    async fn upgrade(path: &str, token: Option<&str>) -> String {
+        use crate::store::ConfigStore;
+
+        let registry = AttachRegistry::new();
+        let terminals =
+            TerminalRegistry::new(Arc::new(ConfigStore::new_for_test(None)), registry.clone());
+        let auth = Arc::new(Auth::new(Some("tok".to_string())));
+        let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let addr = listener.local_addr().unwrap();
+        let server = tokio::spawn(async move {
+            let (stream, _) = listener.accept().await.unwrap();
+            let mut peek = [0u8; 1024];
+            let n = stream.peek(&mut peek).await.unwrap();
+            let target = parse_attach_target(&peek[..n]).unwrap();
+            handle_conn(stream, target, registry, terminals, auth).await;
+        });
+        let mut client = TcpStream::connect(addr).await.unwrap();
+        let query = token.map(|t| format!("?token={t}")).unwrap_or_default();
+        let request = format!(
+            "GET {path}{query} HTTP/1.1\r\nHost: x\r\nConnection: Upgrade\r\n\
+             Upgrade: websocket\r\nSec-WebSocket-Version: 13\r\n\
+             Sec-WebSocket-Key: dGhlIHNhbXBsZSBub25jZQ==\r\n\r\n"
+        );
+        client.write_all(request.as_bytes()).await.unwrap();
+        let mut response = Vec::new();
+        let _ = tokio::time::timeout(
+            std::time::Duration::from_secs(2),
+            client.read_to_end(&mut response),
+        )
+        .await;
+        server.await.unwrap();
+        String::from_utf8_lossy(&response).into_owned()
+    }
+
+    #[tokio::test]
+    async fn unauthenticated_peers_cannot_probe_names() {
+        // An unknown process and an unknown terminal answer exactly as a
+        // known one would: 401, whatever the name.
+        for path in ["/attach/nope", "/terminal/nope"] {
+            let response = upgrade(path, None).await;
+            assert!(
+                response.starts_with("HTTP/1.1 401"),
+                "{path} without a token: {response:?}"
+            );
+            let wrong = upgrade(path, Some("wrong")).await;
+            assert!(wrong.starts_with("HTTP/1.1 401"), "{path}: {wrong:?}");
+        }
+    }
+
+    #[tokio::test]
+    async fn an_authenticated_peer_gets_the_socket_then_a_close_for_an_unknown_name() {
+        let response = upgrade("/attach/nope", Some("tok")).await;
+        assert!(
+            response.starts_with("HTTP/1.1 101"),
+            "authorized upgrade: {response:?}"
+        );
     }
 }

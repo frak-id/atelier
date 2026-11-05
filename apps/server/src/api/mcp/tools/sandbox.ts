@@ -441,7 +441,11 @@ export function registerSandboxTools(
             });
           }
           default: {
-            const { job, done } = sandboxOps.startLifecycle(action, id);
+            const { job, done } = sandboxOps.startLifecycle(
+              action,
+              id,
+              user.id,
+            );
             const wait = (waitSeconds ?? LIFECYCLE_DEFAULT_WAIT_SECONDS) * 1000;
             const outcome = await settledWithin(done, wait);
             if (!outcome.settled) {
@@ -478,7 +482,7 @@ export function registerSandboxTools(
     },
     safeTool("destroy_sandbox", async ({ id }) => {
       guard(id);
-      await sandboxOps.destroy(id);
+      await sandboxOps.destroy(id, user.id);
       return text({ id, status: "destroyed" });
     }),
   );

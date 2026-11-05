@@ -154,6 +154,7 @@ export function createControlRoutes(container: ServerContainer) {
         // Resolve the caller before creating: a failing `addMember` after the
         // insert would leave an org nobody belongs to.
         control.userService.getByIdOrThrow(user.id);
+        control.defaultOrg.assertSlugCreatable(body.slug);
         if (control.organizationService.getBySlug(body.slug)) {
           throw new ConflictError(`Slug '${body.slug}' is taken`);
         }
@@ -173,6 +174,7 @@ export function createControlRoutes(container: ServerContainer) {
       "/:id",
       ({ user, params, body }) => {
         control.orgMemberService.requireOwner(params.id, user.id);
+        control.defaultOrg.assertSlugChangeAllowed(params.id, body.slug);
         return control.organizationService.rename(params.id, body);
       },
       {
@@ -184,6 +186,7 @@ export function createControlRoutes(container: ServerContainer) {
     )
     .delete("/:id", ({ user, params, set }) => {
       control.orgMemberService.requireOwner(params.id, user.id);
+      control.defaultOrg.assertDeletable(params.id);
       const owned = control.ownershipTransferService.inventory(params.id);
       const leftovers = Object.entries(owned)
         .filter(([, count]) => count > 0)

@@ -46,6 +46,7 @@ import {
   defaultVcpus,
 } from "../../shared/lib/runtime-config.ts";
 import type { IdleReaper } from "../idle-reaper.ts";
+import { ownedJobMetadata } from "../job-access.ts";
 import { requireSourceAccess } from "../sandbox-guard.ts";
 import { spawnSurface } from "../spawn-surface.ts";
 import {
@@ -78,6 +79,8 @@ export interface SandboxOpsDeps {
   jobs: JobService;
   toolboxes: ToolboxOps;
   idle: Pick<IdleReaper, "setKeepAwake">;
+  /** The clock of the wake retry cooldown (tests drive it). */
+  now?: () => number;
 }
 
 /** A short, human label for a sandbox-create job's queue row — the spec's
@@ -205,8 +208,10 @@ export class SandboxOps {
   private readonly jobs: JobService;
   private readonly toolboxes: ToolboxOps;
   private readonly idle: Pick<IdleReaper, "setKeepAwake">;
-  /** When a wake-up resume of a sandbox last started (the retry cooldown). */
+  /** When a wake-up resume of a sandbox last ended without the sandbox
+   * running (the retry cooldown); cleared once one succeeds. */
   private readonly lastWake = new Map<string, number>();
+  private readonly now: () => number;
 
   constructor(deps: SandboxOpsDeps) {
     this.runtime = deps.runtime;
@@ -214,6 +219,7 @@ export class SandboxOps {
     this.jobs = deps.jobs;
     this.toolboxes = deps.toolboxes;
     this.idle = deps.idle;
+    this.now = deps.now ?? Date.now;
   }
 
   /** The slice of the container the sandbox access guards read. */
@@ -361,7 +367,7 @@ export class SandboxOps {
           {
             kind: "prebuild",
             target: prebuildJobTarget(recipe),
-            metadata: recipe.metadata,
+            metadata: ownedJobMetadata(user.id, recipe.metadata),
           },
           (signal, jobLog) =>
             runtime.prebuildForSpawn(recipe, {
@@ -470,7 +476,7 @@ export class SandboxOps {
       options: {
         kind: "sandbox-create" as const,
         target: body.name ?? `fork of ${sourceId}`,
-        metadata: { sandboxId: id, forkOf: sourceId },
+        metadata: { sandboxId: id, forkOf: sourceId, owner: user.id },
         unpooled: true,
       },
       // Both jobs run the body synchronously up to its first await, and the
@@ -569,32 +575,54 @@ export class SandboxOps {
   // Awaited, unpooled jobs: the caller gets the resource inline and the op
   // never queues behind a build.
 
-  pause(id: string): Promise<SnapshotRef> {
-    return this.jobs.track({ kind: "sandbox-pause", target: id }, () =>
-      this.runtime.pause(id),
+  // `owner` is the user who asked, recorded on the job so it stays in their
+  // feed (the sandbox access rule scopes the rest).
+  pause(id: string, owner?: string): Promise<SnapshotRef> {
+    return this.jobs.track(
+      {
+        kind: "sandbox-pause",
+        target: id,
+        metadata: ownedJobMetadata(owner),
+      },
+      () => this.runtime.pause(id),
     );
   }
 
   /** Resume a paused (or errored) sandbox. `body` may add files/env. */
-  resume(id: string, body: ResumeRequest = {}) {
+  resume(id: string, body: ResumeRequest = {}, owner?: string) {
     // Checked before the job opens: an unknown id is a plain 404.
     if (this.runtime.getStatus(id) === undefined) {
       throw new NotFoundError("Sandbox", id);
     }
-    return this.jobs.track({ kind: "sandbox-resume", target: id }, () =>
-      this.runtime.resume(id, body),
+    return this.jobs.track(
+      {
+        kind: "sandbox-resume",
+        target: id,
+        metadata: ownedJobMetadata(owner),
+      },
+      () => this.runtime.resume(id, body),
     );
   }
 
-  snapshot(id: string): Promise<SnapshotRef> {
-    return this.jobs.track({ kind: "sandbox-snapshot", target: id }, () =>
-      this.runtime.snapshot(id),
+  snapshot(id: string, owner?: string): Promise<SnapshotRef> {
+    return this.jobs.track(
+      {
+        kind: "sandbox-snapshot",
+        target: id,
+        metadata: ownedJobMetadata(owner),
+      },
+      () => this.runtime.snapshot(id),
     );
   }
 
-  destroy(id: string): Promise<void> {
-    return this.jobs.track({ kind: "sandbox-destroy", target: id }, () =>
-      this.runtime.destroy(id),
+  destroy(id: string, owner?: string): Promise<void> {
+    return this.jobs.track(
+      {
+        kind: "sandbox-destroy",
+        target: id,
+        metadata: ownedJobMetadata(owner),
+      },
+      () => this.runtime.destroy(id),
     );
   }
 
@@ -607,13 +635,19 @@ export class SandboxOps {
   startLifecycle(
     action: "pause" | "resume" | "snapshot",
     id: string,
+    owner?: string,
   ): { job: JobRecord; done: Promise<unknown> } {
     if (this.runtime.getStatus(id) === undefined) {
       throw new NotFoundError("Sandbox", id);
     }
     let done: Promise<unknown> = Promise.resolve();
     const job = this.jobs.dispatch(
-      { kind: `sandbox-${action}`, target: id, unpooled: true },
+      {
+        kind: `sandbox-${action}`,
+        target: id,
+        metadata: ownedJobMetadata(owner),
+        unpooled: true,
+      },
       () => {
         done =
           action === "pause"
@@ -637,11 +671,12 @@ export class SandboxOps {
   ): JobRecord {
     requireSourceAccess(this.guard, user.id, spec.source);
     const githubToken = this.control.userService.resolveGitHubToken(user.id);
+    const surfaceAdmin = this.control.defaultOrg.isServerAdmin(user.id);
     return this.jobs.dispatch(
       {
         kind: "prebuild",
         target: prebuildJobTarget(spec),
-        metadata: spec.metadata,
+        metadata: ownedJobMetadata(user.id, spec.metadata),
       },
       (signal, log) =>
         this.runtime.prebuild(spec, {
@@ -650,8 +685,10 @@ export class SandboxOps {
           createdBy: user.id,
           signal,
           onLog: log,
-          // The explicit create: a declared surface is saved on a cache hit.
+          // The explicit create: a declared surface is saved on a cache hit,
+          // by the recipe's creator or a server admin only.
           saveSurface: true,
+          surfaceAdmin,
         }),
     );
   }
@@ -681,12 +718,13 @@ export class SandboxOps {
    * down. False for any other status, which needs no wake-up. Concurrent
    * callers share one resume job.
    */
-  wake(id: string, now: number = Date.now()): boolean {
+  wake(id: string): boolean {
     if (this.runtime.getStatus(id) !== "paused") return false;
     if (this.isResuming(id)) return true;
-    const started = this.lastWake.get(id);
-    if (started !== undefined && now - started < RETRY_COOLDOWN_MS) return true;
-    this.lastWake.set(id, now);
+    const failed = this.lastWake.get(id);
+    if (failed !== undefined && this.now() - failed < RETRY_COOLDOWN_MS) {
+      return true;
+    }
     this.jobs.dispatch(
       {
         kind: "sandbox-resume",
@@ -694,7 +732,18 @@ export class SandboxOps {
         metadata: { trigger: "wake" },
         unpooled: true,
       },
-      () => this.runtime.resume(id),
+      async () => {
+        // The cooldown starts when the resume ENDS without the sandbox
+        // running, never when it starts: a wake that worked must not stop
+        // the next one after the sandbox is paused again.
+        try {
+          await this.runtime.resume(id);
+        } finally {
+          if (this.runtime.getStatus(id) === "running")
+            this.lastWake.delete(id);
+          else this.lastWake.set(id, this.now());
+        }
+      },
     );
     return true;
   }

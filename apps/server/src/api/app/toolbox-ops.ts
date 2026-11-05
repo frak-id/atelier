@@ -392,7 +392,11 @@ export class ToolboxOps {
       options: {
         kind: "toolset-capture" as const,
         target: toolbox.slug,
-        metadata: { toolboxId: toolbox.id, sandboxId: input.sandboxId },
+        metadata: {
+          toolboxId: toolbox.id,
+          sandboxId: input.sandboxId,
+          owner: userId,
+        },
       },
       fn: async (
         signal: AbortSignal,

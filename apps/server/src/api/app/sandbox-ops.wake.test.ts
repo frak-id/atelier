@@ -16,7 +16,13 @@ const { SandboxOps, waitForRunning } = await import("./sandbox-ops.ts");
 beforeEach(() => useTestDatabase());
 
 function makeOps(initial: string) {
-  const state = { status: initial, resumes: 0, failNext: false, execs: 0 };
+  const state = {
+    status: initial,
+    resumes: 0,
+    failNext: false,
+    execs: 0,
+    clock: 1_000_000,
+  };
   const jobs = new JobService();
   const runtime = {
     getStatus: () => state.status,
@@ -31,7 +37,11 @@ function makeOps(initial: string) {
       return { exitCode: 0, stdout: "", stderr: "" };
     }),
   };
-  const ops = new SandboxOps({ runtime, jobs } as never);
+  const ops = new SandboxOps({
+    runtime,
+    jobs,
+    now: () => state.clock,
+  } as never);
   return { ops, state, jobs };
 }
 
@@ -64,16 +74,45 @@ describe("SandboxOps.wake", () => {
   test("a failed resume is not retried on every request", async () => {
     const { ops, state } = makeOps("paused");
     state.failNext = true;
-    const t0 = 1_000_000;
-    expect(ops.wake("sb3", t0)).toBe(true);
+    expect(ops.wake("sb3")).toBe(true);
     await Bun.sleep(30); // the resume failed; the sandbox is still paused
-    expect(ops.wake("sb3", t0 + 1_000)).toBe(true);
+    state.clock += 1_000;
+    expect(ops.wake("sb3")).toBe(true);
     await Bun.sleep(30);
     expect(state.resumes).toBe(1);
     // Past the cooldown it tries again.
-    expect(ops.wake("sb3", t0 + 60_000)).toBe(true);
+    state.clock += 60_000;
+    expect(ops.wake("sb3")).toBe(true);
     await Bun.sleep(30);
     expect(state.resumes).toBe(2);
+  });
+
+  test("a wake that worked arms no cooldown: the next pause wakes again", async () => {
+    const { ops, state } = makeOps("paused");
+    expect(ops.wake("sb8")).toBe(true);
+    await Bun.sleep(30);
+    expect(state.status).toBe("running");
+    // Paused again right after, within what used to be the cooldown.
+    state.status = "paused";
+    state.clock += 3_000;
+    expect(ops.wake("sb8")).toBe(true);
+    await Bun.sleep(30);
+    expect(state.resumes).toBe(2);
+    expect(state.status).toBe("running");
+  });
+
+  test("the cooldown runs from the failure, not from the start", async () => {
+    const { ops, state } = makeOps("paused");
+    state.failNext = true;
+    expect(ops.wake("sb9")).toBe(true);
+    // The resume only fails 25s after it started.
+    state.clock += 25_000;
+    await Bun.sleep(30);
+    // 10s after the failure (35s after the start): still cooling down.
+    state.clock += 10_000;
+    expect(ops.wake("sb9")).toBe(true);
+    await Bun.sleep(30);
+    expect(state.resumes).toBe(1);
   });
 });
 

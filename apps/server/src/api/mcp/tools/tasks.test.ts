@@ -27,7 +27,11 @@ afterEach(async () => {
 });
 
 /** One MCP client bound to `userId`, over a (possibly shared) task service. */
-async function connect(tasks: AgentTaskService, userId: string) {
+async function connect(
+  tasks: AgentTaskService,
+  userId: string,
+  canAccess: () => boolean = () => true,
+) {
   const server = new McpServer({ name: "test", version: "0" });
   registerTaskTools(
     server,
@@ -35,7 +39,7 @@ async function connect(tasks: AgentTaskService, userId: string) {
       tasks,
       sandboxOps: { ensureRunning: async () => undefined },
       runtime: { getLabels: () => ({ metadata: {}, annotations: {} }) },
-      control: { canAccessSandbox: () => true },
+      control: { canAccessSandbox: canAccess },
     } as unknown as ServerContainer,
     { id: userId } as AuthUser,
   );
@@ -163,6 +167,39 @@ describe("agent task tools", () => {
     });
     expect(fake.state.closed).toBe(1);
     expect((await call("get_task", {})).data).toEqual({ tasks: [] });
+  });
+
+  test("a task outlives its owner's access to the sandbox", async () => {
+    const { fake, tasks } = setup();
+    let access = true;
+    const call = await connect(tasks, "user-1", () => access);
+    const started = await call("send_prompt", {
+      sandboxId: SANDBOX,
+      prompt: "x",
+    });
+    const taskId = started.data.taskId as string;
+    fake.finish();
+    expect((await call("get_task", { taskId })).isError).toBe(false);
+
+    // Removed from the sandbox's org: the task id no longer opens anything.
+    access = false;
+    const sent = fake.prompts.length;
+    for (const [tool, args] of [
+      ["get_task", { taskId }],
+      ["send_prompt", { taskId, prompt: "more" }],
+      ["manage_task", { taskId, action: "cancel" }],
+      ["manage_task", { taskId, action: "close" }],
+    ] as const) {
+      const res = await call(tool, args);
+      expect(res.isError).toBe(true);
+      expect(res.data.error).toBe("NOT_FOUND");
+    }
+    expect(fake.prompts.length).toBe(sent);
+    expect((await call("get_task", {})).data).toEqual({ tasks: [] });
+
+    access = true;
+    expect((await call("get_task", { taskId })).data.status).toBe("idle");
+    expect((await call("get_task", {})).data.tasks).toHaveLength(1);
   });
 
   test("a running turn reports progress, not a reply", async () => {

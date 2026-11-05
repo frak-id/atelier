@@ -6,7 +6,7 @@ import { afterAll, beforeAll, describe, expect, test } from "bun:test";
 import { mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { ForbiddenError } from "../shared/errors.ts";
+import { ForbiddenError, ValidationError } from "../shared/errors.ts";
 import type { ControlContainer } from "./index.ts";
 
 let dataDir: string;
@@ -71,5 +71,45 @@ describe("default org", () => {
       ForbiddenError,
     );
     expect(() => control.defaultOrg.requireServerAdmin(owner)).not.toThrow();
+  });
+
+  test("the default org's slug can't be taken, changed or deleted through the API", () => {
+    control.defaultOrg.joinDefaultOrg(user());
+    const team = control.organizationService.getBySlug("team");
+    const teamId = team?.id ?? "";
+    const other = control.organizationService.create("Other", "other-org");
+
+    // Creating an org with the slug (the bootstrap path doesn't come through
+    // here: it creates the org itself).
+    expect(() => control.defaultOrg.assertSlugCreatable("team")).toThrow(
+      ValidationError,
+    );
+    expect(() => control.defaultOrg.assertSlugCreatable("TEAM")).toThrow(
+      ValidationError,
+    );
+    expect(() => control.defaultOrg.assertSlugCreatable("fresh")).not.toThrow();
+
+    // Renaming it, or renaming another org onto its slug.
+    expect(() =>
+      control.defaultOrg.assertSlugChangeAllowed(teamId, "team-2"),
+    ).toThrow(ValidationError);
+    expect(() =>
+      control.defaultOrg.assertSlugChangeAllowed(other.id, "team"),
+    ).toThrow(ValidationError);
+    // A display-name edit (no slug change) and an ordinary rename are fine.
+    expect(() =>
+      control.defaultOrg.assertSlugChangeAllowed(teamId, undefined),
+    ).not.toThrow();
+    expect(() =>
+      control.defaultOrg.assertSlugChangeAllowed(teamId, "team"),
+    ).not.toThrow();
+    expect(() =>
+      control.defaultOrg.assertSlugChangeAllowed(other.id, "other-2"),
+    ).not.toThrow();
+
+    expect(() => control.defaultOrg.assertDeletable(teamId)).toThrow(
+      ValidationError,
+    );
+    expect(() => control.defaultOrg.assertDeletable(other.id)).not.toThrow();
   });
 });

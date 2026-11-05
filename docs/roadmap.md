@@ -7,22 +7,21 @@ history stays readable.
 
 Security and access:
 
-- **Forward-auth is sign-in only.** A port with `auth: "forward"` lets any
-  signed-in Atelier user through (`GET /auth/forward`,
-  `infra/k8s/80-forward-auth.yaml`), not only members of the sandbox's org.
-  Only the auto-resume branch checks sandbox access. The session cookie is
-  scoped to the base domain, so a sandbox's own processes receive its
-  visitors' session token. A per-host tool cookie would close that.
+- **The session cookie reaches sandbox processes.** It is scoped to the base
+  domain, so a sandbox's own processes receive its visitors' session token. A
+  per-host tool cookie would close that.
 - **Previews are public.** A prebuild's dev-server ports skip forward-auth
   whatever they declare (`spawnSurface`), so preview links work without an
   Atelier account.
 - **The wake endpoint needs no login.** `GET /auth/wake` resumes a paused
-  sandbox for anyone who holds its preview URL. The id in the host is 12
-  random characters, and the resume uses the owner's credentials.
-- **Prebuilds are not caller-scoped.** Any authenticated user can list a
-  prebuild or edit its dev servers. Deleting one needs a server admin.
-- **`/v1/jobs` is not scoped to the caller.** Any authenticated user sees the
-  whole feed.
+  sandbox for anyone who holds one of its preview URLs (a public port without
+  forward-auth). The id in the host is 12 random characters, and the resume
+  uses the owner's credentials.
+- **Prebuilds are shared by every user.** Anyone can list a prebuild and spawn
+  from it, including a bake of a private repo they cannot read. Only its
+  creator or a server admin can change its dev servers, `env` values and file
+  contents are masked for everyone else, and deleting one needs a server
+  admin.
 - **Agent WebSocket tokens travel in the URL** (`?token=`) because the
   server's relays dial bare URLs. Moving to a header means passing headers
   through `api/ws-relay.ts`, `sessions/acp/acp-stream.ts` and `runtime.attach`.
@@ -96,3 +95,7 @@ Runtime and operations:
 - MCP split into `/mcp` and `/mcp/admin`.
 - Secrets stored as references, resolved at every boot; GitHub token encrypted.
 - One config source per key, with the infrastructure and operational split.
+- Access fixes from the November 2026 review: tool URLs check sandbox access,
+  the jobs feed is scoped, MCP task tools re-check sandbox access, prebuild dev
+  servers are editable by their creator or an admin only, the default org's
+  slug is reserved, and the agent token stays out of errors and logs.

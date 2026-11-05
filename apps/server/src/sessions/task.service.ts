@@ -42,6 +42,7 @@ import {
 } from "../shared/errors.ts";
 import { safeNanoid } from "../shared/lib/id.ts";
 import { createChildLogger } from "../shared/lib/logger.ts";
+import { redactAgentUrl } from "../shared/lib/redact.ts";
 import type {
   AgentSession as AcpAgentSession,
   AgentDispatch,
@@ -243,8 +244,10 @@ export interface AgentTaskServiceDeps {
   maxReplyChars?: number;
 }
 
+/** The message stored on a turn (and shown to everyone with access to the
+ * sandbox): any agent URL in it has its token masked. */
 function errorMessage(err: unknown): string {
-  return err instanceof Error ? err.message : String(err);
+  return redactAgentUrl(err instanceof Error ? err.message : String(err));
 }
 
 function preview(text: string): string {

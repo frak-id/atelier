@@ -1,5 +1,6 @@
 import { describe, expect, test } from "bun:test";
 import { ValidationError } from "../../shared/errors.ts";
+import { config } from "../../shared/lib/config.ts";
 import { keepHeadTail, safeTool, text } from "./format.ts";
 
 describe("text", () => {
@@ -33,6 +34,29 @@ describe("safeTool", () => {
     expect(JSON.parse(crashed.content[0]?.text ?? "").error).toBe(
       "INTERNAL_ERROR",
     );
+  });
+});
+
+describe("safeTool in production", () => {
+  test("an unexpected error's message is masked; elsewhere it is token-free", async () => {
+    const boom = safeTool("t", async () => {
+      throw new Error("failed ws://10.0.0.5:9997/attach/acp?token=secret");
+    });
+    const previous = config.server.mode;
+    try {
+      config.server.mode = "production";
+      const masked = JSON.parse((await boom()).content[0]?.text ?? "");
+      expect(masked).toEqual({
+        error: "INTERNAL_ERROR",
+        message: "Internal server error",
+      });
+      config.server.mode = "local";
+      const dev = JSON.parse((await boom()).content[0]?.text ?? "");
+      expect(dev.message).toContain("failed ws://10.0.0.5:9997");
+      expect(dev.message).not.toContain("secret");
+    } finally {
+      config.server.mode = previous;
+    }
   });
 });
 

@@ -121,6 +121,18 @@ export function sandboxIdFromHost(
   return /^[a-z0-9]+$/.test(id) ? id : undefined;
 }
 
+/** Whether `host` (any case, with or without a port) is one of the
+ * sandbox's `previewHosts`: the only hosts the unauthenticated wake check
+ * answers for. */
+export function isPreviewHost(
+  host: string | undefined,
+  previewHosts: string[] | undefined,
+): boolean {
+  if (!host || !previewHosts) return false;
+  const lower = host.toLowerCase().replace(/:\d+$/, "");
+  return previewHosts.some((h) => h.toLowerCase() === lower);
+}
+
 export type WakeDecision =
   /** Let the request through (the sandbox is up, or not ours to wake). */
   | { status: 200 }

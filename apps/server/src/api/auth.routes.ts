@@ -32,6 +32,7 @@ import {
   decideForwardAuth,
   decideWake,
   type ForwardedRequest,
+  isPreviewHost,
   isReturnUrl,
   sandboxIdFromHost,
   WAKE_RETRY_AFTER_SECONDS,
@@ -353,7 +354,9 @@ export function createAuthRoutes(container: ServerContainer) {
       set.headers["cache-control"] = "no-store";
       if (decision.status === 302) return redirect(decision.location);
       if (decision.status === 200) {
-        // Signed in: a paused sandbox the caller may reach wakes up.
+        // A tool host of a known sandbox is only for who may access that
+        // sandbox (the access rule); a paused one they may reach wakes up.
+        // Any other host keeps the plain "signed in" rule.
         const sandboxId = sandboxIdFromHost(
           forwarded.host,
           config.domain.baseDomain,
@@ -361,26 +364,40 @@ export function createAuthRoutes(container: ServerContainer) {
         const labels = sandboxId
           ? container.runtime.getLabels(sandboxId)
           : undefined;
-        const mayWake =
-          labels !== undefined &&
-          (isAuthBypassed() ||
-            (user !== null &&
-              container.control.canAccessSandbox(user.id, labels)));
-        return mayWake ? wakeReply(sandboxId, forwarded, set) : "";
+        if (sandboxId === undefined || labels === undefined) return "";
+        const allowed =
+          isAuthBypassed() ||
+          (user !== null &&
+            container.control.canAccessSandbox(user.id, labels));
+        if (!allowed) {
+          set.status = 403;
+          return { error: "FORBIDDEN", message: "No access to this sandbox" };
+        }
+        return wakeReply(sandboxId, forwarded, set);
       }
       set.status = decision.status;
       return { error: "UNAUTHORIZED", message: "Sign in to Atelier first" };
     })
     // Wake-only check for public preview URLs (no login, ever): 200 while the
-    // sandbox runs, a paused one is resumed and answered 503 like above.
+    // sandbox runs, a paused one is resumed and answered 503 like above. Only
+    // for the host of one of the sandbox's preview ports (public, no
+    // forward-auth); an unknown sandbox and any other host are a plain 404,
+    // never a resume.
     .get("/wake", ({ headers, set }) => {
       set.headers["cache-control"] = "no-store";
       const forwarded = forwardedOf(headers);
-      return wakeReply(
-        sandboxIdFromHost(forwarded.host, config.domain.baseDomain),
-        forwarded,
-        set,
+      const sandboxId = sandboxIdFromHost(
+        forwarded.host,
+        config.domain.baseDomain,
       );
+      const hosts = sandboxId
+        ? container.runtime.getPreviewHosts(sandboxId)
+        : undefined;
+      if (!sandboxId || !isPreviewHost(forwarded.host, hosts)) {
+        set.status = 404;
+        return { error: "NOT_FOUND", message: "Not found" };
+      }
+      return wakeReply(sandboxId, forwarded, set);
     })
     .get("/verify", async ({ cookie, set }) => {
       const token = cookie.sandbox_token?.value as string | undefined;

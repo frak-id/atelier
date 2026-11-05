@@ -17,6 +17,7 @@ import {
   withoutSurface,
 } from "@atelier/spec";
 import {
+  ForbiddenError,
   NotFoundError,
   SandboxError,
   ValidationError,
@@ -57,6 +58,16 @@ export interface PrebuildOptions {
   signal?: AbortSignal;
   onLog?: OnLog;
   saveSurface?: boolean;
+  /** The caller is a server admin: may rewrite any recipe's surface (the
+   * policy lives in api/, the runtime only enforces it). */
+  surfaceAdmin?: boolean;
+}
+
+/** The user acting on a prebuild (editing its surface, reading its recipe):
+ * an opaque user id, and whether they are a server admin. */
+export interface SurfaceEditor {
+  userId: string;
+  admin: boolean;
 }
 
 /** A stored prebuild whose repos moved upstream: the recipe to bake again. */
@@ -92,6 +103,37 @@ function prebuildLineageKey(spec: PrebuildSpec): string {
     repos: spec.repos ?? [],
   };
   return createHash("sha256").update(JSON.stringify(keyed)).digest("hex");
+}
+
+/** What stands in for a masked `env` value or file content. */
+const REDACTED = "[redacted]";
+
+function mayReadSecrets(
+  snapshot: SnapshotRecord,
+  viewer: SurfaceEditor,
+): boolean {
+  return viewer.admin || snapshot.createdBy === viewer.userId;
+}
+
+/** The recipe with its literal secrets masked: `env` values and file
+ * contents. Keys, paths and everything else stay, so it still reads. */
+function redactedSpec(
+  spec: PrebuildSpec | undefined,
+): PrebuildSpec | undefined {
+  if (!spec) return spec;
+  return {
+    ...spec,
+    ...(spec.env
+      ? {
+          env: Object.fromEntries(
+            Object.keys(spec.env).map((key) => [key, REDACTED]),
+          ),
+        }
+      : {}),
+    ...(spec.files
+      ? { files: spec.files.map((file) => ({ ...file, content: REDACTED })) }
+      : {}),
+  };
 }
 
 export class PrebuildService {
@@ -160,6 +202,12 @@ export class PrebuildService {
     }
     const declared = runtimeSurfaceOf(spec);
     const save = options.saveSurface === true && hasSurface(declared);
+    if (save) {
+      this.assertMaySaveSurface(spec, declared, {
+        userId: options.createdBy,
+        admin: options.surfaceAdmin === true,
+      });
+    }
     if (!options.force) {
       const existing = this.snapshots.getByHash(hash);
       if (existing) {
@@ -276,9 +324,14 @@ export class PrebuildService {
    * re-baked after a push (a newer ref of the same recipe) gets it too.
    * An empty surface clears it.
    */
-  setSurface(ref: string, surface: RuntimeSurface): PrebuildSpec {
+  setSurface(
+    ref: string,
+    surface: RuntimeSurface,
+    editor: SurfaceEditor,
+  ): PrebuildSpec {
     const record = this.prebuildRecord(ref);
     if (!record?.spec) throw new NotFoundError("Prebuild", ref);
+    this.assertMaySaveSurface(record.spec, runtimeSurfaceOf(surface), editor);
     this.writeRecipeSurface(record, runtimeSurfaceOf(surface));
     return this.snapshots.get(ref)?.spec ?? record.spec;
   }
@@ -299,8 +352,13 @@ export class PrebuildService {
   /** List stored prebuild snapshots, newest first — the read side of
    * `prebuild()`, for the console's prebuild list and one-tap spawn. Each
    * record is flagged `inUse` so the console can offer deletion of the stale,
-   * unreferenced ones without risking a live boot source. */
-  list(): PrebuildRecord[] {
+   * unreferenced ones without risking a live boot source.
+   *
+   * With a `viewer`, a recipe's `env` values and file contents (build-time
+   * credentials, stored in clear) are masked unless the viewer is a server
+   * admin or the snapshot's creator. Without one, the list is complete: for
+   * server-side callers that never hand it out. */
+  list(viewer?: SurfaceEditor): PrebuildRecord[] {
     const referenced = referencedSnapshotRefs(this.sandboxes, this.snapshots);
     return this.prebuilds()
       .map((s) => ({
@@ -309,7 +367,8 @@ export class PrebuildService {
         image: s.image,
         parent: s.parent,
         metadata: s.metadata,
-        spec: s.spec,
+        spec:
+          viewer && !mayReadSecrets(s, viewer) ? redactedSpec(s.spec) : s.spec,
         repoHeads: s.repoHeads,
         inUse: referenced.has(s.ref),
         createdAt: s.createdAt,
@@ -443,6 +502,30 @@ export class PrebuildService {
     return this.prebuilds()
       .filter((s) => s.spec && prebuildRecipeKey(s.spec) === key)
       .sort((a, b) => b.createdAt.localeCompare(a.createdAt));
+  }
+
+  /**
+   * A recipe's dev servers run as commands inside every sandbox spawned from
+   * it, so changing an existing recipe's surface is limited to a server admin
+   * or the recipe's creator (the `createdBy` of its oldest snapshot: a
+   * rebuild by someone else never makes them the creator). A recipe with no
+   * snapshot yet (its first bake) or an unchanged surface needs no right.
+   */
+  private assertMaySaveSurface(
+    spec: PrebuildSpec,
+    wanted: RuntimeSurface,
+    editor: { userId?: string; admin: boolean },
+  ): void {
+    const snapshots = this.recipeSnapshots(spec);
+    if (snapshots.length === 0 || editor.admin) return;
+    if (canonicalJson(wanted) === canonicalJson(this.recipeSurface(spec))) {
+      return;
+    }
+    const creator = snapshots.at(-1)?.createdBy;
+    if (creator !== undefined && creator === editor.userId) return;
+    throw new ForbiddenError(
+      "Only the prebuild's creator or a server admin can change its dev servers",
+    );
   }
 
   /** The recipe's current dev servers: the newest of its snapshots' (they

@@ -72,6 +72,18 @@ export function buildPortIngresses(
     });
 }
 
+/** The hosts of a sandbox's preview ports: public ones without
+ * forward-auth, i.e. the ones `buildPortIngresses` gives the wake-only
+ * middleware (the only hosts that wake a sandbox without a login). */
+export function buildPreviewHosts(
+  sandboxId: string,
+  ports: PortEntry[] = [],
+): string[] {
+  return ports
+    .filter((p) => p.public && p.auth !== "forward")
+    .map((p) => toolHost(p.name, sandboxId, sandboxDomain()));
+}
+
 /** Public URLs for a spec's declared ports. */
 export function buildPortUrls(
   sandboxId: string,

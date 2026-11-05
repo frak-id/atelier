@@ -181,7 +181,7 @@ Traefik and its forward-auth middleware.
 
 | Access | What happens |
 |---|---|
-| Tool URL with `auth: "forward"` | `GET /auth/forward`: when the caller is signed in and can access the sandbox (`canAccessSandbox`), the server starts a resume and answers 503. |
+| Tool URL with `auth: "forward"` | `GET /auth/forward`: a signed-in caller who cannot access the sandbox (`canAccessSandbox`) gets 403. One who can starts a resume and gets 503 until it runs. |
 | Public preview URL | The Ingress carries the `atelier-wake` middleware (`kubernetes.wakeIngressAnnotations`), which calls `GET /auth/wake`. It needs no login, resumes the sandbox and answers 503. It answers 200 when the sandbox is not paused. |
 | SSH | `ssh/index.ts` resumes the sandbox and waits up to 3 minutes. Channels opened during the wait are buffered. |
 | Operations | `exec`, files, `manage_process` and `send_prompt` (HTTP `/v1` and MCP) call `SandboxOps.ensureRunning(id)`, which joins an in-flight resume and waits up to 120 s. A resume that fails is a 409 and the command never runs. |
@@ -196,7 +196,12 @@ caller's, and goes through the same boot-time secret resolution as any resume.
 
 Not covered: `expose_port` and live env or process changes do not auto-resume.
 `/auth/wake` is unauthenticated by design: anyone who holds a preview URL (the
-sandbox id in the host is unguessable) can resume that sandbox. A wake counts
+sandbox id in the host is unguessable) can resume that sandbox. It only wakes
+for a host that is one of the sandbox's preview hosts (a public port without
+forward-auth) and answers 404 for anything else. Neither `/auth/wake` nor
+`/auth/forward` is served by the public console nginx: Traefik calls them on
+the server Service directly. A failed wake-up arms a 30 s cooldown so a broken
+sandbox is not resumed on every page refresh. A wake counts
 as `lifecycle` activity, so the idle clock restarts.
 
 ## 9. Not in scope

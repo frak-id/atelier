@@ -7,7 +7,11 @@
  */
 import { beforeEach, describe, expect, test } from "bun:test";
 import type { SandboxSpec } from "@atelier/spec";
-import { ConflictError, NotFoundError } from "../shared/errors.ts";
+import {
+  ConflictError,
+  ForbiddenError,
+  NotFoundError,
+} from "../shared/errors.ts";
 import { RuntimeService } from "./runtime.service.ts";
 import {
   FakeAgentClient,
@@ -38,6 +42,8 @@ function makeRuntime() {
   });
   return { runtime, sandboxes, snapshots, toolsets, sandboxToolsetRefs };
 }
+
+const ADMIN = { userId: "root", admin: true };
 
 const TOOLSET_REF = `toolsets/alice-pi-stack@sha256:${"a".repeat(64)}`;
 
@@ -79,6 +85,50 @@ describe("RuntimeService lifecycle", () => {
     const resumed = sandboxes.get("sb1");
     expect(resumed?.status).toBe("running");
     expect(resumed?.pauseSnapshotRef).toBeUndefined();
+  });
+
+  test("resume keeps a pause snapshot another sandbox boots from", async () => {
+    const { runtime, snapshots, sandboxes } = makeRuntime();
+    await runtime.create(spec, { id: "sb1" });
+    const snap = await runtime.pause("sb1");
+    await runtime.create(
+      { ...spec, source: { snapshot: snap.ref } },
+      { id: "sb2" },
+    );
+
+    await runtime.resume("sb1");
+    expect(sandboxes.get("sb1")?.pauseSnapshotRef).toBeUndefined();
+    expect(snapshots.get(snap.ref)).toBeDefined();
+
+    // Unreferenced pause snapshots are still dropped on resume.
+    const other = await runtime.pause("sb1");
+    await runtime.resume("sb1");
+    expect(snapshots.get(other.ref)).toBeUndefined();
+  });
+
+  test("destroy refuses while a prebuild is chained on the sandbox's snapshot", async () => {
+    const { runtime, snapshots } = makeRuntime();
+    await runtime.create(spec, { id: "sb1" });
+    const snap = await runtime.snapshot("sb1");
+    snapshots.put({
+      hash: "h-child",
+      kind: "prebuild",
+      ref: "snap-child",
+      image: "registry.test/base:1",
+      parent: snap.ref,
+      spec: { source: { snapshot: snap.ref } },
+      createdAt: new Date().toISOString(),
+    });
+
+    await expect(runtime.destroy("sb1")).rejects.toThrow(/snap-child/);
+    expect(runtime.list()).toHaveLength(1);
+    expect(snapshots.get(snap.ref)).toBeDefined();
+
+    // Once the dependent prebuild is gone, destroy goes through.
+    snapshots.delete("snap-child");
+    await runtime.destroy("sb1");
+    expect(runtime.list()).toHaveLength(0);
+    expect(snapshots.get(snap.ref)).toBeUndefined();
   });
 
   test("destroy drops the pause snapshot's store row", async () => {
@@ -261,7 +311,7 @@ describe("prebuild processes/ports", () => {
     // Same snapshot: adding (or editing) processes/ports doesn't re-bake…
     const second = await runtime.prebuild(
       { ...baked, ...surface },
-      { saveSurface: true },
+      { saveSurface: true, surfaceAdmin: true },
     );
     expect(second).toEqual(first);
     // …but the stored recipe, applied at boot, now carries them.
@@ -281,7 +331,7 @@ describe("prebuild processes/ports", () => {
   test("a spawn's bake never overwrites them", async () => {
     const { runtime } = makeRuntime();
     const old = await runtime.prebuild(baked);
-    runtime.setPrebuildSurface(old.ref, surface);
+    runtime.setPrebuildSurface(old.ref, surface, ADMIN);
     // The repo moved: the spawn re-resolving its inline recipe bakes.
     const fresh = await runtime.prebuild(
       { ...baked, ...stale },
@@ -304,7 +354,7 @@ describe("prebuild processes/ports", () => {
     const old = await runtime.prebuild({ ...baked, ...surface });
     const fresh = await runtime.prebuild(
       { ...baked, ...stale },
-      { force: true, saveSurface: true },
+      { force: true, saveSurface: true, surfaceAdmin: true },
     );
     expect(runtime.prebuildSurface(fresh.ref)).toEqual(stale);
     expect(runtime.prebuildSpec(old.ref)?.ports).toEqual(stale.ports);
@@ -318,7 +368,7 @@ describe("prebuild processes/ports", () => {
       runtime.prebuild({ ...baked, ...stale }, { force: true }),
       runtime.prebuild(
         { ...baked, ...surface },
-        { force: true, saveSurface: true },
+        { force: true, saveSurface: true, surfaceAdmin: true },
       ),
     ]);
     expect(saved.ref).toBe(spawned.ref);
@@ -329,7 +379,7 @@ describe("prebuild processes/ports", () => {
   test("a spawn re-resolving a copied recipe never clears them", async () => {
     const { runtime } = makeRuntime();
     const { ref } = await runtime.prebuild(baked);
-    runtime.setPrebuildSurface(ref, surface);
+    runtime.setPrebuildSurface(ref, surface, ADMIN);
     // A caller holding a copy of the recipe carries the pre-edit surface.
     await runtime.prebuild(baked);
     await runtime.prebuild({ ...baked, ...surface, ports: [] });
@@ -340,18 +390,56 @@ describe("prebuild processes/ports", () => {
   test("setPrebuildSurface saves and clears, without a bake", async () => {
     const { runtime } = makeRuntime();
     const { ref } = await runtime.prebuild(baked);
-    const saved = runtime.setPrebuildSurface(ref, surface);
+    const saved = runtime.setPrebuildSurface(ref, surface, ADMIN);
     expect(saved.ports).toEqual(surface.ports);
-    runtime.setPrebuildSurface(ref, { processes: [], ports: [] });
+    runtime.setPrebuildSurface(ref, { processes: [], ports: [] }, ADMIN);
     expect(runtime.prebuildSpec(ref)).toEqual(baked);
     expect(runtime.listPrebuilds()).toHaveLength(1);
-    expect(() => runtime.setPrebuildSurface("snap-nope", surface)).toThrow();
+    expect(() =>
+      runtime.setPrebuildSurface("snap-nope", surface, ADMIN),
+    ).toThrow();
+  });
+
+  test("only the recipe's creator or a server admin may change them", async () => {
+    const { runtime } = makeRuntime();
+    const alice = { userId: "alice", admin: false };
+    const bob = { userId: "bob", admin: false };
+    const { ref } = await runtime.prebuild(baked, {
+      githubToken: "t",
+      createdBy: "alice",
+    });
+    // Another user: refused through both writers, nothing changes.
+    expect(() => runtime.setPrebuildSurface(ref, surface, bob)).toThrow(
+      ForbiddenError,
+    );
+    expect(
+      runtime.prebuild(
+        { ...baked, ...surface },
+        { saveSurface: true, createdBy: "bob" },
+      ),
+    ).rejects.toThrow(ForbiddenError);
+    expect(
+      runtime.prebuild(
+        { ...baked, ...surface },
+        { force: true, saveSurface: true, createdBy: "bob" },
+      ),
+    ).rejects.toThrow(ForbiddenError);
+    expect(runtime.prebuildSurface(ref)).toEqual({});
+    // The creator and an admin may; so may anyone re-saving what is there.
+    runtime.setPrebuildSurface(ref, surface, alice);
+    expect(runtime.prebuildSurface(ref)).toEqual(surface);
+    expect(() => runtime.setPrebuildSurface(ref, surface, bob)).not.toThrow();
+    await runtime.prebuild(
+      { ...baked, ...stale },
+      { saveSurface: true, surfaceAdmin: true },
+    );
+    expect(runtime.prebuildSurface(ref)).toEqual(stale);
   });
 
   test("a forced re-bake from a copy inherits them", async () => {
     const { runtime } = makeRuntime();
     const old = await runtime.prebuild(baked);
-    runtime.setPrebuildSurface(old.ref, surface);
+    runtime.setPrebuildSurface(old.ref, surface, ADMIN);
     // Forced re-bake from a surface-less copy (the quick-prebuild dialog).
     await runtime.prebuild(baked, { force: true });
     expect(runtime.prebuildSpec(old.ref)?.processes).toEqual(surface.processes);
@@ -369,7 +457,7 @@ describe("prebuild processes/ports", () => {
       spec: { ...baked, metadata: { repo: "acme/mono" } },
       createdAt: new Date(Date.now() + 1000).toISOString(),
     });
-    runtime.setPrebuildSurface(old.ref, surface);
+    runtime.setPrebuildSurface(old.ref, surface, ADMIN);
     expect(runtime.prebuildSpec("snap-newer")?.ports).toEqual(surface.ports);
     expect(runtime.prebuildSurface("snap-newer")).toEqual(surface);
   });
@@ -377,7 +465,7 @@ describe("prebuild processes/ports", () => {
   test("a different recipe keeps its own", async () => {
     const { runtime } = makeRuntime();
     const a = await runtime.prebuild(baked);
-    runtime.setPrebuildSurface(a.ref, surface);
+    runtime.setPrebuildSurface(a.ref, surface, ADMIN);
     const b = await runtime.prebuild({ ...baked, build: ["true"] });
     expect(runtime.prebuildSurface(b.ref)).toEqual({});
   });
@@ -404,6 +492,39 @@ describe("prebuild creator", () => {
       createdBy: "alice",
     });
     expect(snapshots.get(ref)?.createdBy).toBe("alice");
+  });
+
+  test("the list masks env values and file contents for who did not bake it", async () => {
+    const { runtime } = makeRuntime();
+    await runtime.prebuild(
+      {
+        ...baked,
+        env: { NPM_TOKEN: "npm_secret" },
+        files: [{ path: "/home/dev/.npmrc", content: "//r/:_authToken=sek" }],
+      },
+      { githubToken: "t", createdBy: "alice" },
+    );
+    const view = (viewer?: { userId: string; admin: boolean }) =>
+      runtime.listPrebuilds(viewer)[0]?.spec;
+
+    const masked = view({ userId: "bob", admin: false });
+    expect(masked?.env).toEqual({ NPM_TOKEN: "[redacted]" });
+    expect(masked?.files).toEqual([
+      { path: "/home/dev/.npmrc", content: "[redacted]" },
+    ]);
+    expect(JSON.stringify(masked)).not.toContain("secret");
+    expect(masked?.build).toEqual(baked.build);
+    expect(masked?.repos).toEqual(baked.repos);
+
+    // The creator and a server admin read the recipe as stored.
+    for (const viewer of [
+      { userId: "alice", admin: false },
+      { userId: "root", admin: true },
+    ]) {
+      expect(view(viewer)?.env).toEqual({ NPM_TOKEN: "npm_secret" });
+    }
+    // The stored recipe itself is untouched.
+    expect(view()?.env).toEqual({ NPM_TOKEN: "npm_secret" });
   });
 
   test("a cache hit adopts a creator-less prebuild, never replaces one", async () => {

@@ -107,16 +107,23 @@ in WS `open` handlers and in every MCP tool taking a sandbox id, and
 `accessibleSandboxes` for list endpoints. Denied and unknown both answer
 `NotFoundError`. A new `/v1` route with a sandbox `:id` is covered by
 registering it after the guard. A sandbox id arriving in a body or query needs
-an explicit `requireSandboxAccess`. Not covered: `/v1/jobs` (the feed is
-unscoped).
+an explicit `requireSandboxAccess`. Tool URLs apply the same rule
+(`/auth/forward` answers 403). The jobs feed is scoped in `api/job-access.ts`:
+a caller sees a job they own (`metadata.owner`), one on a sandbox they can
+access, or every job as a server admin; cancel is owner or admin.
 
 ## Server admins
 
 A server admin is an owner of the org named by `auth.defaultOrg`
 (`control/default-org.ts`). Admin-only: `PUT /api/config`, image build,
 register and delete, toolset publish and remove, prebuild delete, and the
-whole `/mcp/admin` endpoint. In local mode, or when `auth.defaultOrg` is unset
-(only allowed outside production), everyone is an admin.
+whole `/mcp/admin` endpoint. A prebuild's dev servers (`surface`) can be
+changed by its creator or an admin, and `GET /v1/prebuilds` masks `env` values
+and file contents for everyone else. The default org's slug is reserved: it
+cannot be renamed, deleted or created through the API (only
+`joinDefaultOrg` creates it on a fresh install). In local mode, or when
+`auth.defaultOrg` is unset (only allowed outside production), everyone is an
+admin.
 
 ## Related docs
 

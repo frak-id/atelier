@@ -92,7 +92,11 @@ export function startToolboxRefresh(
     {
       kind: JOB_KIND,
       target: tb.slug,
-      metadata: { toolboxId: tb.id, trigger: options.trigger },
+      metadata: {
+        toolboxId: tb.id,
+        trigger: options.trigger,
+        ...(options.userId ? { owner: options.userId } : {}),
+      },
     },
     (signal, jobLog) =>
       runToolboxRefresh(container, tb.id, options, {

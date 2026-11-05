@@ -726,10 +726,11 @@ mod tests {
         let sup = test_supervisor(cfg);
         sup.reconcile().await;
         // It exits 1, backs off (500ms), restarts through start() at least once.
-        // Poll up to ~3s so the assertion isn't wedged to a fixed sleep under
+        // Poll up to ~10s: the process runs under `bash -l`, and a developer
+        // machine's login profile alone can take ~2s per spawn under
         // parallel-test CPU contention.
         let mut restarted = false;
-        for _ in 0..30 {
+        for _ in 0..100 {
             tokio::time::sleep(Duration::from_millis(100)).await;
             if sup.get("flap").await.is_some_and(|s| s.generation >= 2) {
                 restarted = true;

@@ -452,7 +452,10 @@ It runs automatically at startup, in order, and it is one-way:
   elsewhere.
 
 After the migration, orphaned old pause snapshots appear as `manual` snapshots
-and age out under `snapshot.manualKeep`. Stored specs of existing sandboxes
+and age out under `snapshot.manualKeep`. They cannot be told apart from
+deliberate manual snapshots, and they are newer, so on a sandbox with many of
+them the next manual snapshot can prune an older deliberate one. List a
+sandbox's snapshots before taking new ones if that matters. Stored specs of existing sandboxes
 still hold resolved values until each one resumes; the resume replaces them
 with the unresolved merged spec.
 

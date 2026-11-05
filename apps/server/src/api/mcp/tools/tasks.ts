@@ -151,6 +151,16 @@ export function registerTaskTools(
 ): void {
   const { tasks } = container;
 
+  /** The task's own view, once the caller still has access to its sandbox: a
+   * task outlives a membership (it survives restarts for a week), so the
+   * task owner is re-checked against the sandbox access rule on every use.
+   * Looked up without waiting, so a denied caller never blocks. */
+  const accessibleTask = async (taskId: string): Promise<TaskViewData> => {
+    const found = await tasks.get(user.id, taskId);
+    requireSandboxAccess(container, user.id, found.sandboxId);
+    return found;
+  };
+
   server.registerTool(
     "send_prompt",
     {
@@ -224,7 +234,7 @@ export function registerTaskTools(
             "only apply when starting a task (pass `sandboxId`, not `taskId`)",
           );
           // The task's sandbox may have been paused since the last turn.
-          const { sandboxId: taskSandboxId } = await tasks.get(user.id, taskId);
+          const { sandboxId: taskSandboxId } = await accessibleTask(taskId);
           await container.sandboxOps.ensureRunning(taskSandboxId);
           await tasks.sendPrompt(user.id, taskId, prompt);
           return text(
@@ -350,6 +360,12 @@ export function registerTaskTools(
             tasks: tasks
               .list(user.id, sandboxId)
               .filter((t) => !status || t.status === status)
+              .filter((t) => {
+                const labels = container.runtime.getLabels(t.sandboxId);
+                return (
+                  labels && container.control.canAccessSandbox(user.id, labels)
+                );
+              })
               .map((t) => ({
                 taskId: t.taskId,
                 sandboxId: t.sandboxId,
@@ -367,6 +383,7 @@ export function registerTaskTools(
           { sandboxId, status },
           "only filter the task list (omit `taskId` to list)",
         );
+        await accessibleTask(taskId);
         const full = view === "full";
         return text(
           taskView(
@@ -403,6 +420,7 @@ export function registerTaskTools(
       },
     },
     safeTool("manage_task", async ({ taskId, action }) => {
+      await accessibleTask(taskId);
       if (action === "cancel") {
         const view = await tasks.cancel(user.id, taskId);
         return text({ taskId, status: view.status });

@@ -67,10 +67,12 @@ import { BuildPods, type OnLog } from "./build-pod.ts";
 import { getRemoteCommitHash } from "./git-remote.ts";
 import { OpLock } from "./op-lock.ts";
 import { writePatchFiles } from "./patch-files.ts";
+import { buildPreviewHosts } from "./ports.ts";
 import {
   type PrebuildOptions,
   PrebuildService,
   type SpawnPrebuild,
+  type SurfaceEditor,
 } from "./prebuild.service.ts";
 import { resourceName } from "./resource-name.ts";
 import {
@@ -452,6 +454,14 @@ export class RuntimeService {
     );
   }
 
+  /** The hosts a sandbox serves previews on (public ports without
+   * forward-auth), or undefined when it is unknown. A synchronous store
+   * read, for the unauthenticated wake check. */
+  getPreviewHosts(id: string): string[] | undefined {
+    const record = this.sandboxes.get(id);
+    return record && buildPreviewHosts(id, record.spec.ports);
+  }
+
   /** All sandboxes, from persistence only (no agent round-trips). Live
    * process health is on `get(id)`. With `metadata`, only those whose
    * metadata holds every one of its pairs. */
@@ -629,7 +639,15 @@ export class RuntimeService {
         },
       });
       this.activity.touch(id, "lifecycle");
-      if (record.pauseSnapshotRef) {
+      // Kept while another sandbox boots from it (or a prebuild is chained
+      // on it): deleting it would strand that sandbox. It stays owned by this
+      // one, and `destroy` re-owns it to the dependent.
+      if (
+        record.pauseSnapshotRef &&
+        !referencedSnapshotRefs(this.sandboxes, this.snapshots).has(
+          record.pauseSnapshotRef,
+        )
+      ) {
         await removeSnapshot(
           this.backend,
           this.snapshots,
@@ -683,7 +701,13 @@ export class RuntimeService {
   /** Hand the snapshots `id` owns that another sandbox boots from to that
    * sandbox, before destroy's label sweep deletes them: it would otherwise
    * break the other sandbox's pause/resume/fork (its source is gone). The
-   * new owner's own destroy repeats this for the next dependent. */
+   * new owner's own destroy repeats this for the next dependent.
+   *
+   * A snapshot that a prebuild is chained on (`parent`) has no sandbox to
+   * hand it to, and the sweep would delete the base of that chain (its
+   * rebakes and spawns would break), so destroy is refused with a
+   * `ConflictError` naming the dependents, before anything is re-owned. The
+   * prebuild is deleted first (`DELETE /v1/prebuilds/:ref`). */
   private async reownReferencedSnapshots(id: string): Promise<void> {
     const dependents = new Map<string, string>();
     for (const other of this.sandboxes.list()) {
@@ -691,7 +715,22 @@ export class RuntimeService {
       const ref = other.spec.source.snapshot;
       if (!dependents.has(ref)) dependents.set(ref, other.id);
     }
-    for (const snap of this.snapshots.list()) {
+    const all = this.snapshots.list();
+    const owned = new Set(
+      all.filter((s) => s.sandboxId === id && !dependents.has(s.ref)),
+    );
+    const chained = all.filter(
+      (s) =>
+        s.sandboxId !== id && [...owned].some((own) => own.ref === s.parent),
+    );
+    if (chained.length > 0) {
+      throw new ConflictError(
+        `Sandbox ${id} owns snapshots that other snapshots are chained on ` +
+          `(${chained.map((s) => s.ref).join(", ")}); delete those prebuilds ` +
+          "first, then destroy it.",
+      );
+    }
+    for (const snap of all) {
       const heir = dependents.get(snap.ref);
       if (snap.sandboxId !== id || !heir) continue;
       await this.backend.volumes.reownSnapshot(snap.ref, heir);
@@ -1060,8 +1099,12 @@ export class RuntimeService {
     return this.prebuilds.prebuildForSpawn(spec, options);
   }
 
-  setPrebuildSurface(ref: string, surface: RuntimeSurface): PrebuildSpec {
-    return this.prebuilds.setSurface(ref, surface);
+  setPrebuildSurface(
+    ref: string,
+    surface: RuntimeSurface,
+    editor: SurfaceEditor,
+  ): PrebuildSpec {
+    return this.prebuilds.setSurface(ref, surface, editor);
   }
 
   prebuildSpec(ref: string): PrebuildSpec | undefined {
@@ -1072,8 +1115,10 @@ export class RuntimeService {
     return this.prebuilds.surfaceOf(ref);
   }
 
-  listPrebuilds(): PrebuildRecord[] {
-    return this.prebuilds.list();
+  /** The stored prebuilds; with a `viewer` (anyone who hands the list to a
+   * caller), the secrets of recipes they did not create are masked. */
+  listPrebuilds(viewer?: SurfaceEditor): PrebuildRecord[] {
+    return this.prebuilds.list(viewer);
   }
 
   deletePrebuild(ref: string): Promise<void> {

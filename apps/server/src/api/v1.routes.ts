@@ -25,10 +25,15 @@ import {
 } from "@atelier/spec";
 import { Elysia, sse, t } from "elysia";
 import type { JobRecord } from "../runtime/index.ts";
-import { NotFoundError, ValidationError } from "../shared/errors.ts";
+import {
+  ForbiddenError,
+  NotFoundError,
+  ValidationError,
+} from "../shared/errors.ts";
 import { OWNER_ID_METADATA } from "../shared/lib/git-attribution.ts";
 import { createAuthPlugin } from "./auth.plugin.ts";
 import type { ServerContainer } from "./container.ts";
+import { createJobAccess, ownedJobMetadata } from "./job-access.ts";
 import {
   accessibleSandboxes,
   requireSandboxAccess,
@@ -65,6 +70,15 @@ function parseMetadataFilter(raw?: string): Record<string, string> {
   return parsed as Record<string, string>;
 }
 
+/** A sandbox state without `generated`: the agent token, pod IP and host
+ * keys are server-side credentials, not something every org member reads. */
+function withoutGenerated<T extends { generated?: unknown }>(
+  state: T,
+): Omit<T, "generated"> {
+  const { generated: _generated, ...rest } = state;
+  return rest;
+}
+
 /** `GET /v1/sandboxes?owner=`: `me` is the caller. */
 function ownerFilter(owner: string | undefined, userId: string) {
   return owner === "me" ? userId : owner;
@@ -73,6 +87,14 @@ function ownerFilter(owner: string | undefined, userId: string) {
 export function createV1Routes(container: ServerContainer) {
   const { runtime, control, jobs, idle, sandboxOps, toolboxOps } = container;
   const authPlugin = createAuthPlugin(control);
+  const jobAccess = createJobAccess(container);
+
+  /** The job, or the same 404 as an unknown one when `userId` may not see it. */
+  const visibleJob = (id: string, userId: string): JobRecord => {
+    const job = jobs.get(id);
+    if (!jobAccess.canSee(userId, job)) throw new NotFoundError("Job", id);
+    return job;
+  };
 
   // The durable, observable queue for long runtime ops (prebuild bake, toolset
   // build/capture, sandbox spawn, image build). POSTs to those endpoints answer
@@ -86,26 +108,45 @@ export function createV1Routes(container: ServerContainer) {
   // registration bug that 404s one of them. An isolated sub-router avoids it.
   const jobRoutes = new Elysia({ prefix: "/jobs" })
     .use(authPlugin)
-    .get("/", ({ query }) => jobs.list(query.limit ?? 200), {
-      query: t.Object({ limit: t.Optional(t.Number()) }),
-    })
-    .get("/:id", ({ params }) => jobs.get(params.id), {
+    // Scoped by `api/job-access.ts`: a caller's own jobs and the ones on
+    // sandboxes they may access (everything for a server admin). A job they
+    // may not see is a 404, like an unknown one.
+    .get(
+      "/",
+      ({ query, user }) =>
+        jobs
+          .list()
+          .filter((job) => jobAccess.canSee(user.id, job))
+          .slice(0, query.limit ?? 200),
+      { query: t.Object({ limit: t.Optional(t.Number()) }) },
+    )
+    .get("/:id", ({ params, user }) => visibleJob(params.id, user.id), {
       params: t.Object({ id: t.String() }),
     })
     // Live log tail for a job (build step output). Mirrors the image builder's
     // `{ status, log }` shape; the console polls it while the job is active.
     .get(
       "/:id/logs",
-      ({ params }) => {
-        const job = jobs.get(params.id);
+      ({ params, user }) => {
+        const job = visibleJob(params.id, user.id);
         return { status: job.status, log: jobs.getLog(params.id) };
       },
       { params: t.Object({ id: t.String() }) },
     )
-    .post("/:id/cancel", ({ params }) => jobs.cancel(params.id), {
-      params: t.Object({ id: t.String() }),
-    })
-    .get("/events", async function* ({ request }) {
+    .post(
+      "/:id/cancel",
+      ({ params, user }) => {
+        const job = visibleJob(params.id, user.id);
+        if (!jobAccess.canCancel(user.id, job)) {
+          throw new ForbiddenError(
+            "Only the job's owner or a server admin can cancel it",
+          );
+        }
+        return jobs.cancel(params.id);
+      },
+      { params: t.Object({ id: t.String() }) },
+    )
+    .get("/events", async function* ({ request, user }) {
       const controller = new AbortController();
       const queue: JobRecord[] = [];
       let notify: (() => void) | null = null;
@@ -116,6 +157,7 @@ export function createV1Routes(container: ServerContainer) {
       });
 
       jobs.subscribe(controller.signal, (job) => {
+        if (!jobAccess.canSee(user.id, job)) return;
         queue.push(job);
         notify?.();
         notify = null;
@@ -207,7 +249,14 @@ export function createV1Routes(container: ServerContainer) {
         { params: t.Object({ name: t.String() }) },
       )
       // ── prebuilds ──────────────────────────────────────────────────────
-      .get("/prebuilds", () => runtime.listPrebuilds())
+      // A recipe's env values and file contents can be literal secrets: only
+      // its creator and server admins read them.
+      .get("/prebuilds", ({ user }) =>
+        runtime.listPrebuilds({
+          userId: user.id,
+          admin: control.defaultOrg.isServerAdmin(user.id),
+        }),
+      )
       .post(
         "/prebuilds",
         ({ body, query, user, set }) => {
@@ -226,7 +275,11 @@ export function createV1Routes(container: ServerContainer) {
       // to every snapshot of its recipe. Empty lists clear them.
       .patch(
         "/prebuilds/:ref/surface",
-        ({ params, body }) => runtime.setPrebuildSurface(params.ref, body),
+        ({ params, body, user }) =>
+          runtime.setPrebuildSurface(params.ref, body, {
+            userId: user.id,
+            admin: control.defaultOrg.isServerAdmin(user.id),
+          }),
         {
           params: t.Object({ ref: t.String() }),
           body: t.Object({
@@ -260,7 +313,7 @@ export function createV1Routes(container: ServerContainer) {
             {
               kind: "toolset-build",
               target: req.name,
-              metadata: req.metadata,
+              metadata: ownedJobMetadata(user.id, req.metadata),
             },
             (signal, log) => runtime.buildToolset(req, signal, log),
           );
@@ -337,12 +390,9 @@ export function createV1Routes(container: ServerContainer) {
       )
       // Without `generated`: the agent token, pod IP and host keys are
       // server-side credentials, not something every org member reads.
-      .get("/sandboxes/:id", async ({ params }) => {
-        const { generated: _generated, ...state } = await runtime.get(
-          params.id,
-        );
-        return state;
-      })
+      .get("/sandboxes/:id", async ({ params }) =>
+        withoutGenerated(await runtime.get(params.id)),
+      )
       // Idle auto-pause view: the operator's rule applied to this sandbox,
       // its activity clocks and the agent's last hour of measurements.
       .get("/sandboxes/:id/activity", ({ params }) => idle.view(params.id))
@@ -364,14 +414,17 @@ export function createV1Routes(container: ServerContainer) {
         },
         { body: UpdateSandboxRequestSchema },
       )
-      .post("/sandboxes/:id/pause", ({ params }) => sandboxOps.pause(params.id))
+      .post("/sandboxes/:id/pause", ({ params, user }) =>
+        sandboxOps.pause(params.id, user.id),
+      )
       .post(
         "/sandboxes/:id/resume",
-        ({ params, body }) => sandboxOps.resume(params.id, body),
+        async ({ params, body, user }) =>
+          withoutGenerated(await sandboxOps.resume(params.id, body, user.id)),
         { body: ResumeRequestSchema },
       )
-      .delete("/sandboxes/:id", async ({ params, set }) => {
-        await sandboxOps.destroy(params.id);
+      .delete("/sandboxes/:id", async ({ params, user, set }) => {
+        await sandboxOps.destroy(params.id, user.id);
         set.status = 204;
       })
       // ── live mutations ────────────────────────────────────────────────
@@ -430,8 +483,8 @@ export function createV1Routes(container: ServerContainer) {
         ({ params, body }) => sandboxOps.exec(params.id, body),
         { body: ExecRequestSchema },
       )
-      .post("/sandboxes/:id/snapshot", ({ params }) =>
-        sandboxOps.snapshot(params.id),
+      .post("/sandboxes/:id/snapshot", ({ params, user }) =>
+        sandboxOps.snapshot(params.id, user.id),
       )
       // Fork is a spawn: `202` with a `sandbox-create` job whose
       // `metadata.sandboxId` is the copy's pre-allocated id, exactly like

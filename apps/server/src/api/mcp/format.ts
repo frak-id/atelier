@@ -7,7 +7,9 @@
  * indentation is pure token cost.
  */
 import { SandboxError, ValidationError } from "../../shared/errors.ts";
+import { isProduction } from "../../shared/lib/config.ts";
 import { createChildLogger } from "../../shared/lib/logger.ts";
+import { redactAgentUrl } from "../../shared/lib/redact.ts";
 
 const log = createChildLogger("mcp");
 
@@ -34,14 +36,24 @@ export function text(value: unknown, isError = false) {
 
 /** Turn a thrown `SandboxError` (or any error) into a friendly tool result
  * instead of a 500-shaped MCP protocol error. Anything that is not a
- * `SandboxError` is a bug or an outage: it is logged with the tool's name. */
+ * `SandboxError` is a bug or an outage: it is logged with the tool's name,
+ * and in production the caller only gets a generic message (the same masking
+ * as `api/index.ts`); elsewhere the message, with any agent token masked. */
 function errorResult(tool: string, error: unknown) {
   if (error instanceof SandboxError) {
     return text({ error: error.code, message: error.message }, true);
   }
   log.error({ tool, error }, "MCP tool failed");
-  const message = error instanceof Error ? error.message : String(error);
-  return text({ error: "INTERNAL_ERROR", message }, true);
+  const message = redactAgentUrl(
+    error instanceof Error ? error.message : String(error),
+  );
+  return text(
+    {
+      error: "INTERNAL_ERROR",
+      message: isProduction() ? "Internal server error" : message,
+    },
+    true,
+  );
 }
 
 /** Wrap a tool handler so any thrown error becomes a friendly `isError`
