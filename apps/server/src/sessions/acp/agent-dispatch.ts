@@ -40,17 +40,18 @@ import {
   type SessionNotification,
 } from "@agentclientprotocol/sdk";
 import type { AgentSessionStatus, AgentTodo } from "@frak/atelier-shared";
+import type { Harness } from "../../harnesses/harness.ts";
+import { findHarness } from "../../harnesses/index.ts";
 import type { AgentClient } from "../../runtime/index.ts";
 import { ConflictError } from "../../shared/errors.ts";
 import { safeNanoid } from "../../shared/lib/id.ts";
 import { createChildLogger } from "../../shared/lib/logger.ts";
 import { type AcpTransport, connectAcpWebSocket } from "./acp-stream.ts";
-import {
-  type HarnessDispatchAdapter,
-  resolveHarnessDispatch,
-} from "./harness-registry.ts";
 
 const log = createChildLogger("agent-dispatch");
+
+/** The part of a harness the dispatch needs; unknown harnesses have none. */
+type HarnessNotices = Pick<Harness, "startupNotice" | "isNotice">;
 
 /**
  * Bounds ACP handshake calls only, never `session/prompt` (a prompt runs for
@@ -80,7 +81,7 @@ const ACP_IDLE_TTL_MS = Number(process.env.ACP_IDLE_TTL_MS) || 60_000;
 
 /**
  * The supervised process that carries the ACP bridge. Convention from the
- * harness composers (`@atelier/compose`): the harness emits a `stdio: "bridge"`
+ * harness composers (`harnesses/`): the harness emits a `stdio: "bridge"`
  * primary process named `acp`. sessions/ attaches to it by name.
  */
 const ACP_PROCESS_NAME = "acp";
@@ -283,10 +284,9 @@ class SandboxAcpConnection {
      * agents without `session/list`). */
     private readonly createdSessions: Map<string, CreatedSessionEntry>,
     /** The `agent` idle signal: a prompt starting or ending, a permission
-     * request. Not `session/update`: the attach bridge replays its output
-     * buffer to every new connection, so a reconnect (any read after the
-     * idle-TTL close) would re-deliver an old turn's updates. A live turn is
-     * covered anyway: it blocks the pause until `markBusy` ends it. */
+     * request. Not `session/update`: a notification says nothing about
+     * whether the sandbox is in use. A live turn is covered anyway: it blocks
+     * the pause until `markBusy` ends it. */
     private readonly touch: () => void,
     /** The acp run this socket attached to; `undefined` if unknown. */
     private readonly run: AcpRun | undefined,
@@ -810,6 +810,7 @@ export class AgentDispatch {
         sandboxId,
         ACP_PROCESS_NAME,
         "rw",
+        { replay: false },
       );
       const conn = await SandboxAcpConnection.open(
         sandboxId,
@@ -936,9 +937,7 @@ export class AgentDispatch {
   // ── task sessions ──────────────────────────────────────────────────────────────
 
   async openSession(input: OpenAgentSessionInput): Promise<AgentSession> {
-    const harness: HarnessDispatchAdapter = resolveHarnessDispatch(
-      input.harnessId,
-    );
+    const harness: HarnessNotices = findHarness(input.harnessId) ?? {};
     const conn = await this.freshConnection(input.sandboxId);
     const acp = conn.acp;
     // Hold for the SESSION'S LIFETIME (released in `close()`), not just for
@@ -964,7 +963,7 @@ export class AgentDispatch {
       if (input.resumeSessionId) {
         if (!conn.canLoadSession) {
           throw new ConflictError(
-            `The ${harness.id} agent can't reopen a session (no ACP loadSession capability); start a new one`,
+            `The ${input.harnessId ?? "unknown"} agent can't reopen a session (no ACP loadSession capability); start a new one`,
           );
         }
         await conn.loadSession(input.resumeSessionId, input.cwd);
@@ -1028,7 +1027,7 @@ export class AgentDispatch {
       {
         sandboxId: input.sandboxId,
         sessionId,
-        harness: harness.id,
+        harness: input.harnessId,
         resumed: input.resumeSessionId !== undefined,
       },
       "ACP session opened",
@@ -1053,7 +1052,7 @@ export class AgentDispatch {
  * itself (its startup banner, once; status notices), which a reader of the
  * agent's answer (a task reply) must not get. */
 function withoutNotices(
-  harness: HarnessDispatchAdapter,
+  harness: HarnessNotices,
   startupNotice: string | undefined,
   onUpdate: (notification: SessionNotification) => void,
 ): (notification: SessionNotification) => void {

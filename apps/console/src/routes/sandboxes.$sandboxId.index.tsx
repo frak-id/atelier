@@ -1,8 +1,11 @@
 import { useQuery } from "@tanstack/react-query";
 import { createFileRoute, Link, useNavigate } from "@tanstack/react-router";
-import { ChevronDown, ChevronRight } from "lucide-react";
+import { Camera, ChevronDown, ChevronRight } from "lucide-react";
 import { useState } from "react";
-import { sandboxDetailQuery } from "@/api/queries/sandboxes";
+import {
+  sandboxDetailQuery,
+  useSnapshotSandbox,
+} from "@/api/queries/sandboxes";
 import { ImmersiveView } from "@/components/immersive-view";
 import { SandboxActivitySection } from "@/components/sandbox-activity";
 import { ExposePortSection } from "@/components/sandbox-detail/expose-port";
@@ -40,6 +43,7 @@ function SandboxDetailPage() {
   } = useQuery(sandboxDetailQuery(sandboxId));
   const [immersive, setImmersive] = useState(false);
   const [moreOpen, setMoreOpen] = useState(false);
+  const snapshot = useSnapshotSandbox();
 
   if (isPending) {
     return (
@@ -101,6 +105,17 @@ function SandboxDetailPage() {
         </Button>
         {moreOpen ? (
           <>
+            {sandbox.status === "running" ? (
+              <Button
+                variant="outline"
+                size="touch"
+                loading={snapshot.isPending}
+                onClick={() => snapshot.mutate(sandbox.id)}
+              >
+                <Camera />
+                Snapshot
+              </Button>
+            ) : null}
             <ExposePortSection sandboxId={sandbox.id} />
             {hasMetadata ? (
               <MetadataSection

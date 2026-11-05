@@ -10,8 +10,9 @@
  * `files` included) into the spec BEFORE this runs, so a toolbox file's
  * `$secret` refs are resolved here like any other.
  */
-import { mergeSpecs, resolveHarness } from "@atelier/compose";
 import { isSecretRef, type SandboxSpec } from "@atelier/spec";
+import { findHarness } from "../harnesses/index.ts";
+import { mergeSpecs } from "../harnesses/spec-merge.ts";
 import { config, dashboardUrl } from "../shared/lib/config.ts";
 import {
   buildGitAttributionFiles,
@@ -65,21 +66,19 @@ function injectHarness(
 ): SandboxSpec {
   if (spec.annotations?.[HARNESS_ANNOTATION] || !harnessId) return spec;
 
-  try {
-    // Web-UI options are per-harness and ignored when unknown (`compose()`
-    // options aren't validated by this seam — see `resolveHarness`):
-    // opencode reads `webUiCorsOrigin` (the console origin, for its `serve`
-    // `--cors`); pi reads `webUiAllowedHosts` (the sandbox base domain, for
-    // PI WEB's host-check).
-    const fragment = resolveHarness(harnessId).compose({
-      webUiCorsOrigin: dashboardUrl,
-      webUiAllowedHosts: config.domain.baseDomain,
-    });
-    return mergeSpecs(spec, fragment) as SandboxSpec;
-  } catch (err) {
-    log.warn({ harnessId, err }, "unknown harness; leaving spec unharnessed");
+  const harness = findHarness(harnessId);
+  if (!harness) {
+    log.warn({ harnessId }, "unknown harness; leaving spec unharnessed");
     return spec;
   }
+  // Web-UI options are per-harness and ignored when unknown: opencode reads
+  // `webUiCorsOrigin` (the console origin, for its `serve` `--cors`); pi reads
+  // `webUiAllowedHosts` (the sandbox base domain, for PI WEB's host-check).
+  const fragment = harness.compose({
+    webUiCorsOrigin: dashboardUrl,
+    webUiAllowedHosts: config.domain.baseDomain,
+  });
+  return mergeSpecs(spec, fragment) as SandboxSpec;
 }
 
 /** Vite's documented env hook for extra `server.allowedHosts` entries. */

@@ -17,6 +17,7 @@ import {
 import type { ServerWebSocket } from "bun";
 import type { AgentClient } from "../runtime/index.ts";
 import { AgentTaskService } from "./task.service.ts";
+import { MemoryTaskStore } from "./task.test-support.ts";
 
 // `agent-dispatch.ts` reads ACP_IDLE_TTL_MS once, at module load, and bun
 // shares one module cache across test files. `acp/agent-dispatch.test.ts`
@@ -177,8 +178,10 @@ function setup() {
   });
   const tasks = new AgentTaskService({
     dispatch,
+    store: new MemoryTaskStore(),
     runtime: {
       getStatus: () => "running",
+      exec: async () => ({ exitCode: 0, stdout: "", stderr: "" }),
       getLabels: () => ({
         metadata: {},
         annotations: { "atelier.dev/harness": "opencode" },

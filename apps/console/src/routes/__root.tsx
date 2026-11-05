@@ -13,7 +13,9 @@ import { currentUserQuery } from "@/api/queries/auth";
 import { AccountControls } from "@/components/account-controls";
 import { JobsIndicator } from "@/components/jobs-indicator";
 import { LoginPage } from "@/components/login-page";
+import { TaskInboxEffects } from "@/components/task-inbox/inbox-effects";
 import { useJobEvents } from "@/hooks/use-job-events";
+import { useTaskInbox } from "@/hooks/use-task-inbox";
 
 export const Route = createRootRouteWithContext<{
   queryClient: QueryClient;
@@ -27,6 +29,21 @@ const NAV_ITEMS = [
   { to: "/library", label: "Library", icon: Library, exact: false },
   { to: "/settings", label: "Settings", icon: Settings, exact: false },
 ] as const;
+
+/** Count of tasks waiting on the user (finished unseen + failed unseen). */
+function TaskBadge() {
+  const { attention } = useTaskInbox();
+  if (attention === 0) return null;
+  return (
+    <span
+      className="min-w-5 rounded-full bg-primary px-1.5 text-center text-xs font-medium text-primary-foreground"
+      role="status"
+      aria-label={`${attention} tasks need attention`}
+    >
+      {attention > 99 ? "99+" : attention}
+    </span>
+  );
+}
 
 function RootLayout() {
   const queryClient = useQueryClient();
@@ -77,6 +94,7 @@ function RootLayout() {
             >
               <item.icon className="size-4 shrink-0" />
               <span className="hidden sm:inline">{item.label}</span>
+              {item.to === "/" ? <TaskBadge /> : null}
             </Link>
           ))}
         </nav>
@@ -85,6 +103,7 @@ function RootLayout() {
           <AccountControls username={user.username} onLogout={handleLogout} />
         </div>
       </header>
+      <TaskInboxEffects />
       <main className="flex-1 p-4 pr-[max(1rem,env(safe-area-inset-right))] pb-[max(1rem,env(safe-area-inset-bottom))] pl-[max(1rem,env(safe-area-inset-left))]">
         <Outlet />
       </main>

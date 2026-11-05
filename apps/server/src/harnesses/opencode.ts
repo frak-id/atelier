@@ -6,12 +6,11 @@
  * "opencode with these MCP servers" → files + the acp process + annotations
  * (design.md §3).
  */
-import type { HarnessComposer } from "../harness.ts";
-import type { SpecFragment } from "../spec-merge.ts";
+import type { Harness } from "./harness.ts";
+import type { SpecFragment } from "./spec-merge.ts";
 
 const HOME = "/home/dev";
 const OPENCODE_CONFIG_PATH = `${HOME}/.config/opencode/opencode.json`;
-const OPENCODE_AUTH_PATH = `${HOME}/.local/share/opencode/auth.json`;
 
 /**
  * Merge cliproxy-style provider configs into opencode's config schema
@@ -129,19 +128,7 @@ export function composeOpencode(
   };
 }
 
-/** Paths kept for callers that need them outside `compose()` (e.g. auth-sync). */
-export const OPENCODE_PATHS = {
-  configPath: OPENCODE_CONFIG_PATH,
-  authPath: OPENCODE_AUTH_PATH,
-};
-
-/**
- * The registrable composer. Not auto-registered here — the server/CLI
- * bootstrap calls `registerHarness(opencodeHarness)` (design.md §3: harness
- * registration is client-side wiring, not runtime machinery).
- */
-export const opencodeHarness: HarnessComposer = {
-  id: "opencode",
+export const opencodeHarness: Harness = {
   compose: (opts) =>
     composeOpencode(opts as ComposeOpencodeOptions | undefined),
 };

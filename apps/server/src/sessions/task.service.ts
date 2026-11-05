@@ -19,9 +19,11 @@
  * also after the sandbox was paused and resumed (the reopen asks for the
  * sandbox to be running first). Parked tasks are forgotten after a week.
  *
- * State is IN-MEMORY and per server process: a restart forgets every task
- * (the agent-side session survives in the sandbox and stays visible through
- * the console's session list, it just can't be prompted through its task id again).
+ * The durable part of a task (ids, status, title, last reply, git result)
+ * is persisted through a {@link TaskStore}; the live part (open session,
+ * transcript) is per server process. After a restart a task comes back
+ * parked: the next `sendPrompt` reopens its agent session, and a turn that
+ * was running is reported failed. A closed task is deleted.
  *
  * `ownerId` is an opaque string supplied by the caller (api/ passes the
  * authenticated user id) — sessions/ never imports control/. A task is only
@@ -44,6 +46,13 @@ import type {
   AgentSession as AcpAgentSession,
   AgentDispatch,
 } from "./acp/agent-dispatch.ts";
+import type {
+  StoredTask,
+  StoredTaskStatus,
+  TaskResult,
+  TaskStore,
+} from "./task.store.ts";
+import { GIT_RESULT_COMMAND, parseGitResult } from "./task-result.ts";
 
 const log = createChildLogger("agent-tasks");
 
@@ -67,11 +76,16 @@ const PROMPT_PREVIEW_CHARS = 120;
 /** How long `cancel` waits for the agent to acknowledge, so the common case
  * returns the settled `cancelled` state rather than a stale `running`. */
 const CANCEL_SETTLE_MS = 5_000;
+/** Budget for the git summary taken when a turn ends. */
+const RESULT_CAPTURE_MS = 5_000;
+const TITLE_CHARS = 80;
+/** Persisted cap on the last turn's concluding reply. */
+const STORED_REPLY_CHARS = 8_000;
 
 /** What the caller sees. `idle` = last turn finished and the task accepts
  * another prompt; `failed`/`cancelled` accept one too (a dead session just
  * fails the next turn fast). Only `closed` is terminal. */
-type TaskStatus = "running" | "idle" | "failed" | "cancelled" | "closed";
+type TaskStatus = StoredTaskStatus | "closed";
 
 type TurnStatus = "running" | "completed" | "failed" | "cancelled";
 
@@ -110,22 +124,43 @@ interface TaskView {
   status: TaskStatus;
   createdAt: string;
   updatedAt: string;
+  title: string;
+  source: TaskSource;
+  /** Git state captured when the last turn ended. */
+  result?: TaskResult;
   /** The selected turn (the latest unless one was requested). */
   turn: TaskTurnView;
+  /** Turns of this task in total, including those of earlier processes. */
+  turnCount: number;
+  /** The turns held in memory (none after a restart until a new prompt). */
   turns: { index: number; status: TurnStatus; prompt: string }[];
   todos: AgentTodo[];
 }
 
+/** A task as the inbox and the task list show it: the persisted record. */
 interface TaskSummary {
   taskId: string;
   sandboxId: string;
   sessionId: string;
+  cwd: string;
+  harness: string;
   status: TaskStatus;
+  title: string;
+  source: TaskSource;
   turns: number;
   lastPrompt: string;
+  lastError?: string;
+  result?: TaskResult;
   createdAt: string;
   updatedAt: string;
 }
+
+/** One task with the concluding message of its last turn. */
+interface TaskDetail extends TaskSummary {
+  reply: string;
+}
+
+type TaskSource = StoredTask["source"];
 
 interface DispatchTaskInput {
   sandboxId: string;
@@ -133,6 +168,8 @@ interface DispatchTaskInput {
   /** Absolute working directory for the agent session (default: the dev
    * user's home, same as the dashboard). */
   cwd?: string;
+  /** Who dispatched it (default: the console). */
+  source?: TaskSource;
 }
 
 interface GetTaskOptions {
@@ -170,8 +207,19 @@ interface TaskRecord {
   sessionId: string;
   cwd: string;
   harnessId: string;
+  title: string;
+  source: TaskSource;
   createdAt: number;
   updatedAt: number;
+  /** Status while no turn ran in this process (a restored task). */
+  baseStatus: StoredTaskStatus;
+  /** Turns of earlier processes: this process's `turns` start after them. */
+  turnOffset: number;
+  /** Persisted: the last finished turn's prompt, reply and error. */
+  lastPrompt: string;
+  lastReply: string;
+  lastError?: string;
+  result?: TaskResult;
   /** The open agent session; `undefined` while the task is parked. */
   handle: AcpAgentSession | undefined;
   /** In-flight reopen of a parked or disconnected session. */
@@ -185,7 +233,8 @@ interface TaskRecord {
 }
 
 export interface AgentTaskServiceDeps {
-  runtime: Pick<RuntimeService, "getStatus" | "getLabels">;
+  runtime: Pick<RuntimeService, "getStatus" | "getLabels" | "exec">;
+  store: TaskStore;
   dispatch: Pick<AgentDispatch, "openSession" | "todosFor">;
   idleTtlMs?: number;
   retainMs?: number;
@@ -205,6 +254,15 @@ function preview(text: string): string {
     : flat;
 }
 
+/** The first non-empty line of the prompt, truncated. */
+function titleOf(prompt: string): string {
+  const line = prompt.split("\n").find((l) => l.trim().length > 0) ?? "";
+  const flat = line.trim();
+  return flat.length > TITLE_CHARS
+    ? `${flat.slice(0, TITLE_CHARS - 1)}…`
+    : flat;
+}
+
 export class AgentTaskService {
   private readonly tasks = new Map<string, TaskRecord>();
   private sweepTimer: ReturnType<typeof setTimeout> | undefined;
@@ -221,6 +279,9 @@ export class AgentTaskService {
     this.maxTasksPerOwner =
       deps.maxTasksPerOwner ?? DEFAULT_MAX_TASKS_PER_OWNER;
     this.maxReplyChars = deps.maxReplyChars ?? DEFAULT_MAX_REPLY_CHARS;
+    // Nothing runs yet in this process: a stored `running` turn is gone.
+    deps.store.failInterrupted("The server restarted during this turn");
+    this.pruneStore();
   }
 
   // ── public API ─────────────────────────────────────────────────────────────
@@ -274,8 +335,14 @@ export class AgentTaskService {
       sessionId: handle.sessionId,
       cwd,
       harnessId,
+      title: titleOf(prompt),
+      source: input.source ?? "console",
       createdAt: now,
       updatedAt: now,
+      baseStatus: "idle",
+      turnOffset: 0,
+      lastPrompt: "",
+      lastReply: "",
       handle,
       turns: [],
       closed: false,
@@ -332,23 +399,35 @@ export class AgentTaskService {
     return this.view(task, options);
   }
 
+  /** The owner's tasks, newest first, optionally for one sandbox. */
   list(ownerId: string, sandboxId?: string): TaskSummary[] {
-    return [...this.tasks.values()]
-      .filter(
-        (t) =>
-          t.ownerId === ownerId && (!sandboxId || t.sandboxId === sandboxId),
-      )
-      .sort((a, b) => b.createdAt - a.createdAt)
-      .map((t) => ({
-        taskId: t.id,
-        sandboxId: t.sandboxId,
-        sessionId: t.sessionId,
-        status: this.statusOf(t),
-        turns: t.turns.length,
-        lastPrompt: preview(t.turns.at(-1)?.prompt ?? ""),
-        createdAt: new Date(t.createdAt).toISOString(),
-        updatedAt: new Date(t.updatedAt).toISOString(),
-      }));
+    return this.deps.store
+      .list({ ownerId, sandboxIds: sandboxId ? [sandboxId] : undefined })
+      .map((t) => this.summaryOf(t));
+  }
+
+  /** Tasks of the given sandboxes (whoever dispatched them), newest first.
+   * The caller decides which sandboxes the reader may see. */
+  listForSandboxes(
+    sandboxIds: string[],
+    filter: { status?: StoredTaskStatus; limit?: number } = {},
+  ): TaskSummary[] {
+    return this.deps.store
+      .list({ sandboxIds, ...filter })
+      .map((t) => this.summaryOf(t));
+  }
+
+  /** One task by id without an ownership check: the caller must check access
+   * to `sandboxId` itself. */
+  describe(taskId: string): TaskDetail {
+    const stored = this.deps.store.get(taskId);
+    if (!stored) throw new NotFoundError("Task", taskId);
+    const live = this.tasks.get(taskId);
+    const reply =
+      live?.turns.at(-1)?.status === "completed"
+        ? this.turnReply(live.turns.at(-1))
+        : stored.lastReply;
+    return { ...this.summaryOf(stored), reply };
   }
 
   /** Cancel the in-flight turn. The task stays open for further prompts. */
@@ -380,7 +459,7 @@ export class AgentTaskService {
 
   private startTurn(task: TaskRecord, prompt: string): void {
     const turn: TaskTurn = {
-      index: task.turns.length,
+      index: task.turnOffset + task.turns.length,
       status: "running",
       prompt,
       segments: [],
@@ -392,6 +471,8 @@ export class AgentTaskService {
     };
     task.turns.push(turn);
     task.updatedAt = turn.startedAt;
+    task.lastPrompt = preview(prompt);
+    this.persist(task);
     void this.runTurn(task, turn);
   }
 
@@ -403,7 +484,7 @@ export class AgentTaskService {
         `Task ${task.id} is ${status}; wait for the current turn to finish (get_task) or cancel it first`,
       );
     }
-    if (task.turns.length >= MAX_TURNS_PER_TASK) {
+    if (task.turnOffset + task.turns.length >= MAX_TURNS_PER_TASK) {
       throw new ConflictError(
         `Task ${task.id} reached ${MAX_TURNS_PER_TASK} turns; dispatch a new task`,
       );
@@ -416,23 +497,48 @@ export class AgentTaskService {
   }
 
   private async runTurn(task: TaskRecord, turn: TaskTurn): Promise<void> {
+    let status: TurnStatus;
     try {
       if (!task.handle) throw new Error("the task's agent session is closed");
       const response = await task.handle.prompt(turn.prompt);
       turn.stopReason = response.stopReason;
-      turn.status =
-        response.stopReason === "cancelled" ? "cancelled" : "completed";
+      status = response.stopReason === "cancelled" ? "cancelled" : "completed";
     } catch (err) {
-      turn.status = "failed";
+      status = "failed";
       turn.error = errorMessage(err);
       log.warn(
         { taskId: task.id, sandboxId: task.sandboxId, err },
         "Agent task turn failed",
       );
-    } finally {
-      turn.endedAt = Date.now();
-      task.updatedAt = turn.endedAt;
-      this.wake(task);
+    }
+    // Before the status flips, so whoever sees the turn end sees its result.
+    if (status !== "failed") {
+      task.result = (await this.captureResult(task)) ?? task.result;
+    }
+    turn.status = status;
+    turn.endedAt = Date.now();
+    task.updatedAt = turn.endedAt;
+    task.lastReply = this.turnReply(turn).slice(-STORED_REPLY_CHARS);
+    task.lastError = turn.error;
+    this.persist(task);
+    this.wake(task);
+  }
+
+  /** Git summary of the task's working directory in the sandbox. Best effort:
+   * a missing repo, a stopped sandbox or a slow exec just yield nothing. */
+  private async captureResult(
+    task: TaskRecord,
+  ): Promise<TaskResult | undefined> {
+    try {
+      const { stdout } = await this.deps.runtime.exec(task.sandboxId, {
+        command: GIT_RESULT_COMMAND,
+        cwd: task.cwd,
+        timeoutMs: RESULT_CAPTURE_MS,
+      });
+      return parseGitResult(stdout, new Date().toISOString());
+    } catch (err) {
+      log.debug({ taskId: task.id, err }, "Agent task result capture failed");
+      return undefined;
     }
   }
 
@@ -537,7 +643,7 @@ export class AgentTaskService {
   private statusOf(task: TaskRecord): TaskStatus {
     if (task.closed) return "closed";
     const turn = task.turns.at(-1);
-    if (!turn) return "idle";
+    if (!turn) return task.baseStatus;
     switch (turn.status) {
       case "running":
         return "running";
@@ -583,18 +689,19 @@ export class AgentTaskService {
     task: TaskRecord,
     options: Pick<GetTaskOptions, "turn" | "full">,
   ): Promise<TaskView> {
-    const index = options.turn ?? task.turns.length - 1;
-    const turn = task.turns[index];
-    if (!turn) throw new NotFoundError("Turn", String(options.turn));
     return {
       taskId: task.id,
       sandboxId: task.sandboxId,
       sessionId: task.sessionId,
       cwd: task.cwd,
       status: this.statusOf(task),
+      title: task.title,
+      source: task.source,
+      ...(task.result && { result: task.result }),
       createdAt: new Date(task.createdAt).toISOString(),
       updatedAt: new Date(task.updatedAt).toISOString(),
-      turn: this.turnView(turn, options.full ?? false),
+      turn: this.selectTurn(task, options),
+      turnCount: task.turnOffset + task.turns.length,
       turns: task.turns.map((t) => ({
         index: t.index,
         status: t.status,
@@ -606,16 +713,50 @@ export class AgentTaskService {
     };
   }
 
+  /** The requested turn (default: the latest). A restored task has no
+   * transcript: its latest turn is rebuilt from the persisted record. */
+  private selectTurn(
+    task: TaskRecord,
+    options: Pick<GetTaskOptions, "turn" | "full">,
+  ): TaskTurnView {
+    const latest = task.turnOffset + task.turns.length - 1;
+    const index = options.turn ?? latest;
+    const turn = task.turns[index - task.turnOffset];
+    if (turn) return this.turnView(turn, options.full ?? false);
+    if (index === latest && task.turns.length === 0 && task.turnOffset > 0) {
+      const at = new Date(task.updatedAt).toISOString();
+      return {
+        index,
+        status: task.baseStatus === "idle" ? "completed" : task.baseStatus,
+        prompt: task.lastPrompt,
+        ...(task.lastError && { error: task.lastError }),
+        reply: task.lastReply,
+        ...(options.full && { segments: [task.lastReply] }),
+        truncated: false,
+        startedAt: at,
+        endedAt: at,
+        toolCalls: [],
+      };
+    }
+    throw new NotFoundError("Turn", String(options.turn));
+  }
+
+  /** The turn's concluding message: its last non-empty segment. */
+  private turnReply(turn: TaskTurn | undefined): string {
+    const last = [...(turn?.segments ?? [])]
+      .reverse()
+      .find((s) => s.trim().length > 0);
+    return (last ?? "").trim();
+  }
+
   private turnView(turn: TaskTurn, full: boolean): TaskTurnView {
-    const reply =
-      [...turn.segments].reverse().find((s) => s.trim().length > 0) ?? "";
     return {
       index: turn.index,
       status: turn.status,
       prompt: turn.prompt,
       ...(turn.stopReason && { stopReason: turn.stopReason }),
       ...(turn.error && { error: turn.error }),
-      reply: reply.trim(),
+      reply: this.turnReply(turn),
       ...(full && { segments: turn.segments }),
       truncated: turn.truncated,
       startedAt: new Date(turn.startedAt).toISOString(),
@@ -639,12 +780,94 @@ export class AgentTaskService {
   }
 
   private requireTask(ownerId: string, taskId: string): TaskRecord {
-    const task = this.tasks.get(taskId);
+    const task = this.tasks.get(taskId) ?? this.restore(taskId);
     // Same error for "unknown" and "someone else's": don't leak existence.
     if (!task || task.ownerId !== ownerId) {
       throw new NotFoundError("Task", taskId);
     }
     return task;
+  }
+
+  /** Bring a persisted task back into memory, parked. */
+  private restore(taskId: string): TaskRecord | undefined {
+    const stored = this.deps.store.get(taskId);
+    if (!stored) return undefined;
+    const record: TaskRecord = {
+      id: stored.id,
+      ownerId: stored.ownerId,
+      sandboxId: stored.sandboxId,
+      sessionId: stored.sessionId,
+      cwd: stored.cwd,
+      harnessId: stored.harness,
+      title: stored.title,
+      source: stored.source,
+      createdAt: Date.parse(stored.createdAt),
+      updatedAt: Date.parse(stored.updatedAt),
+      baseStatus: stored.status,
+      turnOffset: stored.turnCount,
+      lastPrompt: stored.lastPrompt,
+      lastReply: stored.lastReply,
+      lastError: stored.lastError,
+      result: stored.result,
+      handle: undefined,
+      turns: [],
+      closed: false,
+      waiters: new Set(),
+    };
+    this.tasks.set(record.id, record);
+    this.armSweep();
+    return record;
+  }
+
+  private persist(task: TaskRecord): void {
+    if (task.closed) return;
+    try {
+      this.deps.store.upsert({
+        id: task.id,
+        ownerId: task.ownerId,
+        sandboxId: task.sandboxId,
+        sessionId: task.sessionId,
+        cwd: task.cwd,
+        harness: task.harnessId,
+        status: this.statusOf(task) as StoredTaskStatus,
+        title: task.title,
+        source: task.source,
+        turnCount: task.turnOffset + task.turns.length,
+        lastPrompt: task.lastPrompt,
+        lastReply: task.lastReply,
+        ...(task.lastError && { lastError: task.lastError }),
+        ...(task.result && { result: task.result }),
+        createdAt: new Date(task.createdAt).toISOString(),
+        updatedAt: new Date(task.updatedAt).toISOString(),
+      });
+    } catch (err) {
+      log.warn({ taskId: task.id, err }, "Agent task persist failed");
+    }
+  }
+
+  private summaryOf(stored: StoredTask): TaskSummary {
+    return {
+      taskId: stored.id,
+      sandboxId: stored.sandboxId,
+      sessionId: stored.sessionId,
+      cwd: stored.cwd,
+      harness: stored.harness,
+      status: stored.status,
+      title: stored.title,
+      source: stored.source,
+      turns: stored.turnCount,
+      lastPrompt: stored.lastPrompt,
+      ...(stored.lastError && { lastError: stored.lastError }),
+      ...(stored.result && { result: stored.result }),
+      createdAt: stored.createdAt,
+      updatedAt: stored.updatedAt,
+    };
+  }
+
+  private pruneStore(): void {
+    this.deps.store.deleteUpdatedBefore(
+      new Date(Date.now() - this.retainMs).toISOString(),
+    );
   }
 
   /** Reopen a parked (or disconnected) task's agent session by id, so the
@@ -714,6 +937,7 @@ export class AgentTaskService {
     const status = this.statusOf(task);
     task.closed = true;
     this.tasks.delete(task.id);
+    this.deps.store.delete(task.id);
     if (status === "running") {
       await this.cancelInFlight(task);
     }
@@ -731,6 +955,7 @@ export class AgentTaskService {
     this.sweepTimer = setTimeout(() => {
       this.sweepTimer = undefined;
       this.sweep();
+      this.pruneStore();
       this.armSweep();
     }, this.sweepMs);
     this.sweepTimer.unref?.();

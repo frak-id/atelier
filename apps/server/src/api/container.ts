@@ -3,7 +3,6 @@
  * (runtime/control/sessions) are wired together. Manual-wiring convention
  * (no DI framework).
  */
-import { mergeSpecs } from "@atelier/compose";
 import {
   type PortEntry,
   type ProcessEntry,
@@ -14,6 +13,7 @@ import {
   toolboxArtifactName,
 } from "@atelier/spec";
 import { createControlContainer, recipeFingerprint } from "../control/index.ts";
+import { mergeSpecs } from "../harnesses/spec-merge.ts";
 import {
   AgentClient,
   createImageBuilder,
@@ -31,40 +31,13 @@ import {
 import {
   AgentDispatch,
   AgentTaskService,
-  registerHarnessDispatch,
+  DrizzleTaskStore,
   SessionService,
   TerminalService,
 } from "../sessions/index.ts";
 import { createChildLogger } from "../shared/lib/logger.ts";
 import { registryUrl } from "../shared/lib/runtime-config.ts";
 import { IdleReaper } from "./idle-reaper.ts";
-
-/**
- * Wire the built-in harnesses. Two independent, both OPTIONAL, extension
- * points — any ACP-speaking harness works with neither (the session API is
- * one generic ACP-over-attach view for every harness):
- *  - compose-side `registerHarness`: server-side fallback composition when a
- *    toolbox names a harness (client-composed specs bypass it);
- *  - `registerHarnessDispatch`: only for harnesses that send status text of
- *    their own as message chunks (pi), which tasks leave out of the agent's
- *    reply; unknown harnesses dispatch as is.
- */
-async function registerBuiltinHarnesses(container: ServerContainer) {
-  const {
-    registerHarness,
-    opencodeHarness,
-    piHarness,
-    piIsNotice,
-    piStartupNotice,
-  } = await import("@atelier/compose");
-  registerHarness(opencodeHarness);
-  registerHarness(piHarness);
-  container.registerHarnessDispatch({
-    id: "pi",
-    startupNotice: piStartupNotice,
-    isNotice: piIsNotice,
-  });
-}
 
 const log = createChildLogger("container");
 
@@ -111,8 +84,12 @@ export function createServerContainer() {
   });
   const sessions = new SessionService({ runtime, dispatch });
   // Fire-and-forget agent prompts (MCP `send_prompt`): server-driven ACP
-  // sessions with captured replies. In-memory; see task.service.ts.
-  const tasks = new AgentTaskService({ runtime, dispatch });
+  // sessions with captured replies. Durable records, live state in memory; see task.service.ts.
+  const tasks = new AgentTaskService({
+    runtime,
+    dispatch,
+    store: new DrizzleTaskStore(),
+  });
   const terminal = new TerminalService({ agent });
   // Idle auto-pause: the operator's rule (control) over the runtime's
   // activity clocks, blocked by ACP work in flight (sessions).
@@ -163,7 +140,6 @@ export function createServerContainer() {
     terminal,
     images,
     idle,
-    registerHarnessDispatch,
   };
   return serverContainer;
 }
@@ -179,12 +155,6 @@ export interface ServerContainer {
   tasks: AgentTaskService;
   terminal: TerminalService;
   idle: IdleReaper;
-  registerHarnessDispatch: typeof registerHarnessDispatch;
-}
-
-/** Bootstrap hook: call once after `createServerContainer()`. */
-export async function wireBuiltinHarnesses(container: ServerContainer) {
-  await registerBuiltinHarnesses(container);
 }
 
 /**

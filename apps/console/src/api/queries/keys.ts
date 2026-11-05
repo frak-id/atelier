@@ -22,6 +22,10 @@ export const queryKeys = {
     todos: (sandboxId: string, sessionId: string) =>
       [...queryKeys.sessions.all(sandboxId), "todos", sessionId] as const,
   },
+  tasks: {
+    all: ["tasks"] as const,
+    list: () => [...queryKeys.tasks.all, "list"] as const,
+  },
   terminal: {
     all: (sandboxId: string) => ["terminal", sandboxId] as const,
     list: (sandboxId: string) =>

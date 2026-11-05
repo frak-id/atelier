@@ -24,7 +24,6 @@ WORKDIR /build
 COPY package.json bun.lock ./
 COPY packages/shared/package.json packages/shared/
 COPY packages/spec/package.json packages/spec/
-COPY packages/compose/package.json packages/compose/
 COPY apps/server/package.json apps/server/
 COPY apps/console/package.json apps/console/
 
@@ -47,14 +46,12 @@ ENV NODE_ENV=production
 COPY --from=deps /build/node_modules node_modules
 COPY --from=deps /build/packages/shared/node_modules packages/shared/node_modules
 COPY --from=deps /build/packages/spec/node_modules packages/spec/node_modules
-COPY --from=deps /build/packages/compose/node_modules packages/compose/node_modules
 COPY --from=deps /build/apps/server/node_modules apps/server/node_modules
 COPY --from=deps /build/apps/console/node_modules apps/console/node_modules
 
 # Source
 COPY packages/shared packages/shared
 COPY packages/spec packages/spec
-COPY packages/compose packages/compose
 COPY apps/server apps/server
 COPY apps/console apps/console
 COPY tsconfig.json ./

@@ -5,7 +5,7 @@
  */
 
 export { AgentDispatch } from "./acp/agent-dispatch.ts";
-export { registerHarnessDispatch } from "./acp/harness-registry.ts";
 export { SessionService } from "./session.service.ts";
 export { AgentTaskService } from "./task.service.ts";
+export { DrizzleTaskStore } from "./task.store.ts";
 export { TerminalService } from "./terminal.service.ts";

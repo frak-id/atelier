@@ -25,8 +25,8 @@
  * hub (a generic ACP-over-attach surface registered for `pi`, same as
  * opencode).
  */
-import type { HarnessComposer } from "../harness.ts";
-import type { SpecFragment } from "../spec-merge.ts";
+import type { AcpMeta, Harness } from "./harness.ts";
+import type { SpecFragment } from "./spec-merge.ts";
 
 const HOME = "/home/dev";
 const LOCAL_BIN = `${HOME}/.local/bin`;
@@ -73,18 +73,10 @@ export function composePi(opts: ComposePiOptions = {}): SpecFragment {
   };
 }
 
-/** The registrable composer — registered by the server/CLI bootstrap. */
-export const piHarness: HarnessComposer = {
-  id: "pi",
-  compose: (opts) => composePi(opts as ComposePiOptions | undefined),
-};
-
 // ── dispatch: what pi-acp says about itself ─────────────────────────────────
 // pi-acp sends its own status text as ordinary `agent_message_chunk`s, which
-// a client showing the agent's answer must leave out. Registered by the
-// server bootstrap as pi's dispatch adapter (`startupNotice` / `isNotice`).
-
-type AcpMeta = Record<string, unknown> | null | undefined;
+// a client showing the agent's answer must leave out. Wired as
+// `startupNotice` / `isNotice` of the pi harness.
 
 /** pi-acp's own `_meta` entry. */
 function piAcpMeta(meta: AcpMeta): Record<string, unknown> | undefined {
@@ -107,3 +99,9 @@ export function piStartupNotice(meta: AcpMeta): string | undefined {
 export function piIsNotice(meta: AcpMeta): boolean {
   return piAcpMeta(meta)?.notify != null;
 }
+
+export const piHarness: Harness = {
+  compose: (opts) => composePi(opts as ComposePiOptions | undefined),
+  startupNotice: piStartupNotice,
+  isNotice: piIsNotice,
+};

@@ -16,10 +16,6 @@
       "project": ["src/**/*.ts"],
       "entry": ["src/**/*.test.ts"]
     },
-    "packages/compose": {
-      "project": ["src/**/*.ts"],
-      "entry": ["src/**/*.test.ts"]
-    },
     "apps/server": {
       "project": ["src/**/*.ts"],
       "ignoreDependencies": ["pino-pretty"],

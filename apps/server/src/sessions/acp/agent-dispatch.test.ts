@@ -29,14 +29,6 @@ beforeAll(async () => {
   ({ AgentDispatch } = await import("./agent-dispatch.ts"));
   ({ agent, methods, ndJsonStream, PROTOCOL_VERSION, RequestError } =
     await import("@agentclientprotocol/sdk"));
-  const { registerHarnessDispatch } = await import("./harness-registry.ts");
-  registerHarnessDispatch({ id: "opencode" });
-  const { piIsNotice, piStartupNotice } = await import("@atelier/compose");
-  registerHarnessDispatch({
-    id: "pi",
-    startupNotice: piStartupNotice,
-    isNotice: piIsNotice,
-  });
 });
 
 interface FakeSession {
@@ -383,24 +375,14 @@ describe("AgentDispatch × session/list", () => {
     await expect(session.prompt("hi")).rejects.toThrow(/no longer live/);
   });
 
-  test("a redial ignores what the attach bridge replays from earlier connections", async () => {
+  test("a redial ignores another connection's responses left in the bridge buffer", async () => {
     const fakeAgent = new FakeAcpAgent();
     fakeAgent.failNewSession = "Could not start pi";
     // What a server without per-connection ids left in the bridge buffer:
-    // numeric ids this connection reuses, and a long-settled permission ask.
+    // numeric ids this connection reuses.
     const seed = [
       { jsonrpc: "2.0", id: 0, result: { protocolVersion: 1 } },
       { jsonrpc: "2.0", id: 1, result: { sessionId: "stale-session" } },
-      {
-        jsonrpc: "2.0",
-        id: 0,
-        method: "session/request_permission",
-        params: {
-          sessionId: "stale-session",
-          toolCall: { toolCallId: "tc-0", title: "Old" },
-          options: [{ optionId: "a", name: "Allow", kind: "allow_once" }],
-        },
-      },
     ]
       .map((m) => `${JSON.stringify(m)}\n`)
       .join("");

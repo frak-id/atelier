@@ -39,6 +39,7 @@ import {
   SessionsByRepo,
   SessionsByRepoSkeleton,
 } from "@/components/sessions-by-repo";
+import { TaskInboxSection } from "@/components/task-inbox/task-inbox-section";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import {
@@ -80,6 +81,7 @@ function MissionControlPage() {
 
   return (
     <div className="mx-auto max-w-5xl space-y-6">
+      <TaskInboxSection />
       {isPending ? (
         <div className="space-y-2">
           <Skeleton className="h-16 w-full" />

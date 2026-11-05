@@ -14,6 +14,7 @@ import {
   SessionsByRepo,
   SessionsByRepoSkeleton,
 } from "@/components/sessions-by-repo";
+import { SandboxTasks } from "@/components/task-inbox/sandbox-tasks";
 import { Badge } from "@/components/ui/badge";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { EmptyState } from "@/components/ui/empty-state";
@@ -56,6 +57,8 @@ function SessionsPage() {
           {connected ? "Live" : "Reconnecting"}
         </Badge>
       </div>
+
+      <SandboxTasks sandboxId={sandboxId} />
 
       <Card>
         <CardHeader>

@@ -8,10 +8,57 @@
 import type { SessionNotification } from "@agentclientprotocol/sdk";
 import type { OpenAgentSessionInput } from "./acp/agent-dispatch.ts";
 import type { AgentTaskServiceDeps } from "./task.service.ts";
+import type { StoredTask, TaskListFilter, TaskStore } from "./task.store.ts";
 
 export const OWNER = "user-1";
 export const SANDBOX = "sbx-1";
 export const SESSION = "sess-1";
+
+/** An in-memory {@link TaskStore}: the service's persistence without a DB. */
+export class MemoryTaskStore implements TaskStore {
+  readonly rows = new Map<string, StoredTask>();
+
+  upsert(task: StoredTask): void {
+    this.rows.set(task.id, structuredClone(task));
+  }
+
+  get(id: string): StoredTask | undefined {
+    const row = this.rows.get(id);
+    return row && structuredClone(row);
+  }
+
+  list(filter: TaskListFilter): StoredTask[] {
+    return [...this.rows.values()]
+      .filter(
+        (t) =>
+          (!filter.ownerId || t.ownerId === filter.ownerId) &&
+          (!filter.sandboxIds || filter.sandboxIds.includes(t.sandboxId)) &&
+          (!filter.status || t.status === filter.status),
+      )
+      .sort((a, b) => b.createdAt.localeCompare(a.createdAt))
+      .slice(0, filter.limit)
+      .map((t) => structuredClone(t));
+  }
+
+  delete(id: string): void {
+    this.rows.delete(id);
+  }
+
+  failInterrupted(message: string): void {
+    for (const row of this.rows.values()) {
+      if (row.status === "running") {
+        row.status = "failed";
+        row.lastError = message;
+      }
+    }
+  }
+
+  deleteUpdatedBefore(beforeIso: string): void {
+    for (const [id, row] of this.rows) {
+      if (row.updatedAt < beforeIso) this.rows.delete(id);
+    }
+  }
+}
 
 interface PendingPrompt {
   text: string;
@@ -38,7 +85,11 @@ export function makeFake(
     unseenRestart: false,
     stillLiveCalls: 0,
     status: opts.status ?? "running",
+    /** What the end-of-turn git summary command prints. */
+    gitOutput: "",
+    execs: [] as { command: string; cwd?: string }[],
   };
+  const store = new MemoryTaskStore();
   let onUpdate: ((n: SessionNotification) => void) | undefined;
 
   const handleFor = (sessionId: string, connection = state.connection) => ({
@@ -76,6 +127,10 @@ export function makeFake(
   const deps: AgentTaskServiceDeps = {
     runtime: {
       getStatus: () => state.status,
+      exec: async (_id: string, req: { command: string; cwd?: string }) => {
+        state.execs.push(req);
+        return { exitCode: 0, stdout: state.gitOutput, stderr: "" };
+      },
       getLabels: () => ({
         metadata: {},
         annotations:
@@ -84,6 +139,7 @@ export function makeFake(
             : { "atelier.dev/harness": "opencode" }) ?? {},
       }),
     } as unknown as AgentTaskServiceDeps["runtime"],
+    store,
     dispatch: {
       openSession: async (input: OpenAgentSessionInput) => {
         opened.push(input);
@@ -98,6 +154,7 @@ export function makeFake(
 
   return {
     deps,
+    store,
     opened,
     prompts,
     state,

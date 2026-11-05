@@ -62,7 +62,6 @@
       "version": "3.0.2",
       "dependencies": {
         "@agentclientprotocol/sdk": "^2.4.0",
-        "@atelier/compose": "workspace:*",
         "@atelier/spec": "workspace:*",
         "@elysiajs/cors": "^1.4.2",
         "@elysiajs/openapi": "^1.4.16",
@@ -83,16 +82,6 @@
         "@types/ssh2": "^1.15.6",
         "drizzle-kit": "^0.31.11",
         "pino-pretty": "^13.2.0",
-      },
-    },
-    "packages/compose": {
-      "name": "@atelier/compose",
-      "version": "0.1.0",
-      "dependencies": {
-        "@atelier/spec": "workspace:*",
-      },
-      "devDependencies": {
-        "@types/bun": "^1.4.4",
       },
     },
     "packages/shared": {
@@ -122,8 +111,6 @@
   },
   "packages": {
     "@agentclientprotocol/sdk": ["@agentclientprotocol/sdk@2.4.0", "", { "peerDependencies": { "@modelcontextprotocol/server": "^2.4.0", "zod": "^3.25.76 || ^4.0.0" }, "optionalPeers": ["@modelcontextprotocol/server"] }, "sha512-7qJ8nnyj7WesC5ve185ioTpB2/svQoeGV4HA4nLEhgDUrcmBe54/08VcXc/oL4p14tDbxxECZzdYmUYQ+4l+Wg=="],
-
-    "@atelier/compose": ["@atelier/compose@workspace:packages/compose"],
 
     "@atelier/console": ["@atelier/console@workspace:apps/console"],
 

@@ -664,3 +664,135 @@ describe("idle parking", () => {
     expect(fake.state.closed).toBe(0);
   });
 });
+
+describe("persisted tasks", () => {
+  test("a finished turn stores the reply and the sandbox's git result", async () => {
+    const fake = makeFake();
+    fake.state.gitOutput =
+      "branch=feat/x\nhead=abc123\nahead=2\ndiff=1 file changed, 3 insertions(+)\n";
+    const service = makeService(fake);
+    const { taskId } = await service.dispatchTask(OWNER, {
+      sandboxId: SANDBOX,
+      prompt: "\n  Fix the login bug\nwith details",
+      cwd: "/home/dev/app",
+      source: "mcp",
+    });
+    expect(fake.store.get(taskId)).toMatchObject({
+      status: "running",
+      title: "Fix the login bug",
+      source: "mcp",
+      turnCount: 1,
+    });
+
+    fake.say("fixed it");
+    fake.finish();
+    await tick();
+
+    expect(fake.state.execs[0]?.cwd).toBe("/home/dev/app");
+    expect(fake.store.get(taskId)).toMatchObject({
+      status: "idle",
+      lastReply: "fixed it",
+      result: {
+        branch: "feat/x",
+        headSha: "abc123",
+        commitsAhead: 2,
+        diffStat: "1 file changed, 3 insertions(+)",
+      },
+    });
+    const view = await service.get(OWNER, taskId);
+    expect(view.result?.branch).toBe("feat/x");
+  });
+
+  test("a failing git capture never fails the turn", async () => {
+    const fake = makeFake();
+    const service = makeService(fake);
+    fake.deps.runtime.exec = async () => {
+      throw new Error("sandbox unreachable");
+    };
+    const { taskId } = await service.dispatchTask(OWNER, {
+      sandboxId: SANDBOX,
+      prompt: "x",
+    });
+    fake.finish();
+    await tick();
+
+    const view = await service.get(OWNER, taskId);
+    expect(view.status).toBe("idle");
+    expect(view.result).toBeUndefined();
+  });
+
+  test("a restarted server brings the task back parked and reopens it", async () => {
+    const fake = makeFake();
+    fake.state.gitOutput = "branch=main\nhead=abc\n";
+    const before = makeService(fake);
+    const { taskId } = await before.dispatchTask(OWNER, {
+      sandboxId: SANDBOX,
+      prompt: "first",
+    });
+    fake.say("answer one");
+    fake.finish();
+    await tick();
+
+    const after = makeService(fake); // same store, empty memory
+    const view = await after.get(OWNER, taskId);
+    expect(view.status).toBe("idle");
+    expect(view.turnCount).toBe(1);
+    expect(view.turn).toMatchObject({
+      index: 0,
+      status: "completed",
+      prompt: "first",
+      reply: "answer one",
+    });
+    expect(view.result?.branch).toBe("main");
+    await expect(after.get("user-2", taskId)).rejects.toThrow(NotFoundError);
+
+    const next = await after.sendPrompt(OWNER, taskId, "second");
+    expect(fake.opened.at(-1)?.resumeSessionId).toBe(SESSION);
+    expect(next.turn.index).toBe(1);
+    expect(fake.store.get(taskId)?.turnCount).toBe(2);
+  });
+
+  test("a turn left running by a previous process is failed", async () => {
+    const fake = makeFake();
+    const before = makeService(fake);
+    const { taskId } = await before.dispatchTask(OWNER, {
+      sandboxId: SANDBOX,
+      prompt: "x",
+    });
+
+    const after = makeService(fake);
+    const view = await after.get(OWNER, taskId);
+    expect(view.status).toBe("failed");
+    expect(view.turn.error).toContain("restarted");
+  });
+
+  test("closing a task deletes its record", async () => {
+    const fake = makeFake();
+    const service = makeService(fake);
+    const { taskId } = await service.dispatchTask(OWNER, {
+      sandboxId: SANDBOX,
+      prompt: "x",
+    });
+    await service.close(OWNER, taskId);
+    expect(fake.store.get(taskId)).toBeUndefined();
+    expect(() => service.describe(taskId)).toThrow(NotFoundError);
+  });
+
+  test("lists persisted tasks by sandbox, whoever dispatched them", async () => {
+    const fake = makeFake();
+    const service = makeService(fake);
+    await service.dispatchTask(OWNER, { sandboxId: SANDBOX, prompt: "a" });
+    await service.dispatchTask("user-2", { sandboxId: SANDBOX, prompt: "b" });
+
+    expect(service.list(OWNER)).toHaveLength(1);
+    const visible = service.listForSandboxes([SANDBOX], {
+      status: "running",
+    });
+    expect(visible.map((t) => t.title).sort()).toEqual(["a", "b"]);
+    expect(service.listForSandboxes([])).toEqual([]);
+    expect(service.describe(visible[0]?.taskId ?? "")).toMatchObject({
+      status: "running",
+      reply: "",
+    });
+  });
+});

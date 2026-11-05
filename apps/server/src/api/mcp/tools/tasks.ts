@@ -115,8 +115,10 @@ function taskView(
   return {
     taskId: v.taskId,
     sandboxId: v.sandboxId,
+    title: v.title,
     status: v.status,
-    turnCount: v.turns.length,
+    turnCount: v.turnCount,
+    ...(v.result ? { result: v.result } : {}),
     turn: turnOut,
     ...(v.todos.length > 0
       ? {
@@ -233,6 +235,7 @@ export function registerTaskTools(
         sandboxId,
         prompt,
         cwd,
+        source: "mcp",
       });
       return text(
         taskView(
@@ -325,7 +328,9 @@ export function registerTaskTools(
               .map((t) => ({
                 taskId: t.taskId,
                 sandboxId: t.sandboxId,
+                title: t.title,
                 status: t.status,
+                ...(t.result ? { result: t.result } : {}),
                 turnCount: t.turns,
                 lastPrompt: t.lastPrompt,
                 updatedAt: t.updatedAt,

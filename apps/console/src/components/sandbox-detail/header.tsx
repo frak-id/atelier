@@ -2,6 +2,7 @@ import type { SandboxState } from "@atelier/spec";
 import { Link } from "@tanstack/react-router";
 import {
   ExternalLink,
+  ListTodo,
   Loader2,
   MessagesSquare,
   Pencil,
@@ -18,8 +19,10 @@ import { ConfirmDialog } from "@/components/confirm-dialog";
 import { ForkButton } from "@/components/fork-button";
 import { KeepAwakeButton } from "@/components/keep-awake-button";
 import { RenameSandboxDialog } from "@/components/rename-sandbox-dialog";
+import { NewTaskDialog } from "@/components/task-inbox/new-task-dialog";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
+import { useTaskInbox } from "@/hooks/use-task-inbox";
 import {
   harnessFromAnnotations,
   sandboxNameFromAnnotations,
@@ -41,6 +44,11 @@ export function SandboxHeader({
 }) {
   const [destroyOpen, setDestroyOpen] = useState(false);
   const [renameOpen, setRenameOpen] = useState(false);
+  const [taskOpen, setTaskOpen] = useState(false);
+  const { groups } = useTaskInbox();
+  const needReview = [...groups.review, ...groups.failed].filter(
+    (t) => t.sandboxId === sandbox.id,
+  ).length;
   const pause = usePauseSandbox();
   const resume = useResumeSandbox();
   const destroy = useDestroySandbox();
@@ -81,12 +89,31 @@ export function SandboxHeader({
         </Button>
         <Badge variant={status.variant}>{status.label}</Badge>
         {harness ? <Badge variant="outline">{harness}</Badge> : null}
+        {needReview > 0 ? (
+          <Link
+            to="/sandboxes/$sandboxId/sessions"
+            params={{ sandboxId: sandbox.id }}
+            className="text-xs text-primary underline"
+          >
+            {needReview} {needReview === 1 ? "task needs" : "tasks need"} review
+          </Link>
+        ) : null}
       </div>
       <div className="flex flex-wrap items-center gap-2">
         {running ? (
           <Button size="touch" onClick={onOpenTerminal}>
             <TerminalSquare />
             Terminal
+          </Button>
+        ) : null}
+        {running && harness ? (
+          <Button
+            size="touch"
+            variant="outline"
+            onClick={() => setTaskOpen(true)}
+          >
+            <ListTodo />
+            New task
           </Button>
         ) : null}
         {running && harnessUrl ? (
@@ -161,6 +188,11 @@ export function SandboxHeader({
           await destroy.mutateAsync(sandbox.id);
           onDestroyed();
         }}
+      />
+      <NewTaskDialog
+        open={taskOpen}
+        onOpenChange={setTaskOpen}
+        defaultSandboxId={sandbox.id}
       />
       <RenameSandboxDialog
         sandboxId={sandbox.id}

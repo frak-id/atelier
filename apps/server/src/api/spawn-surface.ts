@@ -1,5 +1,5 @@
-import { mergeSpecs } from "@atelier/compose";
 import { type RuntimeSurface, runtimeSurfaceOf } from "@atelier/spec";
+import { mergeSpecs } from "../harnesses/spec-merge.ts";
 
 /**
  * The runtime surface a spawn gets, layered by name with `mergeSpecs` (a

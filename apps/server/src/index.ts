@@ -4,10 +4,7 @@
  * composition root and starts listening.
  */
 import { validateConfig } from "@frak/atelier-shared/config-loader";
-import {
-  createServerContainer,
-  wireBuiltinHarnesses,
-} from "./api/container.ts";
+import { createServerContainer } from "./api/container.ts";
 import { createApp } from "./api/index.ts";
 import { startScheduler } from "./api/scheduler.ts";
 import { assertSecretsKeyConfigured, initDatabase } from "./control/index.ts";
@@ -40,7 +37,6 @@ const container = createServerContainer();
 // the DB-backed config plane so console/env edits apply live. Env-set keys
 // stay authoritative and read-only (see ServerConfigService's env lock).
 bindRuntimeConfig(container.control.serverConfigService);
-await wireBuiltinHarnesses(container);
 container.control.defaultOrg.warnIfDefaultOrgUnset();
 
 // The in-server ssh2 gateway binds its own socket and lives for the process
