@@ -99,19 +99,31 @@ function fakeRuntime() {
     ports: [] as Record<string, unknown>[],
     baked: [] as Record<string, unknown>[],
     keepAwake: [] as (string | null)[],
+    annotations: [] as [string, string | undefined][],
   };
   let bakes: unknown[] = [];
   let logText = "";
   let patchResults: { path: string; success: boolean; error?: string }[] = [];
   let execResult = { exitCode: 0, stdout: "", stderr: "" };
+  /** Per-command answer; `undefined` falls back to `execResult`. */
+  let execFor: (command: string) => typeof execResult | undefined = () =>
+    undefined;
+  let surface: { processes?: { name: string; command: string }[] } = {};
   let status = "running";
   let createGate: Promise<void> | undefined;
   const state = { ...STATE, urls: [...STATE.urls] };
 
   const runtime = {
-    create: async (spec: SandboxSpec, opts: { id?: string }) => {
+    create: async (
+      spec: SandboxSpec,
+      opts: {
+        id?: string;
+        beforeProcesses?: (id: string) => Promise<void>;
+      },
+    ) => {
       await createGate;
       calls.created.push(spec);
+      await opts.beforeProcesses?.(opts.id ?? "sbx-new");
       return {
         id: opts.id ?? "sbx-new",
         urls: STATE.urls,
@@ -163,7 +175,7 @@ function fakeRuntime() {
     destroy: async () => undefined,
     exec: async (id: string, req: Record<string, unknown>) => {
       calls.exec.push({ id, req });
-      return execResult;
+      return execFor(String(req.command)) ?? execResult;
     },
     processAction: async (_id: string, name: string, action: string) => {
       calls.processActions.push(`${action}:${name}`);
@@ -185,8 +197,11 @@ function fakeRuntime() {
         { name: String(req.name), url: `https://${req.name}.example.test` },
       ];
     },
+    setAnnotation: (_id: string, key: string, value: string | undefined) => {
+      calls.annotations.push([key, value]);
+    },
     // createSandboxForUser
-    prebuildSurface: () => undefined,
+    prebuildSurface: () => surface,
     listPrebuilds: () => bakes,
     cachedPrebuild: async () => undefined,
     prebuildForSpawn: async (spec: Record<string, unknown>) => {
@@ -218,6 +233,12 @@ function fakeRuntime() {
     },
     setExec: (v: typeof execResult) => {
       execResult = v;
+    },
+    setExecFor: (fn: typeof execFor) => {
+      execFor = fn;
+    },
+    setSurface: (v: typeof surface) => {
+      surface = v;
     },
     setStatus: (v: string) => {
       status = v;
@@ -343,6 +364,123 @@ describe("create_sandbox", () => {
       repos: [{ url: repo.url, branch: "dev", clonePath: "app" }],
     });
     expect(fake.calls.created[1]?.source).toEqual({ snapshot: "snap-fresh" });
+  });
+
+  describe("`repo` on a branch nobody baked", () => {
+    const repo = { url: "https://github.com/acme/app", branch: "feature/x" };
+    const defaultBake = {
+      ref: "snap-main",
+      spec: {
+        source: { image: "dev-base" },
+        repos: [{ url: "git@github.com:acme/app.git", clonePath: "app" }],
+        build: ["cd app && bun install"],
+      },
+    };
+
+    test("boots the default-branch bake, switched, and builds in the background", async () => {
+      const { call, fake, jobs } = await setup();
+      fake.setBakes([defaultBake]);
+      fake.setSurface({ processes: [{ name: "web", command: "bun dev" }] });
+      const res = await call("create_sandbox", {
+        spec: { source: { image: "dev-base" } },
+        repo,
+      });
+      expect(res.isError).toBe(false);
+      await settle(jobs);
+      const id: string = res.data.id;
+
+      expect(fake.calls.baked).toHaveLength(0);
+      expect(fake.calls.created[0]?.source).toEqual({ snapshot: "snap-main" });
+      // The checkout first (inside the create), then the bake's build steps.
+      expect(fake.calls.exec.map((e) => e.req.command)).toEqual([
+        expect.stringContaining("git checkout -B 'feature/x'"),
+        "cd app && bun install",
+      ]);
+      expect(fake.calls.annotations).toEqual([
+        ["atelier.dev/checkout", `${repo.url}#feature/x`],
+      ]);
+      // The running dev server restarts on the new dependencies.
+      expect(fake.calls.processActions).toEqual(["stop:web", "start:web"]);
+
+      const setupJob = jobs.list().find((j) => j.kind === "sandbox-setup");
+      expect(setupJob).toMatchObject({
+        status: "succeeded",
+        target: "acme/app#feature/x",
+        metadata: { sandboxId: id, branch: "feature/x" },
+        result: { branch: "feature/x" },
+      });
+      const view = await call("get_sandbox", { id });
+      expect(view.data).toMatchObject({
+        setup: { status: "done", branch: "feature/x", jobId: setupJob?.id },
+      });
+    });
+
+    test("a failed checkout warns and runs no build steps", async () => {
+      const { call, fake, jobs } = await setup();
+      fake.setBakes([defaultBake]);
+      fake.setExec({ exitCode: 128, stdout: "", stderr: "fatal: nope" });
+      await call("create_sandbox", {
+        spec: { source: { image: "dev-base" } },
+        repo,
+      });
+      await settle(jobs);
+      expect(fake.calls.exec).toHaveLength(1);
+      expect(fake.calls.annotations).toEqual([]);
+      const create = jobs.list().find((j) => j.kind === "sandbox-create");
+      expect(create?.status).toBe("succeeded");
+      expect(create?.result).toMatchObject({
+        warnings: [
+          "Could not switch acme/app to feature/x (fatal: nope); the " +
+            "sandbox is on the default branch.",
+        ],
+      });
+      expect(jobs.list().some((j) => j.kind === "sandbox-setup")).toBe(false);
+    });
+
+    test("a failing build step settles the setup with a warning", async () => {
+      const { call, fake, jobs } = await setup();
+      fake.setBakes([defaultBake]);
+      // Only the build step fails, not the checkout.
+      fake.setExecFor((command) =>
+        command.includes("bun install")
+          ? { exitCode: 1, stdout: "", stderr: "boom" }
+          : undefined,
+      );
+      const res = await call("create_sandbox", {
+        spec: { source: { image: "dev-base" } },
+        repo,
+      });
+      await settle(jobs);
+      const id: string = res.data.id;
+      const view = await call("get_sandbox", { id });
+      expect(view.data).toMatchObject({
+        status: "running",
+        setup: {
+          status: "warnings",
+          warnings: [expect.stringContaining("cd app && bun install (exit 1)")],
+        },
+      });
+    });
+
+    test("an exact bake of the branch, or another base image, wins", async () => {
+      const { call, fake, jobs } = await setup();
+      fake.setBakes([
+        {
+          ...defaultBake,
+          spec: { ...defaultBake.spec, source: { image: "other" } },
+        },
+      ]);
+      await call("create_sandbox", {
+        spec: { source: { image: "dev-base" } },
+        repo,
+      });
+      await settle(jobs);
+      // No bake on this base image: a quick bake of the branch, as before.
+      expect(fake.calls.baked[0]).toMatchObject({
+        repos: [{ url: repo.url, branch: "feature/x" }],
+      });
+      expect(fake.calls.exec).toEqual([]);
+    });
   });
 
   test("`repo` with a prebuild is refused", async () => {

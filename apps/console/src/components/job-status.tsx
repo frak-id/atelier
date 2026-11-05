@@ -1,7 +1,7 @@
 import { useQuery } from "@tanstack/react-query";
 import { Loader2 } from "lucide-react";
 import type { Job } from "@/api/queries/jobs";
-import { jobsListQuery } from "@/api/queries/jobs";
+import { jobsListQuery, jobWarnings } from "@/api/queries/jobs";
 import { Badge, type BadgeVariant } from "@/components/ui/badge";
 import { cn } from "@/lib/utils";
 
@@ -33,16 +33,18 @@ export function JobStatusBadge({
   job: Job;
   className?: string;
 }) {
+  // Done, but with notes (e.g. a failed build step after a branch switch).
+  const warnings = jobWarnings(job);
   return (
     <Badge
-      variant={STATUS_VARIANT[job.status]}
+      variant={warnings.length > 0 ? "warning" : STATUS_VARIANT[job.status]}
       className={cn("gap-1", className)}
-      title={job.error ?? undefined}
+      title={job.error ?? (warnings.join("\n") || undefined)}
     >
       {job.status === "running" ? (
         <Loader2 className="size-3 animate-spin" />
       ) : null}
-      {STATUS_LABEL[job.status]}
+      {warnings.length > 0 ? "Warnings" : STATUS_LABEL[job.status]}
     </Badge>
   );
 }

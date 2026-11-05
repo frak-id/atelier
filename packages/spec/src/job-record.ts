@@ -4,7 +4,8 @@ import { type Static, Type } from "@sinclair/typebox";
  * The durable long-running operations tracked by the server's `JobService`.
  * Global, no identity scope. The `sandbox-*` kinds are lifecycle ops tracked
  * for feed visibility (they bypass the concurrency pool); the rest are pooled
- * throwaway-pod builds.
+ * throwaway-pod builds. `sandbox-setup` is the work a spawn leaves running in
+ * the live sandbox once it is up (a branch switch's build steps).
  */
 export const JobKindSchema = Type.Union([
   Type.Literal("prebuild"),
@@ -17,6 +18,7 @@ export const JobKindSchema = Type.Union([
   Type.Literal("sandbox-resume"),
   Type.Literal("sandbox-snapshot"),
   Type.Literal("sandbox-destroy"),
+  Type.Literal("sandbox-setup"),
 ]);
 export type JobKind = Static<typeof JobKindSchema>;
 

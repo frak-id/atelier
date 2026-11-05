@@ -1,8 +1,10 @@
 import type { AgentSession, AgentSessionStatus } from "@atelier/spec";
 import {
   repoShortName,
+  SANDBOX_CHECKOUT_ANNOTATION,
   SANDBOX_IDLE_PAUSED_ANNOTATION,
   type SandboxSummary,
+  withCheckedOutBranch,
 } from "@atelier/spec";
 import { useQueries, useQuery } from "@tanstack/react-query";
 import { createFileRoute, Link } from "@tanstack/react-router";
@@ -16,6 +18,7 @@ import {
   Trash2,
 } from "lucide-react";
 import { useState } from "react";
+import { jobsListQuery, latestSetupJob } from "@/api/queries/jobs";
 import { organizationsListQuery } from "@/api/queries/organizations";
 import {
   sandboxDetailQuery,
@@ -339,6 +342,14 @@ function SandboxRow({
   const name = sandboxNameFromAnnotations(sandbox.annotations);
   const orgId = orgIdFromAnnotations(sandbox.annotations);
   const orgName = orgId ? orgNameById.get(orgId) : undefined;
+  // A branch switch's build steps, still running in the sandbox.
+  const { data: jobs } = useQuery(jobsListQuery());
+  const setup = latestSetupJob(jobs, sandbox.id);
+  const settingUp = setup?.status === "running" || setup?.status === "queued";
+  const repos = withCheckedOutBranch(
+    sandbox.repos ?? [],
+    sandbox.annotations?.[SANDBOX_CHECKOUT_ANNOTATION],
+  );
 
   return (
     <Card>
@@ -357,6 +368,16 @@ function SandboxRow({
               <span className="truncate font-mono text-sm">{sandbox.id}</span>
             )}
             <Badge variant={status.variant}>{status.label}</Badge>
+            {settingUp ? (
+              <Badge
+                variant="info"
+                className="gap-1"
+                title="The prebuild's build steps are re-running for this branch"
+              >
+                <Loader2 className="size-3 animate-spin" />
+                Setting up
+              </Badge>
+            ) : null}
             {harness ? <Badge variant="outline">{harness}</Badge> : null}
             {owner ? <Badge variant="secondary">@{owner}</Badge> : null}
             {orgName ? <Badge variant="outline">{orgName}</Badge> : null}
@@ -374,9 +395,7 @@ function SandboxRow({
               </span>
             ) : null}
           </span>
-          {sandbox.repos && sandbox.repos.length > 0 ? (
-            <SandboxRepos repos={sandbox.repos} />
-          ) : null}
+          {repos.length > 0 ? <SandboxRepos repos={repos} /> : null}
         </Link>
         <div className="flex items-center gap-2">
           <Button

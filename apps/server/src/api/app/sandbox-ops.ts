@@ -50,6 +50,13 @@ import { ownedJobMetadata } from "../job-access.ts";
 import { requireSourceAccess } from "../sandbox-guard.ts";
 import { spawnSurface } from "../spawn-surface.ts";
 import {
+  type BranchSwitch,
+  branchSetupLabel,
+  checkoutBranch,
+  planBranchSwitch,
+  runBranchSetup,
+} from "./branch-setup.ts";
+import {
   type ToolboxOps,
   toolboxHarness,
   toolboxSurface,
@@ -317,28 +324,36 @@ export class SandboxOps {
         memoryMb: resources?.memoryMb ?? defaultMemoryMb(),
       },
     };
-    // `repo`: boot from an existing bake of it, else bake a quick one-repo
-    // prebuild below (on `source.image`, the base `assertRepoRequest`
-    // checked).
+    // `repo`: boot from an existing bake of that branch; else from the
+    // repo's default-branch bake, switched to the branch (`branch-setup.ts`);
+    // else bake a quick one-repo prebuild below (on `source.image`, the base
+    // `assertRepoRequest` checked).
     let prebuild = bodyPrebuild;
+    let branchSwitch: BranchSwitch | undefined;
     if (repo && "image" in spec.source) {
       // Only a bake on the requested base image: another base is another
       // environment.
       const baseImage = spec.source.image;
-      const baked = findRepoBranchPrebuild(
-        runtime
-          .listPrebuilds()
-          .filter(
-            (record) =>
-              record.spec?.source !== undefined &&
-              "image" in record.spec.source &&
-              record.spec.source.image === baseImage,
-          ),
-        repo.url,
-        repo.branch,
-      );
+      const onBase = runtime
+        .listPrebuilds()
+        .filter(
+          (record) =>
+            record.spec?.source !== undefined &&
+            "image" in record.spec.source &&
+            record.spec.source.image === baseImage,
+        );
+      const baked = findRepoBranchPrebuild(onBase, repo.url, repo.branch);
+      branchSwitch = baked
+        ? undefined
+        : planBranchSwitch(runtime, onBase, repo.url, repo.branch);
       if (baked) {
         spec = { ...spec, source: { snapshot: baked.ref } };
+      } else if (branchSwitch) {
+        onProgress(
+          `no prebuild of ${branchSwitch.branch}: booting from ` +
+            `${branchSwitch.baseRef} and switching to it`,
+        );
+        spec = { ...spec, source: { snapshot: branchSwitch.baseRef } };
       } else {
         prebuild = buildRepoPrebuildSpec({
           repo: repo.url,
@@ -439,8 +454,65 @@ export class SandboxOps {
           }
         : {}),
     };
-    const created = await runtime.create(withToolboxes, { id, onProgress });
+    // A branch switch checks out before any process starts, so neither the
+    // dev servers nor an agent ever see the default branch. Its build steps
+    // run once the sandbox is up.
+    const plan = branchSwitch;
+    const checkout = { switched: false };
+    const created = await runtime.create(withToolboxes, {
+      id,
+      onProgress,
+      ...(plan
+        ? {
+            beforeProcesses: async (sandboxId: string) => {
+              const warning = await checkoutBranch(
+                runtime,
+                sandboxId,
+                plan,
+                onProgress,
+              );
+              if (warning) {
+                warnings.push(warning);
+                onProgress(`warning: ${warning}`);
+              } else {
+                checkout.switched = true;
+              }
+            },
+          }
+        : {}),
+    });
+    if (plan && checkout.switched && plan.build.length > 0) {
+      const job = this.startBranchSetup(user.id, id, plan);
+      onProgress(`build steps run in the background (job ${job.id})`);
+    }
     return warnings.length > 0 ? { ...created, warnings } : created;
+  }
+
+  /** Re-run a switched sandbox's build steps in the background: a
+   * `sandbox-setup` job on the sandbox (so it holds idle auto-pause), unpooled
+   * because it runs in the sandbox itself, not in a build pod. */
+  private startBranchSetup(
+    owner: string,
+    id: string,
+    plan: BranchSwitch,
+  ): JobRecord {
+    return this.jobs.dispatch(
+      {
+        kind: "sandbox-setup",
+        target: branchSetupLabel(plan),
+        metadata: { sandboxId: id, owner, repo: plan.url, branch: plan.branch },
+        unpooled: true,
+      },
+      (_signal, log) => runBranchSetup(this.runtime, id, plan, log),
+    );
+  }
+
+  /** The sandbox's latest `sandbox-setup` job: running while a branch
+   * switch's build steps are, then settled with its warnings (if any). */
+  latestSetup(id: string): JobRecord | undefined {
+    const isSetup = (job: JobRecord) =>
+      job.kind === "sandbox-setup" && job.metadata?.sandboxId === id;
+    return this.jobs.findActive(isSetup) ?? this.jobs.list(200).find(isSetup);
   }
 
   /**

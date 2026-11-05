@@ -24,7 +24,9 @@ import {
 import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { z } from "zod";
 import type { AuthUser } from "../../../control/index.ts";
+import type { JobRecord } from "../../../runtime/index.ts";
 import { ValidationError } from "../../../shared/errors.ts";
+import type { BranchSetupResult } from "../../app/branch-setup.ts";
 import { settledWithin } from "../../app/sandbox-ops.ts";
 import type { ServerContainer } from "../../container.ts";
 import {
@@ -65,6 +67,28 @@ function splitUrls(raw: RawUrl[], verbose = false) {
   return { urls, ssh };
 }
 
+/** A branch switch's background build steps (`sandbox-setup` job), for an
+ * agent: `running` means dependencies may still be stale. */
+function setupView(job: JobRecord | undefined) {
+  if (!job) return undefined;
+  const warnings = (job.result as BranchSetupResult | undefined)?.warnings;
+  const status =
+    job.status === "queued" || job.status === "running"
+      ? "running"
+      : job.status === "succeeded"
+        ? warnings?.length
+          ? "warnings"
+          : "done"
+        : "failed";
+  return {
+    status,
+    ...(job.metadata?.branch ? { branch: job.metadata.branch } : {}),
+    jobId: job.id,
+    ...(warnings?.length ? { warnings } : {}),
+    ...(job.error ? { error: job.error } : {}),
+  };
+}
+
 /** The one agent-facing shape of a live sandbox (get_sandbox, resume). */
 function sandboxView(
   state: {
@@ -78,6 +102,7 @@ function sandboxView(
   },
   verbose = false,
   idle?: SandboxIdleSummary,
+  setup?: ReturnType<typeof setupView>,
 ) {
   const { urls, ssh } = splitUrls(state.urls, verbose);
   const name = state.annotations?.[SANDBOX_NAME_ANNOTATION];
@@ -90,6 +115,7 @@ function sandboxView(
     processes: state.processes,
     ...(state.bootedFrom ? { bootedFrom: state.bootedFrom } : {}),
     ...(idle ? { idle } : {}),
+    ...(setup ? { setup } : {}),
     ...(verbose && state.metadata ? { metadata: state.metadata } : {}),
   };
 }
@@ -130,7 +156,10 @@ export function registerSandboxTools(
         "their own). `waitSeconds` + `until` long-poll for a status, e.g. " +
         "after `create_sandbox`. `idle`: when the server auto-pauses it " +
         "(`pausesAt`; `mode: observe` = only would); " +
-        "`sandbox_lifecycle` action=keep_awake postpones. Without `id`: " +
+        "`sandbox_lifecycle` action=keep_awake postpones. `setup`: build " +
+        "steps still running after a branch switch (status `running`: " +
+        "dependencies may be stale, poll until `done`, or `warnings`). " +
+        "Without `id`: " +
         "`{sandboxes}`, newest first (id, status, name, repos, createdAt, " +
         "idle), optionally filtered by `status` and `metadata`.",
       inputSchema: {
@@ -214,6 +243,7 @@ export function registerSandboxTools(
               await runtime.get(id),
               verbose,
               container.idle.summary(id),
+              setupView(sandboxOps.latestSetup(id)),
             ),
           );
         }
@@ -296,8 +326,11 @@ export function registerSandboxTools(
           .object({ url: z.string(), branch: z.string().optional() })
           .optional()
           .describe(
-            "A git repo to boot from (a prebuild of it is reused, else one " +
-              "is baked on `spec.source.image`). Not with `prebuild` or a " +
+            "A git repo to boot from: a prebuild of that branch is reused; " +
+              "else the repo's default-branch prebuild boots switched to the " +
+              "branch, its build steps re-running in the background " +
+              "(`get_sandbox` `setup`); else one is baked on " +
+              "`spec.source.image`. Not with `prebuild` or a " +
               "`spec.source.snapshot`.",
           ),
         orgId: z

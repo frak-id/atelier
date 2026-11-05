@@ -22,6 +22,27 @@ export function isJob(value: unknown): value is Job {
   return Check(JobRecordSchema, value);
 }
 
+/** The non-fatal notes a job succeeded with: a spawn that booted from the
+ * last good prebuild, a branch setup whose build step failed. */
+export function jobWarnings(job: Job): string[] {
+  if (job.status !== "succeeded") return [];
+  const warnings = (job.result as { warnings?: unknown } | undefined)?.warnings;
+  return Array.isArray(warnings)
+    ? warnings.filter((w): w is string => typeof w === "string")
+    : [];
+}
+
+/** The latest `sandbox-setup` job of a sandbox (the list is newest-first):
+ * a branch switch's build steps, still running or settled. */
+export function latestSetupJob(
+  jobs: readonly Job[] | undefined,
+  sandboxId: string,
+): Job | undefined {
+  return jobs?.find(
+    (j) => j.kind === "sandbox-setup" && j.metadata?.sandboxId === sandboxId,
+  );
+}
+
 /** True only while a job is actually executing (not merely waiting for a
  * concurrency slot). */
 export function isJobRunning(job: Job): boolean {
@@ -109,6 +130,8 @@ export function jobKindLabel(kind: Job["kind"]): string {
       return "Snapshot";
     case "sandbox-destroy":
       return "Destroy";
+    case "sandbox-setup":
+      return "Branch setup";
     default:
       return kind;
   }

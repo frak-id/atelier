@@ -35,8 +35,9 @@ Agent tasks and MCP:
   file is one shell command. It decodes UTF-8 text only and assumes a POSIX
   shell with `wc`, `sed` and `head`.
 - **Create warnings are job-only.** The last-good prebuild fallback warning
-  appears in the create job result and the console toast, not in the MCP
-  `create_sandbox` result.
+  and a failed branch checkout appear in the create job result and the
+  console toast, not in the MCP `create_sandbox` result. (A branch setup's
+  build-step warnings do reach MCP, as `get_sandbox` `setup`.)
 - **A snapshot or pause ref is not retrievable over MCP** when the operation
   outlives `waitSeconds`.
 - **A create job that fails before its record exists** leaves `get_sandbox`

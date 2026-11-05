@@ -1,7 +1,7 @@
 import { type QueryClient, useQueryClient } from "@tanstack/react-query";
 import { useEffect, useRef } from "react";
 import { toast } from "sonner";
-import { isJob, type Job, jobKindLabel } from "@/api/queries/jobs";
+import { isJob, type Job, jobKindLabel, jobWarnings } from "@/api/queries/jobs";
 import { queryKeys } from "@/api/queries/keys";
 import { httpUrl } from "@/lib/api-base";
 
@@ -131,15 +131,15 @@ function onJobSettled(queryClient: QueryClient, job: Job): void {
     queryClient.invalidateQueries({ queryKey: queryKeys.toolboxes.all });
   }
   // A spawn can succeed with non-fatal notes (e.g. it booted from the last
-  // good prebuild because the rebuild failed): the job's result is the
-  // `CreateSandboxResponse`.
-  if (job.kind === "sandbox-create" && job.status === "succeeded") {
-    const { warnings } = (job.result ?? {}) as { warnings?: string[] };
-    for (const warning of warnings ?? []) {
-      toast.warning(warning, { duration: 15_000 });
-    }
+  // good prebuild because the rebuild failed, or could not switch to its
+  // branch), and so can a branch setup (a build step failed).
+  const warnings = jobWarnings(job);
+  for (const warning of warnings) {
+    toast.warning(warning, { duration: 15_000 });
   }
   if (SELF_TOASTING_KINDS.has(job.kind)) return;
+  // A setup's warnings say it all; "done" on top would contradict them.
+  if (job.kind === "sandbox-setup" && warnings.length > 0) return;
   const kindLabel = jobKindLabel(job.kind);
   const description =
     job.error ?? refreshSummary(job) ?? job.target ?? undefined;
@@ -193,6 +193,8 @@ function invalidateForKind(queryClient: QueryClient, job: Job): void {
     case "sandbox-resume":
     case "sandbox-snapshot":
     case "sandbox-destroy":
+    // A branch setup restarts the dev servers.
+    case "sandbox-setup":
       // Lifecycle ops are awaited by their route (the mutation's own
       // onSuccess already refreshes), so this is a belt-and-suspenders
       // refresh of the sandbox list for any other watcher.

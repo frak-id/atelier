@@ -159,6 +159,30 @@ cancel, the spawn falls back to the recipe's newest snapshot and reports a
 warning. Pruning keeps `prebuild.pruneKeep` superseded snapshots per recipe and
 never deletes the newest one.
 
+**Spawning a branch nobody baked.** A `repo` spawn (`POST /v1/sandboxes`,
+MCP `create_sandbox`, the console's repo card) on a branch with no prebuild
+of its own boots from that repo's default-branch prebuild on the same base
+image instead of baking (`findRepoBasePrebuild`, `api/app/branch-setup.ts`):
+
+1. Inside the create, after `postCreate` and before any process starts
+   (`RuntimeCreateOptions.beforeProcesses`, never stored in the spec, so a
+   fork or resume does not run it again), a shallow fetch checks the branch
+   out, tracking `origin/<branch>`. The sandbox records it in the
+   `atelier.dev/checkout` annotation, which the console's list shows.
+2. Once the sandbox is `running`, a `sandbox-setup` job (unpooled, on the
+   sandbox, so it holds idle auto-pause) re-runs the prebuild's whole
+   `build[]` as `dev` from the home, fail-fast, with live logs, then
+   restarts the prebuild's dev servers that are running. The console shows it
+   on the sandbox page and list, and MCP `get_sandbox` returns it as `setup`.
+
+Every failure is a warning, never a failed spawn: a failed checkout leaves the
+sandbox on the default branch (a create warning, no setup job), and a failed
+step leaves the dependencies as baked (the setup job's `warnings`). The steps
+run with the sandbox's env, not the prebuild's build-only `env`, which may hold
+values the spawning user must not read. Without a default-branch prebuild,
+the spawn bakes a one-repo prebuild of the branch as before. An explicit bake
+of the branch always wins.
+
 A prebuild can clone any number of repos and declare its projects' dev
 servers as a **runtime surface in the toolbox scheme**
 (`packages/spec/src/runtime-surface.ts`): `processes` + `ports` (several

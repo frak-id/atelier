@@ -3,6 +3,7 @@ import type { PrebuildRecord } from "./prebuild-spec.ts";
 import {
   buildRepoPrebuildSpec,
   detectSetupSteps,
+  findRepoBasePrebuild,
   findRepoBranchPrebuild,
   findRepoPrebuilds,
   normalizeBranch,
@@ -15,6 +16,7 @@ import {
   repoKey,
   repoShortName,
   runtimeOnlyEdit,
+  withCheckedOutBranch,
   withoutSurface,
 } from "./repo-prebuild.ts";
 
@@ -180,6 +182,65 @@ describe("findRepoPrebuilds / findRepoBranchPrebuild", () => {
     expect(findRepoBranchPrebuild(onlyImplicit, url, "main", "main")?.ref).toBe(
       "snap-default",
     );
+  });
+});
+
+describe("findRepoBasePrebuild", () => {
+  const url = "https://github.com/frak-id/atelier";
+  const rows = [
+    record("snap-dev", url, "dev"),
+    record("snap-default", `${url}.git`),
+    record("snap-other", "https://github.com/frak-id/wallet"),
+  ];
+
+  test("a feature branch falls back to the default-branch prebuild", () => {
+    expect(findRepoBasePrebuild(rows, url, "feature/x")?.ref).toBe(
+      "snap-default",
+    );
+    // Only the default branch is a base: another feature branch never is.
+    expect(findRepoBasePrebuild(rows.slice(0, 1), url, "feature/x")).toBe(
+      undefined,
+    );
+  });
+
+  test("a default-branch spawn has nothing to switch to", () => {
+    expect(findRepoBasePrebuild(rows, url, undefined)).toBeUndefined();
+    expect(findRepoBasePrebuild(rows, url, "  ")).toBeUndefined();
+    expect(findRepoBasePrebuild(rows, url, "main", "main")).toBeUndefined();
+  });
+
+  test("the default-branch hint counts an explicit default as a base", () => {
+    const explicit = [record("snap-main", url, "main")];
+    expect(findRepoBasePrebuild(explicit, url, "feature/x")).toBeUndefined();
+    expect(findRepoBasePrebuild(explicit, url, "feature/x", "main")?.ref).toBe(
+      "snap-main",
+    );
+  });
+});
+
+describe("withCheckedOutBranch", () => {
+  const atelier = { url: "https://github.com/frak-id/atelier", branch: "dev" };
+  const repos: { url: string; branch?: string }[] = [
+    { url: "https://github.com/frak-id/wallet" },
+    atelier,
+  ];
+
+  test("applies the recorded branch to its repo only", () => {
+    expect(
+      withCheckedOutBranch(repos, "git@github.com:frak-id/wallet.git#feat#1"),
+    ).toEqual([
+      { url: "https://github.com/frak-id/wallet", branch: "feat#1" },
+      atelier,
+    ]);
+  });
+
+  test("an absent or malformed annotation changes nothing", () => {
+    expect(withCheckedOutBranch(repos, undefined)).toEqual(repos);
+    expect(withCheckedOutBranch(repos, "no-branch")).toEqual(repos);
+    expect(withCheckedOutBranch(repos, "#main")).toEqual(repos);
+    expect(
+      withCheckedOutBranch(repos, "https://github.com/frak-id/wallet#"),
+    ).toEqual(repos);
   });
 });
 

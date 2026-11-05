@@ -23,6 +23,13 @@ const POOLED_BUILD_KINDS = new Set<Job["kind"]>([
   "toolbox-refresh",
 ]);
 
+/** Kinds whose job log carries step output: the pooled builds, plus a
+ * branch setup's build steps (run in the sandbox, not cancellable). */
+const LOGGED_KINDS = new Set<Job["kind"]>([
+  ...POOLED_BUILD_KINDS,
+  "sandbox-setup",
+]);
+
 export function JobRow({
   job,
   onDismiss,
@@ -37,7 +44,7 @@ export function JobRow({
   const cancelable =
     job.status === "queued" ||
     (job.status === "running" && POOLED_BUILD_KINDS.has(job.kind));
-  const hasLogs = POOLED_BUILD_KINDS.has(job.kind);
+  const hasLogs = LOGGED_KINDS.has(job.kind);
   return (
     <div className="rounded-md border p-2.5">
       <div className="flex items-center gap-3">
@@ -100,7 +107,7 @@ export function JobRow({
   );
 }
 
-function JobLogs({ id }: { id: string }) {
+export function JobLogs({ id }: { id: string }) {
   const { data } = useQuery(jobLogsQuery(id));
   const log = data?.log?.trim();
   return (

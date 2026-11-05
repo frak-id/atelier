@@ -8,6 +8,7 @@ import {
 } from "@/api/queries/sandboxes";
 import { ImmersiveView } from "@/components/immersive-view";
 import { SandboxActivitySection } from "@/components/sandbox-activity";
+import { BranchSetupSection } from "@/components/sandbox-detail/branch-setup";
 import { ExposePortSection } from "@/components/sandbox-detail/expose-port";
 import { SandboxHeader } from "@/components/sandbox-detail/header";
 import {
@@ -83,6 +84,8 @@ function SandboxDetailPage() {
         onOpenTerminal={() => setImmersive(true)}
         onDestroyed={() => navigate({ to: "/" })}
       />
+
+      <BranchSetupSection sandboxId={sandbox.id} />
 
       {sandbox.bootedFrom ? (
         <BootedFromCard bootedFrom={sandbox.bootedFrom} />

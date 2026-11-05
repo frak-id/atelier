@@ -114,6 +114,14 @@ export interface RuntimeCreateOptions {
   /** Optional boot-progress sink: coarse phase lines streamed to the caller
    * (e.g. the sandbox-create job log the console tails during boot). */
   onProgress?: (msg: string) => void;
+  /**
+   * One-shot work in the booted guest after `postCreate` and before any
+   * process starts (exec, files), still `creating`. Unlike a hook it is not
+   * stored in the spec, so a fork or resume never runs it again. A throw
+   * fails the create like a failed hook: callers that only want to warn
+   * catch their own errors.
+   */
+  beforeProcesses?: (id: string) => Promise<void>;
 }
 
 /** What a fork's `derive` step returns: the copy's spec. */
@@ -339,6 +347,7 @@ export class RuntimeService {
       this.sandboxToolsetRefs.putForSandbox(id, toRefEntries(spec.toolsets));
 
       await this.runPhase(id, "postCreate");
+      await options.beforeProcesses?.(id);
       progress("reconciling processes…");
       await this.agent.reconcile(id);
       await this.gateOnPrimary(id);

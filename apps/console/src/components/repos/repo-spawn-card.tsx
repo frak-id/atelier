@@ -1,11 +1,22 @@
 import {
   buildRepoPrebuildSpec,
   type CreateSandboxRequest,
+  findRepoBasePrebuild,
   findRepoBranchPrebuild,
   normalizeBranch,
+  type PrebuildRecord,
   type SandboxSpec,
 } from "@atelier/spec";
-import { Hammer, Loader2, Rocket, Search, Timer, X, Zap } from "lucide-react";
+import {
+  GitBranch,
+  Hammer,
+  Loader2,
+  Rocket,
+  Search,
+  Timer,
+  X,
+  Zap,
+} from "lucide-react";
 import { useId, useMemo, useRef, useState } from "react";
 import { useRunPrebuild } from "@/api/queries/prebuilds";
 import { JobStatusBadge } from "@/components/job-status";
@@ -43,9 +54,12 @@ const PICKER_LIMIT = 50;
 /**
  * "Spawn from a repository": pick one of your GitHub repos + a branch and
  * spawn. With a prebuild for that branch the sandbox boots from the snapshot
- * right away. Without one, the request carries the prebuild *recipe*: the
- * server bakes it (the same spec the Prebuilds tab would create) and boots
- * from it, so the first spawn is slower and later ones are instant.
+ * right away. Without one but with a default-branch prebuild, the request
+ * carries the `repo`: the server boots that prebuild, switches it to the
+ * branch, and re-runs its build steps in the background. Without either, the
+ * request carries the prebuild *recipe*: the server bakes it (the same spec
+ * the Prebuilds tab would create) and boots from it, so the first spawn is
+ * slower and later ones are instant.
  *
  * Controlled by the page's URL search params (`?repo=&branch=`), so the
  * selection is deep-linkable, e.g. from the Prebuilds tab's "Spawn" button.
@@ -307,6 +321,21 @@ function SelectedRepo({
     branchParam,
     repo.defaultBranch,
   );
+  // The server's own rule (`createForUser`): a default-branch bake on an
+  // image, matched without the default-branch hint the server lacks.
+  const base = matched
+    ? undefined
+    : findRepoBasePrebuild(
+        entry.prebuilds.filter(
+          (p) => p.spec !== undefined && "image" in p.spec.source,
+        ),
+        repo.cloneUrl,
+        branchParam,
+      );
+  const baseImage =
+    base?.spec && "image" in base.spec.source
+      ? base.spec.source.image
+      : undefined;
   const buildingThis = activeJobForBranch(entry, branchParam) !== undefined;
   // The recipe path needs the detected steps (see `useRepoInspection`).
   const stepsReady = !inspection.detecting;
@@ -327,6 +356,12 @@ function SelectedRepo({
     if (matched) {
       onSpawn({
         ...baseSpec({ snapshot: matched.ref }),
+        metadata,
+      });
+    } else if (base && baseImage) {
+      onSpawn({
+        ...baseSpec({ image: baseImage }),
+        repo: { url: repo.cloneUrl, branch: branchParam },
         metadata,
       });
     } else {
@@ -372,7 +407,10 @@ function SelectedRepo({
 
       <SpawnPlan
         matchedAt={matched?.createdAt}
-        otherRepos={otherReposNote(matched)}
+        base={base}
+        branch={branch}
+        defaultBranch={repo.defaultBranch}
+        otherRepos={otherReposNote(matched ?? base)}
         building={buildingThis}
         steps={inspection.suggestedBuild}
         stepsPending={!stepsReady}
@@ -380,12 +418,12 @@ function SelectedRepo({
 
       <div className="flex flex-wrap gap-2">
         <Button
-          disabled={spawnPending || (!matched && !stepsReady)}
+          disabled={spawnPending || (!matched && !base && !stepsReady)}
           loading={spawnPending}
           onClick={spawn}
         >
           {spawnPending ? null : <Rocket />}
-          {matched ? "Spawn" : "Prebuild & spawn"}
+          {matched || base ? "Spawn" : "Prebuild & spawn"}
         </Button>
         {!matched ? (
           <Button
@@ -413,12 +451,19 @@ function SelectedRepo({
  * will roughly take. */
 function SpawnPlan({
   matchedAt,
+  base,
+  branch,
+  defaultBranch,
   otherRepos,
   building,
   steps,
   stepsPending,
 }: {
   matchedAt?: string;
+  /** The default-branch prebuild a spawn of `branch` boots and switches. */
+  base?: PrebuildRecord;
+  branch: string;
+  defaultBranch?: string;
   /** `otherReposNote` of the matched prebuild: spawning it brings the
    * other repos it clones along too. */
   otherRepos: string;
@@ -433,6 +478,30 @@ function SpawnPlan({
         Boots instantly from the prebuild built {formatRelativeTime(matchedAt)}
         {otherRepos}.
       </p>
+    );
+  }
+  if (base) {
+    const baseSteps = base.spec?.build ?? [];
+    return (
+      <div className="flex items-start gap-2 rounded-md border border-success/30 bg-success/10 p-2.5 text-sm text-success">
+        <GitBranch className="mt-0.5 size-4 shrink-0" />
+        <div className="min-w-0 space-y-1">
+          <p>
+            Boots from the {defaultBranch ?? "default-branch"} prebuild built{" "}
+            {formatRelativeTime(base.createdAt)}
+            {otherRepos}, switched to{" "}
+            <span className="font-mono">{branch}</span>.{" "}
+            {baseSteps.length > 0
+              ? "Its build steps then re-run in the background: you can start working right away."
+              : null}
+          </p>
+          {baseSteps.length > 0 ? (
+            <p className="truncate font-mono text-xs opacity-80">
+              Setup: {baseSteps.join(" && ")}
+            </p>
+          ) : null}
+        </div>
+      </div>
     );
   }
   if (building) {

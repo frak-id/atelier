@@ -58,6 +58,64 @@ describe("RuntimeService lifecycle", () => {
     expect(runtime.create(spec, { id: "sb1" })).rejects.toThrow(ConflictError);
   });
 
+  test("beforeProcesses runs once, after postCreate and before processes", async () => {
+    const agent = new FakeAgentClient();
+    const order: string[] = [];
+    agent.runHook = async (_id, phase) => {
+      order.push(phase);
+      return { success: true, results: [] };
+    };
+    agent.reconcile = async () => {
+      order.push("reconcile");
+    };
+    const sandboxes = new stores.DrizzleSandboxStore();
+    const runtime = new RuntimeService({
+      ...fakeRuntimeDeps(),
+      agent,
+      sandboxes,
+      snapshots: new stores.DrizzleSnapshotStore(),
+      toolsets: new stores.DrizzleToolsetStore(),
+      sandboxToolsetRefs: new stores.DrizzleSandboxToolsetRefStore(),
+    });
+    await runtime.create(spec, {
+      id: "sb1",
+      beforeProcesses: async (id) => {
+        order.push(`before:${sandboxes.get(id)?.status}`);
+        await runtime.exec(id, { command: "true" });
+        runtime.setAnnotation(id, "atelier.dev/checkout", "u#b");
+      },
+    });
+    expect(order).toEqual([
+      "postCreate",
+      "before:creating",
+      "reconcile",
+      "postStart",
+    ]);
+    // What it records survives the rest of the boot.
+    expect(sandboxes.get("sb1")?.spec.annotations).toEqual({
+      "atelier.dev/checkout": "u#b",
+    });
+    expect(sandboxes.get("sb1")?.status).toBe("running");
+
+    // Not part of the stored spec: a fork of it never runs it again.
+    order.length = 0;
+    await runtime.fork("sb1", forkWith(), { id: "sb2" });
+    expect(order).not.toContain("before:creating");
+  });
+
+  test("a throwing beforeProcesses fails the create", async () => {
+    const { runtime, sandboxes } = makeRuntime();
+    await expect(
+      runtime.create(spec, {
+        id: "sb1",
+        beforeProcesses: async () => {
+          throw new Error("boom");
+        },
+      }),
+    ).rejects.toThrow("boom");
+    expect(sandboxes.get("sb1")?.status).toBe("error");
+  });
+
   test("pause requires running; resume requires paused or error", async () => {
     const { runtime, sandboxes } = makeRuntime();
     await runtime.create(spec, { id: "sb1" });

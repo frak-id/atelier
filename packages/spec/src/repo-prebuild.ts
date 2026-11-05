@@ -151,6 +151,46 @@ export function findRepoBranchPrebuild(
   );
 }
 
+/**
+ * The prebuild a spawn of `url` on `branch` can boot from and then switch
+ * to `branch` when no bake of that branch exists: the repo's default-branch
+ * prebuild (same preference as `findRepoBranchPrebuild`). Its snapshot
+ * already holds the clone and the installed dependencies, so checking the
+ * branch out and re-running the build steps beats a cold bake. `undefined`
+ * for a default-branch spawn (nothing to switch to) or when the repo has no
+ * default-branch prebuild. The server and the console MUST both call this,
+ * or the console would promise a fast boot the server doesn't do.
+ */
+export function findRepoBasePrebuild(
+  records: readonly PrebuildRecord[],
+  url: string,
+  branch: string | undefined,
+  defaultBranch?: string,
+): PrebuildRecord | undefined {
+  if (normalizeBranch(branch, defaultBranch) === undefined) return undefined;
+  return findRepoBranchPrebuild(records, url, undefined, defaultBranch);
+}
+
+/**
+ * The repos a sandbox works on, with the branch switch recorded in its
+ * `SANDBOX_CHECKOUT_ANNOTATION` (`<url>#<branch>`) applied: a sandbox booted
+ * from a default-branch prebuild and switched to a feature branch lists that
+ * branch, not the prebuild's. Display only; an absent or malformed
+ * annotation leaves `repos` unchanged.
+ */
+export function withCheckedOutBranch<
+  T extends { url: string; branch?: string },
+>(repos: readonly T[], checkout: string | undefined): T[] {
+  const hash = checkout?.indexOf("#") ?? -1;
+  if (!checkout || hash <= 0) return [...repos];
+  const key = repoKey(checkout.slice(0, hash));
+  const branch = checkout.slice(hash + 1).trim();
+  if (!branch) return [...repos];
+  return repos.map((repo) =>
+    repoKey(repo.url) === key ? { ...repo, branch } : repo,
+  );
+}
+
 /** Split a prebuild job target (see `prebuildJobTarget`) back into the repos
  * it bakes: `repoKey` identity plus the raw `#branch`, if any. Targets that
  * aren't repo-shaped (an image or snapshot fallback) still parse, and just
