@@ -4,11 +4,11 @@
  * owners are the server admins (config, images, prebuild deletion).
  *
  * With no `defaultOrg` configured there is no admin concept: everyone is an
- * admin (today's behavior; `warnIfDefaultOrgUnset` flags it in production).
+ * admin. Production refuses to start without it (`validateConfig`).
  * Auth-bypassed modes (local) are single-user: everyone is an admin there too.
  */
 import { ForbiddenError } from "../shared/errors.ts";
-import { config, isAuthBypassed, isProduction } from "../shared/lib/config.ts";
+import { config, isAuthBypassed } from "../shared/lib/config.ts";
 import { createChildLogger } from "../shared/lib/logger.ts";
 import type { OrgMemberService } from "./modules/org-member/index.ts";
 import type { OrganizationService } from "./modules/organization/index.ts";
@@ -64,14 +64,6 @@ export function createDefaultOrg({
       }
       if (!orgMemberService.getMembership(existing.id, userId)) {
         orgMemberService.addMember(existing.id, userId, "member");
-      }
-    },
-    warnIfDefaultOrgUnset(): void {
-      if (isProduction() && !config.auth.defaultOrg) {
-        log.warn(
-          "auth.defaultOrg is not set: every user is a server admin and " +
-            "sandboxes default to the caller's personal org",
-        );
       }
     },
   };

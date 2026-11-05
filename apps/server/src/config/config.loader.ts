@@ -276,6 +276,14 @@ export function validateConfig(
           "GitHub client secret is required (set ATELIER_GITHUB_CLIENT_SECRET)",
       });
     }
+    if (isProduction && !config.auth.defaultOrg) {
+      errors.push({
+        field: "auth.defaultOrg",
+        message:
+          "The team org is required in production: its owners are the " +
+          "server admins (set ATELIER_DEFAULT_ORG)",
+      });
+    }
     if (config.auth.jwtSecret === "dev-secret-change-in-production") {
       errors.push({
         field: "auth.jwtSecret",

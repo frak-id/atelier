@@ -244,8 +244,7 @@ GitHub gate joins it as `member` on first login, and it is the default org for
 new sandboxes. Its **owners are the server admins**: they edit the operational
 config, build and delete images, publish toolsets, delete prebuilds and use
 `/mcp/admin`. If the org does not exist yet, the first user to sign in creates
-it and becomes its owner. If you leave `auth.defaultOrg` unset, every user is
-a server admin and the server logs a warning at boot.
+it and becomes its owner. Production refuses to start without `auth.defaultOrg`.
 
 ### 4. Expose SSH (optional)
 
@@ -341,8 +340,8 @@ disposable: anything important belongs in git.
 Rebuild the server and console images and roll the Deployment (see
 [`infra/k8s/README.md`](../infra/k8s/README.md#rebuild-images-in-cluster-no-local-docker)),
 and re-apply any changed manifests under `infra/k8s/`. `deploy.sh` applies
-`60-service.yaml`, `80-forward-auth.yaml` and `30-config.yaml` before it rolls,
-but not `85-network-policy.yaml`. Apply that one yourself.
+`60-service.yaml`, `80-forward-auth.yaml`, `85-network-policy.yaml` and
+`30-config.yaml` before it rolls.
 
 ## Upgrading to this release
 
@@ -408,11 +407,10 @@ Why the order matters:
   `kubernetes.systemNamespace`, `sandbox.git`. See
   [Removed keys](advanced-configuration.md#removed-keys). A config file with an
   unknown key now fails at startup.
-- Replace any `ATELIER_SERVER_MODE=mock` with `production` or `local`. Other
-  values are reported as a config warning only and leave the server in neither
-  mode, so check the log.
-- Set `auth.defaultOrg` (or `ATELIER_DEFAULT_ORG`) to your team org slug. The
-  server only warns when it is unset, and then every user is a server admin.
+- Replace any `ATELIER_SERVER_MODE=mock` with `production` or `local`. Any
+  other value fails at startup.
+- Set `auth.defaultOrg` (or `ATELIER_DEFAULT_ORG`) to your team org slug.
+  Production refuses to start without it.
 - Add `kubernetes.wakeIngressAnnotations`. The shipped file points it at the
   `atelier-wake` middleware.
 - Remove operational keys you want to keep editable from the console (idle

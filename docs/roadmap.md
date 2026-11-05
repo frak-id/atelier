@@ -23,10 +23,6 @@ Security and access:
   prebuild or edit its dev servers. Deleting one needs a server admin.
 - **`/v1/jobs` is not scoped to the caller.** Any authenticated user sees the
   whole feed.
-- **A wrong `ATELIER_SERVER_MODE` is not fatal.** A value other than
-  `production` or `local` (for example a leftover `mock`) is reported as a
-  config warning, and the server then runs in neither mode: no auth bypass, no
-  SSH gateway, and no secrets-key check. Startup should fail instead.
 - **Agent WebSocket tokens travel in the URL** (`?token=`) because the
   server's relays dial bare URLs. Moving to a header means passing headers
   through `api/ws-relay.ts`, `sessions/acp/acp-stream.ts` and `runtime.attach`.

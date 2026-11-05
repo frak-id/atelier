@@ -125,9 +125,9 @@ infra/k8s/deploy.sh agent dev-base  # bootstrap: rebuild the base-image chain
   with `imagePullPolicy: IfNotPresent`, so a node restart never pulls a
   different image. The manifest in `50-deployment.yaml` keeps the floating
   `:v2` as the bootstrap value for a first apply.
-- `deploy.sh` applies `60-service.yaml`, `80-forward-auth.yaml` and
-  `30-config.yaml` before the roll, but **not** `85-network-policy.yaml`: apply
-  that one by hand. See `docs/setup.md` for the upgrade order.
+- `deploy.sh` applies `60-service.yaml`, `80-forward-auth.yaml`,
+  `85-network-policy.yaml` and `30-config.yaml` before the roll. See
+  `docs/setup.md` for the upgrade order.
 - `agent` and `dev-base` are opt-in: the running server builds base images on
   demand through BuildKit (`imageBuilder.kind=buildkit`). Build them by hand
   only to bootstrap a fresh registry. `dev-base` COPYs the agent from Zot, so

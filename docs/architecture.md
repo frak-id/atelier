@@ -191,7 +191,8 @@ Org toolboxes build to `toolsets/tb/<toolboxId>`; see
   org. Every user who passes the GitHub gate joins it as `member` on first
   login, and it is the default spawn org. Its owners are the server admins.
   If the org does not exist yet, the first user to log in creates it and owns
-  it. Without `defaultOrg`, everyone is an admin and a production boot warns.
+  it. Production refuses to start without `defaultOrg`; in local mode everyone is
+  an admin.
 - **Secrets.** Specs store `{"$secret": "NAME"}` references. Secrets resolve in
   the sandbox's org, and git credentials are rebuilt from the owner's current
   GitHub token, at every boot (create, resume, fork). A rotated secret applies

@@ -115,8 +115,8 @@ unscoped).
 A server admin is an owner of the org named by `auth.defaultOrg`
 (`control/default-org.ts`). Admin-only: `PUT /api/config`, image build,
 register and delete, toolset publish and remove, prebuild delete, and the
-whole `/mcp/admin` endpoint. If `auth.defaultOrg` is unset, or in local mode,
-everyone is an admin.
+whole `/mcp/admin` endpoint. In local mode, or when `auth.defaultOrg` is unset
+(only allowed outside production), everyone is an admin.
 
 ## Related docs
 

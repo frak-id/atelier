@@ -183,6 +183,10 @@ if $DO_ROLLOUT; then
   say "Applying 60-service.yaml + 80-forward-auth.yaml"
   K apply -f "$ROOT/infra/k8s/60-service.yaml"
   K apply -f "$ROOT/infra/k8s/80-forward-auth.yaml"
+  # Sandbox isolation: only the server and Traefik reach sandbox pods (the
+  # in-pod agent runs root commands). Idempotent.
+  say "Applying 85-network-policy.yaml"
+  K apply -f "$ROOT/infra/k8s/85-network-policy.yaml"
   say "Applying 30-config.yaml"
   K apply -f "$ROOT/infra/k8s/30-config.yaml"
 

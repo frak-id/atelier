@@ -14,16 +14,15 @@ import { logger } from "./shared/lib/logger.ts";
 import { appPaths } from "./shared/lib/paths.ts";
 import { startSshGateway } from "./ssh/index.ts";
 
+// Any config error is fatal: outside production only schema errors are
+// reported, and a server running with, say, an unknown `server.mode` would
+// silently be in neither mode (no auth bypass, no SSH gateway, no key check).
 const configErrors = validateConfig(config);
-if (configErrors.length > 0 && isProduction()) {
+if (configErrors.length > 0) {
   for (const err of configErrors)
     logger.error({ field: err.field }, err.message);
   logger.fatal("Configuration validation failed. Exiting.");
   process.exit(1);
-} else if (configErrors.length > 0) {
-  for (const err of configErrors) {
-    logger.warn({ field: err.field }, `Config warning: ${err.message}`);
-  }
 }
 // Throws in production without SANDBOX_SECRETS_KEY (no public default key).
 assertSecretsKeyConfigured();
@@ -33,7 +32,6 @@ await initDatabase();
 logger.info({ dbPath: appPaths.database }, "Control database ready");
 
 const container = createServerContainer();
-container.control.defaultOrg.warnIfDefaultOrgUnset();
 
 // The in-server ssh2 gateway binds its own socket and lives for the process
 // lifetime, so a redeploy drops live SSH sessions (acceptable for a dev tool).
