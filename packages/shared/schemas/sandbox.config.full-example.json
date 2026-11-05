@@ -43,12 +43,11 @@
   },
   "sandbox": {
     "defaultImage": "dev-base",
-    "agentImage": "ghcr.io/frak-id/sandbox-agent:latest",
+    "agentImage": "ghcr.io/frak-id/sandbox-agent:3.0.2",
     "defaultVcpus": 2,
     "defaultMemoryMb": 4096
   },
   "ports": {
-    "terminal": 7681,
     "agent": 9998
   },
   "imageBuilder": {

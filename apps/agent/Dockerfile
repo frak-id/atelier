@@ -11,6 +11,8 @@ RUN apk add --no-cache musl-dev
 WORKDIR /build
 COPY Cargo.toml Cargo.lock ./
 COPY src ./src
+# Shell the agent embeds (include_str! in src/toolset.rs).
+COPY scripts ./scripts
 RUN cargo build --release --locked
 
 FROM scratch

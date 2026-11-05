@@ -1,8 +1,8 @@
 //! Phased lifecycle hooks. The agent owns the *mechanism* (run these shell
 //! commands, in order, fail-fast, as the sandbox's `dev` user with pod env);
 //! the runtime owns the *policy* (which phase fires when — postCreate before
-//! processes, postStart after, onResume on every resume, envChanged on
-//! `PATCH /env`). The runtime drives a phase via `POST /hooks/{phase}`; the
+//! processes, postStart after, onResume on every resume, envChanged after an
+//! env update pushed via `PUT /config`). The runtime drives a phase via `POST /hooks/{phase}`; the
 //! agent runs the commands the config carries for it.
 //!
 //! Hooks run as `dev` (uid 1000, HOME=/home/dev): the canonical hooks —

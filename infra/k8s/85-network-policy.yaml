@@ -1,0 +1,72 @@
+# Isolation between sandboxes. Every sandbox pod runs an in-pod agent
+# (9998 HTTP incl. a root `POST /exec`, 9997 attach + terminal WS) plus
+# sshd (22) and whatever tool ports its spec declares. The agent also checks a
+# per-sandbox bearer token, but the network is the first line: with the
+# sandboxes namespace on a flat pod network (flannel, allow-all by default), a
+# prompt-injected agent in sandbox A could otherwise reach sandbox B's agent.
+#
+# Ingress is default-deny for every pod in the namespace, then two allows:
+#   1. the Atelier server (the only legitimate client of the agent, ssh and
+#      the tool ports);
+#   2. the ingress controller, which proxies the per-sandbox tool Ingresses
+#      (any port: tool ports are spec-declared and not known here).
+# Egress stays unrestricted (sandboxes pull packages, clone repos, call APIs).
+#
+# Enforced by k3s's embedded network policy controller. Verify after applying
+# with a probe from one sandbox to another sandbox's :9998 (it must time out).
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: default-deny-ingress
+  namespace: atelier-v2-sandboxes
+  labels:
+    app.kubernetes.io/name: atelier-v2
+spec:
+  podSelector: {}
+  policyTypes:
+    - Ingress
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: allow-from-server
+  namespace: atelier-v2-sandboxes
+  labels:
+    app.kubernetes.io/name: atelier-v2
+spec:
+  podSelector: {}
+  policyTypes:
+    - Ingress
+  ingress:
+    - from:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: atelier-v2-system
+          # Same labels as the server pod template in 50-deployment.yaml.
+          podSelector:
+            matchLabels:
+              app.kubernetes.io/name: atelier-v2
+              app.kubernetes.io/component: server
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: allow-from-ingress-controller
+  namespace: atelier-v2-sandboxes
+  labels:
+    app.kubernetes.io/name: atelier-v2
+spec:
+  podSelector: {}
+  policyTypes:
+    - Ingress
+  ingress:
+    - from:
+        # k3s runs its bundled Traefik in kube-system. If the ingress
+        # controller moves, change BOTH selectors here: tool URLs time out
+        # when they stop matching.
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: kube-system
+          podSelector:
+            matchLabels:
+              app.kubernetes.io/name: traefik

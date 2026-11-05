@@ -95,7 +95,6 @@ describe("DockerBackend (integration)", () => {
       expect(ep?.host).toBe("127.0.0.1");
       expect(ep?.agentPort).toBeGreaterThan(0);
       expect(ep?.attachPort).toBeGreaterThan(0);
-      expect(ep?.terminalPort).toBeGreaterThan(0);
 
       // The agent is actually reachable on the mapped port.
       const health = await fetch(

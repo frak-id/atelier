@@ -90,6 +90,10 @@ export async function bootSandbox(
       : defaultVolumeSize();
 
   const agentPassword = generatePassword(32);
+  // The agent refuses calls without this token and the record doesn't exist
+  // yet (nor does one for a throwaway build pod), so hand it to the client
+  // before the first agent call.
+  agent.setToken(sandboxId, agentPassword);
   // uid of the PVC THIS call created, set only once the API server confirmed
   // the create. The only PVC a failed boot may delete (see the catch below).
   let createdPvcUid: string | undefined;

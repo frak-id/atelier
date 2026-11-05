@@ -162,8 +162,8 @@ export function buildSandboxPod(options: SandboxPodOptions): KubeResource {
           env: [
             { name: "SANDBOX_ID", value: options.sandboxId },
             {
-              // Pod-level agent Basic-auth password. NOTE: if the pod image's
-              // boot script still reads $OPENCODE_PASSWORD, update it there too.
+              // Bearer token the agent requires on every route but
+              // GET /health (apps/agent auth.rs).
               name: "AGENT_PASSWORD",
               value: options.agentPassword,
             },

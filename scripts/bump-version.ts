@@ -1,6 +1,7 @@
 #!/usr/bin/env bun
 /**
- * Bump version across the workspace packages and the Rust agent (`apps/agent`).
+ * Bump version across the workspace packages, the Rust agent (`apps/agent`)
+ * and the default agent image pin.
  *
  * Usage:
  *   bun run scripts/bump-version.ts patch
@@ -19,6 +20,21 @@ const PACKAGE_JSON_PATHS = [
   "apps/console/package.json",
   "packages/shared/package.json",
 ];
+
+/**
+ * Files that pin the default in-pod agent image to the release version
+ * (`ghcr.io/frak-id/sandbox-agent:<version>`, published by release.yml next to
+ * `:latest`). The server and the agent it bakes into base images move
+ * together, so a rebuilt base never pulls an agent from another release.
+ */
+const AGENT_IMAGE_PIN_PATHS = [
+  "packages/shared/src/config.schema.ts",
+  "packages/shared/schemas/atelier.config.schema.json",
+  "packages/shared/schemas/sandbox.config.full-example.json",
+  "apps/server/src/control/modules/server-config/registry.ts",
+  "apps/server/src/runtime/registry/seeds/dev-base/Dockerfile",
+];
+const AGENT_IMAGE_PIN_RE = /(ghcr\.io\/frak-id\/sandbox-agent:)\d+\.\d+\.\d+/g;
 
 const CARGO_TOML_PATH = "apps/agent/Cargo.toml";
 const CARGO_LOCK_PATH = "apps/agent/Cargo.lock";
@@ -113,6 +129,19 @@ function updateCargoLock(filePath: string, newVersion: string): void {
   writeFileSync(fullPath, replaced);
 }
 
+function updateAgentImagePin(filePath: string, newVersion: string): void {
+  const fullPath = resolve(ROOT, filePath);
+  const content = readFileSync(fullPath, "utf-8");
+  if (!content.match(AGENT_IMAGE_PIN_RE)) {
+    throw new Error(`Could not find the agent image pin in ${filePath}`);
+  }
+
+  writeFileSync(
+    fullPath,
+    content.replace(AGENT_IMAGE_PIN_RE, `$1${newVersion}`),
+  );
+}
+
 const arg = process.argv[2];
 
 if (!arg) {
@@ -150,5 +179,10 @@ console.log(`  ✓ ${CARGO_TOML_PATH}`);
 
 updateCargoLock(CARGO_LOCK_PATH, next);
 console.log(`  ✓ ${CARGO_LOCK_PATH}`);
+
+for (const pinPath of AGENT_IMAGE_PIN_PATHS) {
+  updateAgentImagePin(pinPath, next);
+  console.log(`  ✓ ${pinPath} (agent image pin)`);
+}
 
 console.log(`\nDone. All manifests updated to ${next}.`);

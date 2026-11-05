@@ -191,7 +191,7 @@ export const SandboxDefaultsSchema = Type.Object(
      * private/mirrored ref for air-gapped clusters that can't reach GHCR.
      */
     agentImage: Type.String({
-      default: "ghcr.io/frak-id/sandbox-agent:latest",
+      default: "ghcr.io/frak-id/sandbox-agent:3.0.2",
     }),
     /**
      * vCPUs a sandbox gets when its create request omits `resources.vcpus`
@@ -220,7 +220,6 @@ export type SandboxDefaults = Static<typeof SandboxDefaultsSchema>;
 
 export const PortsConfigSchema = Type.Object(
   {
-    terminal: Type.Number({ default: 7681 }),
     agent: Type.Number({ default: 9998 }),
   },
   { default: {} },
@@ -435,8 +434,6 @@ export const ENV_VAR_MAPPING = {
   ATELIER_AGENT_IMAGE: "sandbox.agentImage",
   ATELIER_DEFAULT_VCPUS: "sandbox.defaultVcpus",
   ATELIER_DEFAULT_MEMORY_MB: "sandbox.defaultMemoryMb",
-
-  ATELIER_TERMINAL_PORT: "ports.terminal",
   ATELIER_AGENT_PORT: "ports.agent",
 
   ATELIER_IMAGE_BUILDER_KIND: "imageBuilder.kind",

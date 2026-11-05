@@ -16,7 +16,7 @@
 import type { PortEntry, SandboxSpec } from "@atelier/spec";
 import { customAlphabet } from "nanoid";
 import { createChildLogger } from "../../shared/lib/logger.ts";
-import type { AgentClient } from "../agent/index.ts";
+import { AGENT_ATTACH_PORT, type AgentClient } from "../agent/index.ts";
 import type { BootInput, BootOutput } from "../boot.ts";
 import { provisionAgent } from "../boot-agent.ts";
 import type {
@@ -36,10 +36,6 @@ const generatePassword = customAlphabet(
 
 /** Container port the guest agent's HTTP control plane listens on. */
 const AGENT_PORT = 9998;
-/** Container port the WS attach bridge listens on. */
-const ATTACH_PORT = 9997;
-/** Container port the WS terminal multiplexer listens on. */
-const TERMINAL_PORT = 7681;
 /** Container SSH port. */
 const SSH_PORT = 22;
 
@@ -79,12 +75,7 @@ export class DockerBackend implements SandboxBackend {
    * port (`-p 127.0.0.1::<cport>`) so many sandboxes coexist without clashing
    * and nothing is exposed off-host. */
   private publishedPorts(spec: SandboxSpec): number[] {
-    const ports = new Set<number>([
-      AGENT_PORT,
-      ATTACH_PORT,
-      TERMINAL_PORT,
-      SSH_PORT,
-    ]);
+    const ports = new Set<number>([AGENT_PORT, AGENT_ATTACH_PORT, SSH_PORT]);
     for (const p of spec.ports ?? []) ports.add(p.port);
     return [...ports];
   }
@@ -98,6 +89,9 @@ export class DockerBackend implements SandboxBackend {
     const containerName = this.containerName(id);
     const pvcName = containerName;
     const agentPassword = generatePassword(32);
+    // The agent refuses calls without this token and the record doesn't exist
+    // yet, so hand it to the client before the first agent call.
+    agent.setToken(id, agentPassword);
 
     try {
       // Reuse (resume) keeps the existing dir; a snapshot boot clones it; a
@@ -215,15 +209,14 @@ export class DockerBackend implements SandboxBackend {
   }
 
   async resolveAgentEndpoint(id: string): Promise<AgentEndpoint | null> {
-    const [agentPort, attachPort, terminalPort] = await Promise.all([
+    const [agentPort, attachPort] = await Promise.all([
       this.hostPort(id, AGENT_PORT),
-      this.hostPort(id, ATTACH_PORT),
-      this.hostPort(id, TERMINAL_PORT),
+      this.hostPort(id, AGENT_ATTACH_PORT),
     ]);
-    if (agentPort == null || attachPort == null || terminalPort == null) {
+    if (agentPort == null || attachPort == null) {
       return null;
     }
-    return { host: "127.0.0.1", agentPort, attachPort, terminalPort };
+    return { host: "127.0.0.1", agentPort, attachPort };
   }
 
   /** Resolve the dynamic host port a container port is published on, or `null`

@@ -1,4 +1,5 @@
 export { AgentClient } from "./agent.client.ts";
+export { AGENT_ATTACH_PORT } from "./agent.contract.ts";
 export type {
   AgentHealth,
   DevLogsResult,

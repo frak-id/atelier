@@ -15,8 +15,8 @@ use tokio::io::{AsyncReadExt, AsyncWriteExt};
 use tokio::net::TcpStream;
 use tokio::process::Command;
 
+use crate::command::apply_user;
 use crate::config::Readiness;
-use crate::supervisor::apply_user;
 
 // Capped well under the boot overlay budget so a process that has bound but
 // not yet `listen()`ed (connect hangs) can't stall a probe cycle for long.
@@ -112,7 +112,7 @@ async fn probe_cmd(cmd: &str, ctx: &ProbeCtx) -> bool {
     // `/etc/profile` + rc sourcing a login shell pays on each invocation.
     let mut command = Command::new("/bin/bash");
     command.args(["-c", cmd]);
-    apply_user(&mut command, ctx.user.as_deref().unwrap_or("root"));
+    apply_user(&mut command, ctx.user.as_deref());
     if let Some(dir) = &ctx.cwd {
         command.current_dir(dir);
     }

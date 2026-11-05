@@ -354,7 +354,7 @@ const CONFIG_REGISTRY = {
       "in-cluster agent build is needed; point it at a private/mirrored ref " +
       "for air-gapped clusters that cannot reach GHCR.",
     envVar: "ATELIER_AGENT_IMAGE",
-    default: "ghcr.io/frak-id/sandbox-agent:latest",
+    default: "ghcr.io/frak-id/sandbox-agent:3.0.2",
     parseEnv: requiredString,
     validate: requiredString,
   } satisfies ConfigDef<string>,

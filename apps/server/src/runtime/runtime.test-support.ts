@@ -33,7 +33,6 @@ const FAKE_ENDPOINT: AgentEndpoint = {
   host: "10.42.0.99",
   agentPort: 9998,
   attachPort: 9997,
-  terminalPort: 7681,
 };
 
 const FAKE_DIGEST = `sha256:${"0".repeat(64)}`;

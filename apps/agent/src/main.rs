@@ -6,13 +6,17 @@
 
 mod activity;
 mod attach;
+mod auth;
 mod bridge;
 mod command;
 mod config;
+#[cfg(test)]
+mod contract;
 mod files;
 mod forwarder;
 mod hooks;
 mod limits;
+mod logfile;
 mod readiness;
 mod router;
 mod ssh;
@@ -30,7 +34,9 @@ use hyper_util::rt::TokioIo;
 use tokio::net::TcpListener;
 
 use activity::Activity;
+use auth::Auth;
 use forwarder::Forwarder;
+use router::AppState;
 use store::ConfigStore;
 use supervisor::Supervisor;
 use terminal::TerminalRegistry;
@@ -65,28 +71,24 @@ async fn main() {
 
     let store = Arc::new(ConfigStore::load());
     let supervisor = Supervisor::new(store.clone());
-    let terminals = TerminalRegistry::new(store.clone());
+    let terminals = TerminalRegistry::new(store.clone(), supervisor.attach_registry());
+    // One token guards the HTTP API and both WS listeners (auth.rs).
+    let auth = Arc::new(Auth::from_env());
 
     // Activity measurement for idle auto-pause (network bytes, file writes,
     // CPU), served on `GET /activity`.
     let activity = Activity::new();
     activity::spawn(activity.clone());
 
-    // Interactive terminal WS relay (ad-hoc login shells) on its own port, so
-    // the runtime proxies WS /sandboxes/:id/terminal/sessions/:sid/ws through.
-    {
-        let terminals = terminals.clone();
-        tokio::spawn(async move {
-            terminal::serve(terminal::TERMINAL_PORT, terminals).await;
-        });
-    }
-
-    // Attach WS server (stdio-bridge + PTY relay) on its own port so the
-    // runtime can proxy WS /v1/sandboxes/:id/attach/:name straight through.
+    // Attach WS server (process stdio-bridge + PTY relay at /attach/:name,
+    // terminal sessions at /terminal/:id) on its own port so the runtime can
+    // proxy them straight through.
     {
         let registry = supervisor.attach_registry();
+        let terminals = terminals.clone();
+        let auth = auth.clone();
         tokio::spawn(async move {
-            attach::serve(attach::ATTACH_PORT, registry).await;
+            attach::serve(attach::ATTACH_PORT, registry, terminals, auth).await;
         });
     }
     match store.get() {
@@ -129,6 +131,14 @@ async fn main() {
         });
     }
 
+    let state = Arc::new(AppState {
+        store,
+        supervisor,
+        terminals,
+        activity,
+        auth,
+    });
+
     let addr = format!("0.0.0.0:{AGENT_PORT}");
     let listener = match TcpListener::bind(&addr).await {
         Ok(l) => l,
@@ -147,22 +157,12 @@ async fn main() {
                 continue;
             }
         };
-        let store = store.clone();
-        let supervisor = supervisor.clone();
-        let terminals = terminals.clone();
-        let activity = activity.clone();
+        let state = state.clone();
         tokio::spawn(async move {
             let io = TokioIo::new(activity::control::Counted::new(stream));
             let service = service_fn(move |req| {
-                let store = store.clone();
-                let supervisor = supervisor.clone();
-                let terminals = terminals.clone();
-                let activity = activity.clone();
-                async move {
-                    Ok::<_, std::convert::Infallible>(
-                        router::route(req, store, supervisor, terminals, activity).await,
-                    )
-                }
+                let state = state.clone();
+                async move { Ok::<_, std::convert::Infallible>(router::route(req, &state).await) }
             });
             if let Err(e) = http1::Builder::new().serve_connection(io, service).await
                 && !e.is_incomplete_message()

@@ -1,0 +1,17 @@
+{
+  "success": false,
+  "results": [
+    {
+      "command": "true",
+      "exitCode": 0,
+      "stdout": "",
+      "stderr": ""
+    },
+    {
+      "command": "false",
+      "exitCode": 1,
+      "stdout": "",
+      "stderr": "boom"
+    }
+  ]
+}

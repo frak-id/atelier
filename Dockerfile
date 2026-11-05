@@ -105,6 +105,7 @@ COPY apps/server/src/runtime/registry/seeds ./seeds
 COPY apps/agent/Dockerfile apps/agent/Cargo.toml apps/agent/Cargo.lock \
      ./seeds/sandbox-agent/
 COPY apps/agent/src ./seeds/sandbox-agent/src
+COPY apps/agent/scripts ./seeds/sandbox-agent/scripts
 
 ENV NODE_ENV=production \
     ATELIER_SERVER_MODE=production \

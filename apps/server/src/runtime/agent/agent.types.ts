@@ -1,5 +1,8 @@
 export interface AgentHealth {
   status: string;
+  /** The agent binary's version (`CARGO_PKG_VERSION`); absent on agents that
+   * predate it. */
+  version?: string;
   uptime: number;
   /** Whether a config has been pushed. */
   configured?: boolean;
@@ -27,7 +30,7 @@ export type HookPhase = "postCreate" | "postStart" | "onResume" | "envChanged";
 
 /** A supervised process's state (agent `GET /processes` / `/processes/{name}`).
  * Mirrors the agent's `supervisor::ProcessState`. */
-interface AgentProcessState {
+export interface AgentProcessState {
   name: string;
   status: "starting" | "running" | "stopped" | "error";
   pid: number;

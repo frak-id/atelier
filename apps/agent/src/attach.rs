@@ -3,7 +3,8 @@
 //! with `pty: true` gets a PTY. Both fan output out to any number of read-only
 //! (`mode=ro`) clients with ring-buffer replay, and admit at most ONE writer
 //! (`mode=rw`) at a time — a single-writer guard, since two concurrent writers
-//! would interleave and corrupt the JSON-RPC frame stream.
+//! would interleave and corrupt the JSON-RPC frame stream. A client that
+//! passes `replay=0` skips the ring-buffer replay and sees live output only.
 
 use std::collections::HashMap;
 use std::os::fd::{AsRawFd, RawFd};
@@ -17,16 +18,16 @@ use tokio::io::{AsyncReadExt, AsyncWriteExt};
 use tokio::net::{TcpListener, TcpStream};
 use tokio::process::{ChildStdin, ChildStdout, Command};
 use tokio::sync::{Mutex, Notify, broadcast, mpsc};
-use tokio_tungstenite::accept_async;
+use tokio_tungstenite::accept_hdr_async;
 use tokio_tungstenite::tungstenite::Message;
 
-use crate::bridge::{OutputBuffer, parse_attach_target};
+use crate::auth::Auth;
+use crate::bridge::{AttachTarget, OutputBuffer, parse_attach_target};
+use crate::limits::{OUTPUT_BROADCAST_CAPACITY, READ_BUFFER_SIZE, WRITE_CHANNEL_CAPACITY};
+use crate::logfile::LogFile;
+use crate::terminal::TerminalRegistry;
 
 pub const ATTACH_PORT: u16 = 9997;
-
-const READ_BUFFER_SIZE: usize = 16 * 1024;
-const OUTPUT_BROADCAST_CAPACITY: usize = 256;
-const WRITE_CHANNEL_CAPACITY: usize = 64;
 
 /// One attachable process endpoint: live output fan-out + replay + a write
 /// sink, guarded by a single-writer slot.
@@ -136,7 +137,7 @@ impl AttachRegistry {
         name: &str,
         stdin: ChildStdin,
         stdout: ChildStdout,
-        log: Arc<Mutex<tokio::fs::File>>,
+        log: Arc<LogFile>,
     ) {
         let (write_tx, write_rx) = mpsc::channel::<Vec<u8>>(WRITE_CHANNEL_CAPACITY);
         let endpoint = AttachEndpoint::new(write_tx);
@@ -155,7 +156,7 @@ impl AttachRegistry {
         &self,
         name: &str,
         master: Arc<AsyncFd<PtyMaster>>,
-        log: Arc<Mutex<tokio::fs::File>>,
+        log: Arc<LogFile>,
     ) {
         let (write_tx, write_rx) = mpsc::channel::<Vec<u8>>(WRITE_CHANNEL_CAPACITY);
         let endpoint = AttachEndpoint::new(write_tx);
@@ -177,18 +178,14 @@ async fn drain_to_stdin(mut stdin: ChildStdin, mut rx: mpsc::Receiver<Vec<u8>>) 
     }
 }
 
-async fn pump_stdout(
-    mut stdout: ChildStdout,
-    endpoint: Arc<AttachEndpoint>,
-    log: Arc<Mutex<tokio::fs::File>>,
-) {
+async fn pump_stdout(mut stdout: ChildStdout, endpoint: Arc<AttachEndpoint>, log: Arc<LogFile>) {
     let mut buf = [0u8; READ_BUFFER_SIZE];
     loop {
         match stdout.read(&mut buf).await {
             Ok(0) | Err(_) => break,
             Ok(n) => {
                 let bytes = Bytes::copy_from_slice(&buf[..n]);
-                let _ = log.lock().await.write_all(&buf[..n]).await;
+                log.append(&buf[..n]).await;
                 endpoint.publish(bytes).await;
             }
         }
@@ -319,7 +316,7 @@ fn set_nonblocking(fd: RawFd) -> std::io::Result<()> {
 async fn pump_pty(
     master: Arc<AsyncFd<PtyMaster>>,
     endpoint: Arc<AttachEndpoint>,
-    log: Arc<Mutex<tokio::fs::File>>,
+    log: Arc<LogFile>,
 ) {
     let mut buf = [0u8; READ_BUFFER_SIZE];
     loop {
@@ -330,7 +327,7 @@ async fn pump_pty(
             Ok(Ok(0)) | Ok(Err(_)) => break,
             Ok(Ok(n)) => {
                 let bytes = Bytes::copy_from_slice(&buf[..n]);
-                let _ = log.lock().await.write_all(&buf[..n]).await;
+                log.append(&buf[..n]).await;
                 endpoint.publish(bytes).await;
             }
             Err(_would_block) => continue,
@@ -376,10 +373,22 @@ pub(crate) fn pty_write(fd: RawFd, data: &[u8]) -> std::io::Result<usize> {
 
 // ── WebSocket server ─────────────────────────────────────────────────────────
 
-/// Attach WS listener. Path selects the process; `?mode=rw[&takeover=1]` asks
-/// for the single writer slot (default read-only). Runs on its own port so the
-/// runtime can proxy `WS /v1/sandboxes/:id/attach/:name` straight through.
-pub async fn serve(port: u16, registry: Arc<AttachRegistry>) {
+/// Attach WS listener. Two routes share it:
+/// - `/attach/{name}` joins a supervised process; `?mode=rw[&takeover=1]` asks
+///   for the single writer slot (default read-only), `replay=0` skips the
+///   buffered-output replay.
+/// - `/terminal/{id}` joins an ad-hoc terminal session (terminal.rs): binary
+///   frames are keystrokes, text frames are `{"type":"resize"}` controls, and
+///   any number of clients may type.
+///
+/// Runs on its own port so the runtime can proxy the routes straight through.
+/// Every upgrade must carry the agent token (see auth.rs).
+pub async fn serve(
+    port: u16,
+    registry: Arc<AttachRegistry>,
+    terminals: Arc<TerminalRegistry>,
+    auth: Arc<Auth>,
+) {
     let Ok(listener) = TcpListener::bind(("0.0.0.0", port)).await else {
         eprintln!("attach: failed to bind port {port}");
         return;
@@ -394,28 +403,54 @@ pub async fn serve(port: u16, registry: Arc<AttachRegistry>) {
             continue;
         };
         let registry = registry.clone();
+        let terminals = terminals.clone();
+        let auth = auth.clone();
         tokio::spawn(async move {
-            handle_conn(stream, target, registry).await;
+            handle_conn(stream, target, registry, terminals, auth).await;
         });
     }
 }
 
 async fn handle_conn(
     stream: TcpStream,
-    target: crate::bridge::AttachTarget,
+    target: AttachTarget,
     registry: Arc<AttachRegistry>,
+    terminals: Arc<TerminalRegistry>,
+    auth: Arc<Auth>,
 ) {
-    let Some(endpoint) = registry.get(&target.name).await else {
+    // A terminal session also needs its PTY master (resize target).
+    let (endpoint, terminal_master) = if target.terminal {
+        let Some(master) = terminals.master(&target.name).await else {
+            return;
+        };
+        (
+            registry.get(&terminal_key(&target.name)).await,
+            Some(master),
+        )
+    } else {
+        (registry.get(&target.name).await, None)
+    };
+    let Some(endpoint) = endpoint else {
         return;
     };
-    let Ok(ws) = accept_async(crate::activity::control::Counted::new(stream)).await else {
+    let Ok(ws) = accept_hdr_async(
+        crate::activity::control::Counted::new(stream),
+        auth.upgrade_guard(),
+    )
+    .await
+    else {
         return;
     };
     let (mut sink, mut source) = ws.split();
 
-    // Replay buffered output, then subscribe to live output.
+    // Replay buffered output (unless the client opted out), then subscribe to
+    // live output.
     let (chunks, mut rx) = {
-        let chunks = endpoint.buffer.lock().await.snapshot_chunks();
+        let chunks = if target.replay {
+            endpoint.buffer.lock().await.snapshot_chunks()
+        } else {
+            Vec::new()
+        };
         (chunks, endpoint.output.subscribe())
     };
     for chunk in chunks {
@@ -425,8 +460,8 @@ async fn handle_conn(
     }
 
     // Acquire the writer slot if requested; a rejected rw attach degrades to
-    // read-only after telling the client.
-    let writer_token = if target.writer {
+    // read-only after telling the client. Terminals have no slot.
+    let writer_token = if target.writer && terminal_master.is_none() {
         match endpoint.slot.try_acquire(target.takeover).await {
             Some(token) => Some(token),
             None => {
@@ -451,8 +486,8 @@ async fn handle_conn(
                     }
                 }
                 Err(broadcast::error::RecvError::Closed) => break,
-                // A lagged read-only client has a gapped stream; disconnect so
-                // the client reconnects and replays rather than see corruption.
+                // A lagged client has a gapped stream; disconnect so it
+                // reconnects and replays rather than see corruption.
                 Err(broadcast::error::RecvError::Lagged(_)) => break,
             }
         }
@@ -480,10 +515,24 @@ async fn handle_conn(
             let Some(Ok(msg)) = next else { break };
             let data = match msg {
                 Message::Binary(b) => Vec::from(b),
-                Message::Text(t) => t.as_bytes().to_vec(),
+                // A terminal's text frames are resize controls; a process's
+                // are input bytes.
+                Message::Text(t) => match &terminal_master {
+                    Some(master) => {
+                        crate::terminal::apply_control_frame(master, t.as_bytes());
+                        continue;
+                    }
+                    None => t.as_bytes().to_vec(),
+                },
                 Message::Close(_) => break,
                 _ => continue,
             };
+            if terminal_master.is_some() {
+                if write_tx.send(data).await.is_err() {
+                    break;
+                }
+                continue;
+            }
             // Read-only clients may stream output but never write.
             if let Some((ep, token)) = &slot {
                 if !ep.slot.is_holder(*token).await {
@@ -504,6 +553,12 @@ async fn handle_conn(
     if let Some(token) = writer_token {
         endpoint.slot.release(token).await;
     }
+}
+
+/// Registry key of a terminal session's endpoint. Not a valid process name
+/// (those are spec names; this carries a `:`), so the two can't collide.
+pub fn terminal_key(id: &str) -> String {
+    format!("terminal:{id}")
 }
 
 #[cfg(test)]

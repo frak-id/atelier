@@ -1,0 +1,52 @@
+{
+  "sandboxId": "sb_fixture",
+  "env": {
+    "NODE_ENV": "development"
+  },
+  "processes": [
+    {
+      "name": "web",
+      "command": "bun run dev",
+      "cwd": "/home/dev/app",
+      "user": "dev",
+      "env": {
+        "PORT": "3000"
+      },
+      "primary": true,
+      "readiness": {
+        "http": "/health"
+      },
+      "restart": "on-failure"
+    },
+    {
+      "name": "acp",
+      "command": "pi --acp",
+      "user": "dev",
+      "stdio": "bridge",
+      "readiness": {
+        "port": 4096
+      },
+      "after": ["web"],
+      "restart": "always",
+      "lazy": true
+    },
+    {
+      "name": "shell",
+      "command": "bash",
+      "pty": true,
+      "readiness": {
+        "cmd": "true"
+      }
+    }
+  ],
+  "ports": [
+    {
+      "name": "web",
+      "port": 3000
+    }
+  ],
+  "hooks": {
+    "postCreate": ["git config --global user.name dev"],
+    "onResume": ["~/.atelier/refresh-tokens.sh"]
+  }
+}

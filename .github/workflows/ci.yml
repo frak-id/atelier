@@ -57,6 +57,9 @@ jobs:
         with:
           workspaces: apps/agent
 
+      - name: Shellcheck
+        run: shellcheck -s bash scripts/*.sh
+
       - name: Clippy
         run: cargo clippy --all-targets --locked -- -D warnings
 

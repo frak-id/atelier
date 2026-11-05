@@ -176,17 +176,18 @@ AGENT_PID=$!
 # EITHER: on success sshd serves the real home; on failure start sshd anyway
 # (onto the degraded home) so the pod is reachable for diagnosis. The agent
 # bounds its WHOLE pull/mount/assembly loop (any toolset count) to a single
-# global ~600s deadline (toolset::BUILD_TIMEOUT_MS) and fails fast past it —
-# see toolset.rs materialize_inner — so this cap only needs a small margin
-# above that, not a per-toolset multiple. 1260 * 0.5s = 630s, matching
-# agent.client.ts's MATERIALIZE_TOOLSETS_TIMEOUT_MS (both downstream of the
-# same agent ceiling). A slow first cold pull must not be cut off and served
-# the wrong (bare, un-assembled) home mid-assembly, which would strand any
-# early writes on the rootfs.
-i=0
-while [ ! -e /run/home-ready ] && [ ! -e /run/home-failed ] && [ "$i" -lt 1260 ]; do
+# global deadline (toolset.rs BUILD_TIMEOUT_MS, 600s) and fails fast past it,
+# so this deadline only needs a margin above that: it is the same contract
+# the server client uses (agent.contract.ts, MATERIALIZE_TIMEOUT_MS). A slow
+# first cold pull must not be cut off and served the wrong (bare,
+# un-assembled) home mid-assembly, which would strand any early writes on the
+# rootfs. Stop waiting early if the agent itself died: nothing will write
+# either marker then.
+HOME_WAIT_DEADLINE=$(($(date +%s) + 630))
+while [ ! -e /run/home-ready ] && [ ! -e /run/home-failed ] &&
+    kill -0 "$AGENT_PID" 2>/dev/null &&
+    [ "$(date +%s)" -lt "$HOME_WAIT_DEADLINE" ]; do
     sleep 0.5
-    i=$((i + 1))
 done
 
 if [ -f "$SSH_KEY_MOUNT" ]; then

@@ -26,10 +26,8 @@ export interface AgentEndpoint {
   host: string;
   /** HTTP control-plane port. */
   agentPort: number;
-  /** WS attach-bridge port. */
+  /** WS port: process attach (`/attach/:name`) and terminals (`/terminal/:id`). */
   attachPort: number;
-  /** WS terminal-multiplexer port. */
-  terminalPort: number;
 }
 
 /**

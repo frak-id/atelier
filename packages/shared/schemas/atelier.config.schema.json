@@ -189,7 +189,7 @@
           "type": "string"
         },
         "agentImage": {
-          "default": "ghcr.io/frak-id/sandbox-agent:latest",
+          "default": "ghcr.io/frak-id/sandbox-agent:3.0.2",
           "type": "string"
         },
         "defaultVcpus": {
@@ -208,10 +208,6 @@
       "default": {},
       "type": "object",
       "properties": {
-        "terminal": {
-          "default": 7681,
-          "type": "number"
-        },
         "agent": {
           "default": 9998,
           "type": "number"

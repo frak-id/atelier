@@ -1,6 +1,7 @@
 //! Shared plumbing for the attach bridge (attach.rs): a bounded output replay
-//! buffer and the tiny WS-handshake request-target parse. ACP stdio and the
-//! terminal PTY share this one attach mechanism, so the buffer lives once.
+//! buffer and the tiny WS-handshake request-target parse. Process stdio/PTY
+//! and terminal sessions share this one attach mechanism, so the buffer lives
+//! once.
 
 use std::collections::VecDeque;
 
@@ -51,16 +52,21 @@ impl OutputBuffer {
 }
 
 /// Attach target parsed from the WS upgrade request line
-/// (`GET /{name}?mode=rw&takeover=1 HTTP/1.1`): process name + write intent.
+/// (`GET /{name}?mode=rw&takeover=1 HTTP/1.1`): process name + write intent +
+/// whether to replay buffered output first.
 pub struct AttachTarget {
     pub name: String,
     pub writer: bool,
     pub takeover: bool,
+    pub replay: bool,
+    /// `/terminal/{id}`: `name` is the terminal session id.
+    pub terminal: bool,
 }
 
 /// Parse the raw first line of a WS upgrade request. No full HTTP parse — just
-/// the request target and its `mode`/`takeover` query params. `mode=rw` asks
-/// for the single writer slot; anything else (or absent) is read-only.
+/// the request target and its `mode`/`takeover`/`replay` query params.
+/// `mode=rw` asks for the single writer slot; anything else (or absent) is
+/// read-only. `replay=0` skips the buffered-output replay (default: replay).
 ///
 /// The runtime proxies `WS /v1/sandboxes/:id/attach/:name` straight through, so
 /// the target is `/attach/{name}`; a bare `/{name}` is also accepted.
@@ -72,16 +78,21 @@ pub fn parse_attach_target(buf: &[u8]) -> Option<AttachTarget> {
         Some((n, q)) => (n, q),
         None => (path, ""),
     };
-    let name = path.strip_prefix("attach/").unwrap_or(path);
+    let (terminal, name) = match path.strip_prefix("terminal/") {
+        Some(id) => (true, id),
+        None => (false, path.strip_prefix("attach/").unwrap_or(path)),
+    };
     if name.is_empty() || name.contains('/') {
         return None;
     }
     let mut writer = false;
     let mut takeover = false;
+    let mut replay = true;
     for pair in query.split('&') {
         match pair.split_once('=') {
             Some(("mode", "rw")) => writer = true,
             Some(("takeover", "1" | "true")) => takeover = true,
+            Some(("replay", "0" | "false")) => replay = false,
             _ => {}
         }
     }
@@ -89,6 +100,8 @@ pub fn parse_attach_target(buf: &[u8]) -> Option<AttachTarget> {
         name: name.to_string(),
         writer,
         takeover,
+        replay,
+        terminal,
     })
 }
 
@@ -140,6 +153,32 @@ mod tests {
                 .unwrap()
                 .writer
         );
+    }
+
+    #[test]
+    fn replay_defaults_on_and_opts_out() {
+        let t = parse_attach_target(b"GET /acp?mode=rw HTTP/1.1\r\n").unwrap();
+        assert!(t.replay);
+        let t = parse_attach_target(b"GET /acp?mode=rw&replay=0 HTTP/1.1\r\n").unwrap();
+        assert!(!t.replay);
+        // Other params (e.g. the auth token) are ignored.
+        let t = parse_attach_target(b"GET /acp?token=abc&replay=1 HTTP/1.1\r\n").unwrap();
+        assert!(t.replay);
+        assert_eq!(t.name, "acp");
+    }
+
+    #[test]
+    fn parses_terminal_routes() {
+        let t = parse_attach_target(b"GET /terminal/term-3?token=x HTTP/1.1\r\n").unwrap();
+        assert!(t.terminal);
+        assert_eq!(t.name, "term-3");
+        assert!(
+            !parse_attach_target(b"GET /attach/acp HTTP/1.1\r\n")
+                .unwrap()
+                .terminal
+        );
+        assert!(parse_attach_target(b"GET /terminal/ HTTP/1.1\r\n").is_none());
+        assert!(parse_attach_target(b"GET /terminal/a/b HTTP/1.1\r\n").is_none());
     }
 
     #[test]

@@ -1,80 +1,58 @@
-//! Interactive terminal sessions. Where the attach bridge (attach.rs) exposes
-//! a *supervised* process's stdio/PTY, a terminal is an *ad-hoc* login shell
-//! the user opens on demand: `POST /terminal/sessions` spawns `bash -l` on a
-//! fresh PTY, and a WS
-//! on port 7681 (`/{sessionId}`) relays bytes both ways plus `{"type":"resize"}`
-//! control frames (applied via `TIOCSWINSZ`).
+//! Interactive terminal sessions. A terminal is an *ad-hoc* `pty: true`
+//! process the user opens on demand: `POST /terminal/sessions` spawns
+//! `bash -l` on a fresh PTY and registers it in the attach registry
+//! (attach.rs), which pumps its output to a replay buffer and any number of
+//! WS clients. Those join on the attach port at `/terminal/{sessionId}`:
+//! binary frames are keystrokes, text frames are `{"type":"resize"}` controls
+//! (applied via `TIOCSWINSZ`).
+//!
+//! This module owns only what is terminal-specific: the session list and
+//! cap, the spawn, and the resize control frame.
 //!
 //! Sessions persist across WS disconnects (reconnect replays scrollback and
 //! resumes the same shell) and die only on explicit `DELETE`, on shell exit,
 //! or with the pod. A per-sandbox cap bounds how many shells can be spawned.
-//!
-//! Self-contained on purpose: it reuses only the PTY primitives from attach.rs
-//! (`setup_pty`, `PtyMaster`, `pty_read`, `pty_write`) and the replay buffer
-//! from bridge.rs, leaving the supervised-attach path untouched. The framing
-//! differs anyway — here text frames are resize control, not raw input.
 
 use std::collections::HashMap;
 use std::os::fd::AsRawFd;
 use std::sync::Arc;
 use std::sync::atomic::{AtomicU64, Ordering};
 
-use futures_util::{SinkExt, StreamExt};
-use hyper::body::Bytes;
 use serde::{Deserialize, Serialize};
 use tokio::io::unix::AsyncFd;
-use tokio::net::{TcpListener, TcpStream};
 use tokio::process::Command;
-use tokio::sync::{Mutex, broadcast, mpsc};
-use tokio_tungstenite::accept_async;
-use tokio_tungstenite::tungstenite::Message;
+use tokio::sync::Mutex;
 
-use crate::attach::{PtyMaster, pty_read, pty_write, setup_pty};
-use crate::bridge::OutputBuffer;
+use crate::attach::{AttachRegistry, PtyMaster, setup_pty, terminal_key};
+use crate::limits::DEFAULT_LOG_DIR;
+use crate::logfile::LogFile;
 use crate::store::ConfigStore;
-
-pub const TERMINAL_PORT: u16 = 7681;
 
 /// Per-sandbox ceiling on concurrent shells — a soft guard against a client
 /// (or a loop) spawning unbounded PTYs.
 const MAX_TERMINALS: usize = 8;
-const READ_BUFFER_SIZE: usize = 16 * 1024;
-const OUTPUT_BROADCAST_CAPACITY: usize = 256;
-const WRITE_CHANNEL_CAPACITY: usize = 64;
-const DEFAULT_LOG_DIR: &str = "/var/log/sandbox";
 const SHELL_USER: &str = "dev";
 const SHELL_HOME: &str = "/home/dev";
 
-/// What the console's terminal supports, for programs that can't tell from
-/// `TERM` alone. Terminal sessions are only ever rendered by the console's
-/// xterm.js (apps/console/src/components/terminal-view.tsx), so these
-/// describe it exactly. Applied before the pod-wide env, which can override
-/// any of them.
-const TERMINAL_CAPABILITIES: &[(&str, &str)] = &[
-    // xterm.js renders 24-bit SGR colour; without this hint truecolor-aware
-    // programs (pi, bat, delta, neovim, ...) fall back to the 256 palette.
-    ("COLORTERM", "truecolor"),
-    // pi turns these on only for terminals it recognises by name. xterm.js
-    // handles OSC 8 hyperlinks natively, and iTerm2 inline images through
-    // @xterm/addon-image (which has no Kitty graphics support).
-    ("PI_HYPERLINKS", "1"),
-    ("PI_IMAGE_PROTOCOL", "iterm2"),
-];
-
-/// The shell's environment in application order (a later entry wins):
-/// terminal capabilities, then the pod-wide env, then the terminal type and
-/// identity the shell must have.
-fn shell_env(pod_env: HashMap<String, String>) -> Vec<(String, String)> {
-    let capabilities = TERMINAL_CAPABILITIES
-        .iter()
-        .map(|(k, v)| (k.to_string(), v.to_string()));
+/// The shell's environment in application order (a later entry wins): the
+/// caller's per-session env (client hints such as `COLORTERM`; the agent
+/// assumes nothing about the terminal emulator), then the pod-wide env, then
+/// the terminal type and identity the shell must have.
+fn shell_env(
+    session_env: HashMap<String, String>,
+    pod_env: HashMap<String, String>,
+) -> Vec<(String, String)> {
     let fixed = [
         ("TERM", "xterm-256color"),
         ("HOME", SHELL_HOME),
         ("USER", SHELL_USER),
     ]
     .map(|(k, v)| (k.to_string(), v.to_string()));
-    capabilities.chain(pod_env).chain(fixed).collect()
+    session_env
+        .into_iter()
+        .chain(pod_env)
+        .chain(fixed)
+        .collect()
 }
 
 /// The wire shape the runtime expects (`TerminalSession` in
@@ -88,7 +66,7 @@ pub struct TerminalMeta {
     pub created_at: String,
 }
 
-/// Create-request body (`{ userId, title?, command?, workdir? }`).
+/// Create-request body (`{ userId, title?, command?, workdir?, env? }`).
 #[derive(Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct CreateRequest {
@@ -96,6 +74,9 @@ pub struct CreateRequest {
     pub title: Option<String>,
     pub command: Option<String>,
     pub workdir: Option<String>,
+    /// Extra env for this session (the console's terminal capability hints).
+    #[serde(default)]
+    pub env: HashMap<String, String>,
 }
 
 /// A resize control frame sent as WS text by xterm.js.
@@ -107,15 +88,12 @@ struct ResizeFrame {
     rows: u16,
 }
 
-/// One live shell: the PTY master (output pump + resize target), a broadcast
-/// of its output with a replay buffer, a write sink into the master, and the
-/// pgid used to reap the whole tree on delete.
+/// One live shell: its metadata, the PTY master (resize target) and the pgid
+/// used to reap the whole tree on delete. Output and input run through the
+/// attach registry's endpoint for `terminal_key(id)`.
 struct Terminal {
     meta: TerminalMeta,
     master: Arc<AsyncFd<PtyMaster>>,
-    output: broadcast::Sender<Bytes>,
-    buffer: Arc<Mutex<OutputBuffer>>,
-    write_tx: mpsc::Sender<Vec<u8>>,
     pgid: i32,
 }
 
@@ -123,17 +101,19 @@ pub struct TerminalRegistry {
     sessions: Mutex<HashMap<String, Arc<Terminal>>>,
     counter: AtomicU64,
     store: Arc<ConfigStore>,
+    attach: Arc<AttachRegistry>,
     log_dir: String,
 }
 
 impl TerminalRegistry {
-    pub fn new(store: Arc<ConfigStore>) -> Arc<Self> {
+    pub fn new(store: Arc<ConfigStore>, attach: Arc<AttachRegistry>) -> Arc<Self> {
         let log_dir =
             std::env::var("ATELIER_LOG_DIR").unwrap_or_else(|_| DEFAULT_LOG_DIR.to_string());
         Arc::new(Self {
             sessions: Mutex::new(HashMap::new()),
             counter: AtomicU64::new(0),
             store,
+            attach,
             log_dir,
         })
     }
@@ -166,8 +146,8 @@ impl TerminalRegistry {
         // new session + process group (EPERM otherwise, since a group leader
         // can't setsid). The shell becomes its own group leader, so its pid is
         // the pgid we signal on delete.
-        // Terminal capabilities, pod-wide env, then what the shell expects.
         cmd.envs(shell_env(
+            req.env,
             self.store.get().map(|c| c.env.clone()).unwrap_or_default(),
         ));
         cmd.current_dir(req.workdir.as_deref().unwrap_or(SHELL_HOME));
@@ -181,17 +161,9 @@ impl TerminalRegistry {
         let pgid = child.id().unwrap_or(0) as i32;
 
         let log = self.open_log(&id).await;
-        let (output, _) = broadcast::channel(OUTPUT_BROADCAST_CAPACITY);
-        let buffer = Arc::new(Mutex::new(OutputBuffer::default()));
-        let (write_tx, write_rx) = mpsc::channel::<Vec<u8>>(WRITE_CHANNEL_CAPACITY);
-
-        tokio::spawn(pump_pty(
-            master.clone(),
-            output.clone(),
-            buffer.clone(),
-            log,
-        ));
-        tokio::spawn(drain_to_pty(master.clone(), write_rx));
+        self.attach
+            .register_pty(&terminal_key(&id), master.clone(), log)
+            .await;
 
         let meta = TerminalMeta {
             id: id.clone(),
@@ -202,15 +174,9 @@ impl TerminalRegistry {
         let terminal = Arc::new(Terminal {
             meta: meta.clone(),
             master,
-            output,
-            buffer,
-            write_tx,
             pgid,
         });
-        self.sessions
-            .lock()
-            .await
-            .insert(id.clone(), terminal.clone());
+        self.sessions.lock().await.insert(id.clone(), terminal);
 
         // Reaper: when the shell exits (user typed `exit`, or DELETE killed it),
         // drop the session so it stops showing up and its fds close.
@@ -247,35 +213,38 @@ impl TerminalRegistry {
             // SAFETY: negative pid signals the whole process group.
             unsafe { libc::kill(-terminal.pgid, libc::SIGKILL) };
         }
+        self.attach.remove(&terminal_key(id)).await;
         true
     }
 
     async fn remove(&self, id: &str) {
         self.sessions.lock().await.remove(id);
+        self.attach.remove(&terminal_key(id)).await;
     }
 
-    async fn lookup(&self, id: &str) -> Option<Arc<Terminal>> {
-        self.sessions.lock().await.get(id).cloned()
+    /// The session's PTY master, for the attach WS to apply resize frames to.
+    pub async fn master(&self, id: &str) -> Option<Arc<AsyncFd<PtyMaster>>> {
+        self.sessions.lock().await.get(id).map(|t| t.master.clone())
     }
 
-    async fn open_log(&self, id: &str) -> Arc<Mutex<tokio::fs::File>> {
+    async fn open_log(&self, id: &str) -> Arc<LogFile> {
         let _ = tokio::fs::create_dir_all(&self.log_dir).await;
         let path = format!("{}/{id}.log", self.log_dir);
-        let file = tokio::fs::OpenOptions::new()
-            .create(true)
-            .append(true)
-            .open(&path)
-            .await;
         // A log open failure must not sink the terminal; fall back to /dev/null.
-        let file = match file {
-            Ok(f) => f,
-            Err(_) => tokio::fs::OpenOptions::new()
-                .write(true)
-                .open("/dev/null")
-                .await
-                .expect("open /dev/null"),
-        };
-        Arc::new(Mutex::new(file))
+        match LogFile::open(&path).await {
+            Ok(log) => log,
+            Err(_) => LogFile::open("/dev/null").await.expect("open /dev/null"),
+        }
+    }
+}
+
+/// Apply a WS text control frame (`{"type":"resize","cols":..,"rows":..}`) to
+/// the terminal's PTY; anything else is ignored.
+pub fn apply_control_frame(master: &AsyncFd<PtyMaster>, text: &[u8]) {
+    if let Ok(frame) = serde_json::from_slice::<ResizeFrame>(text)
+        && frame.kind == "resize"
+    {
+        set_winsize(master, frame.cols, frame.rows);
     }
 }
 
@@ -292,184 +261,59 @@ fn set_winsize(master: &AsyncFd<PtyMaster>, cols: u16, rows: u16) {
     }
 }
 
-async fn pump_pty(
-    master: Arc<AsyncFd<PtyMaster>>,
-    output: broadcast::Sender<Bytes>,
-    buffer: Arc<Mutex<OutputBuffer>>,
-    log: Arc<Mutex<tokio::fs::File>>,
-) {
-    use tokio::io::AsyncWriteExt;
-    let mut buf = [0u8; READ_BUFFER_SIZE];
-    loop {
-        let Ok(mut guard) = master.readable().await else {
-            break;
-        };
-        match guard.try_io(|inner| pty_read(inner.as_raw_fd(), &mut buf)) {
-            Ok(Ok(0)) | Ok(Err(_)) => break,
-            Ok(Ok(n)) => {
-                let bytes = Bytes::copy_from_slice(&buf[..n]);
-                let _ = log.lock().await.write_all(&buf[..n]).await;
-                buffer.lock().await.push(bytes.clone());
-                let _ = output.send(bytes);
-            }
-            Err(_would_block) => continue,
-        }
-    }
-}
-
-async fn drain_to_pty(master: Arc<AsyncFd<PtyMaster>>, mut rx: mpsc::Receiver<Vec<u8>>) {
-    while let Some(data) = rx.recv().await {
-        let mut written = 0;
-        while written < data.len() {
-            let Ok(mut guard) = master.writable().await else {
-                return;
-            };
-            match guard.try_io(|inner| pty_write(inner.as_raw_fd(), &data[written..])) {
-                Ok(Ok(0)) | Ok(Err(_)) => return,
-                Ok(Ok(n)) => written += n,
-                Err(_would_block) => continue,
-            }
-        }
-    }
-}
-
-// ── WebSocket server ─────────────────────────────────────────────────────────
-
-/// Terminal WS listener on its own port so the runtime proxies
-/// `WS /sandboxes/:id/terminal/sessions/:sid/ws` straight through. The request
-/// target is `/{sessionId}` (see `TerminalService.bridgeUrl`).
-pub async fn serve(port: u16, registry: Arc<TerminalRegistry>) {
-    let Ok(listener) = TcpListener::bind(("0.0.0.0", port)).await else {
-        eprintln!("terminal: failed to bind port {port}");
-        return;
-    };
-    println!("terminal: WebSocket server listening on port {port}");
-    while let Ok((stream, _addr)) = listener.accept().await {
-        let mut peek = [0u8; 1024];
-        let Ok(n) = stream.peek(&mut peek).await else {
-            continue;
-        };
-        let Some(id) = parse_session_id(&peek[..n]) else {
-            continue;
-        };
-        let registry = registry.clone();
-        tokio::spawn(async move {
-            handle_conn(stream, id, registry).await;
-        });
-    }
-}
-
-/// Pull the session id out of the WS upgrade request line
-/// (`GET /{sessionId} HTTP/1.1`). Strips any query string.
-fn parse_session_id(buf: &[u8]) -> Option<String> {
-    let request = String::from_utf8_lossy(buf);
-    let target = request.lines().next()?.split_whitespace().nth(1)?;
-    let path = target.strip_prefix('/')?;
-    let id = path.split('?').next().unwrap_or(path);
-    if id.is_empty() || id.contains('/') {
-        return None;
-    }
-    Some(id.to_string())
-}
-
-async fn handle_conn(stream: TcpStream, id: String, registry: Arc<TerminalRegistry>) {
-    let Some(terminal) = registry.lookup(&id).await else {
-        return;
-    };
-    let Ok(ws) = accept_async(crate::activity::control::Counted::new(stream)).await else {
-        return;
-    };
-    let (mut sink, mut source) = ws.split();
-
-    // Replay scrollback, then subscribe to live output.
-    let (chunks, mut rx) = {
-        let chunks = terminal.buffer.lock().await.snapshot_chunks();
-        (chunks, terminal.output.subscribe())
-    };
-    for chunk in chunks {
-        if sink.send(Message::Binary(chunk)).await.is_err() {
-            return;
-        }
-    }
-
-    let mut out_task = tokio::spawn(async move {
-        // recv() errors on Closed (shell gone) or Lagged (this client fell
-        // behind); either way stop, so a lagged client reconnects and replays
-        // rather than render a gapped stream.
-        while let Ok(data) = rx.recv().await {
-            if sink.send(Message::Binary(data)).await.is_err() {
-                break;
-            }
-        }
-        let _ = sink.close().await;
-    });
-
-    let write_tx = terminal.write_tx.clone();
-    let master = terminal.master.clone();
-    let mut in_task = tokio::spawn(async move {
-        while let Some(Ok(msg)) = source.next().await {
-            let keystrokes = match msg {
-                // Bytes are keystrokes into the shell.
-                Message::Binary(b) => Vec::from(b),
-                // Text is a resize control frame; anything else is ignored.
-                Message::Text(t) => {
-                    if let Ok(frame) = serde_json::from_slice::<ResizeFrame>(t.as_bytes())
-                        && frame.kind == "resize"
-                    {
-                        set_winsize(&master, frame.cols, frame.rows);
-                    }
-                    continue;
-                }
-                Message::Close(_) => break,
-                _ => continue,
-            };
-            if write_tx.send(keystrokes).await.is_err() {
-                break;
-            }
-        }
-    });
-
-    tokio::select! {
-        _ = &mut out_task => in_task.abort(),
-        _ = &mut in_task => out_task.abort(),
-    }
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
 
     /// Resolve like `Command::envs` does: the last entry for a key wins.
-    fn resolved(pod: &[(&str, &str)]) -> HashMap<String, String> {
-        let pod_env = pod
-            .iter()
-            .map(|(k, v)| (k.to_string(), v.to_string()))
-            .collect();
-        shell_env(pod_env).into_iter().collect()
+    fn resolved(session: &[(&str, &str)], pod: &[(&str, &str)]) -> HashMap<String, String> {
+        let to_map = |pairs: &[(&str, &str)]| -> HashMap<String, String> {
+            pairs
+                .iter()
+                .map(|(k, v)| (k.to_string(), v.to_string()))
+                .collect()
+        };
+        shell_env(to_map(session), to_map(pod))
+            .into_iter()
+            .collect()
     }
 
     #[test]
-    fn advertises_console_terminal_capabilities() {
-        let env = resolved(&[]);
-        assert_eq!(env["COLORTERM"], "truecolor");
-        assert_eq!(env["PI_HYPERLINKS"], "1");
-        assert_eq!(env["PI_IMAGE_PROTOCOL"], "iterm2");
+    fn assumes_no_terminal_capabilities_of_its_own() {
+        let env = resolved(&[], &[]);
         assert_eq!(env["TERM"], "xterm-256color");
+        assert!(!env.contains_key("COLORTERM"));
+        assert!(!env.contains_key("PI_HYPERLINKS"));
     }
 
     #[test]
-    fn pod_env_overrides_capabilities_and_passes_through() {
-        let env = resolved(&[("PI_IMAGE_PROTOCOL", "none"), ("FOO", "bar")]);
-        assert_eq!(env["PI_IMAGE_PROTOCOL"], "none");
-        assert_eq!(env["FOO"], "bar");
+    fn session_env_applies_and_pod_env_overrides_it() {
+        let env = resolved(
+            &[("COLORTERM", "truecolor"), ("FOO", "session")],
+            &[("FOO", "pod"), ("BAR", "bar")],
+        );
         assert_eq!(env["COLORTERM"], "truecolor");
+        assert_eq!(env["FOO"], "pod");
+        assert_eq!(env["BAR"], "bar");
     }
 
     #[test]
     fn shell_identity_is_not_overridable() {
-        let env = resolved(&[("TERM", "dumb"), ("HOME", "/root"), ("USER", "root")]);
+        let env = resolved(
+            &[("TERM", "vt52")],
+            &[("TERM", "dumb"), ("HOME", "/root"), ("USER", "root")],
+        );
         assert_eq!(env["TERM"], "xterm-256color");
         assert_eq!(env["HOME"], SHELL_HOME);
         assert_eq!(env["USER"], SHELL_USER);
+    }
+
+    #[test]
+    fn create_request_env_is_optional() {
+        let req: CreateRequest = serde_json::from_str(r#"{"userId":"u"}"#).unwrap();
+        assert!(req.env.is_empty());
+        let req: CreateRequest =
+            serde_json::from_str(r#"{"userId":"u","env":{"COLORTERM":"truecolor"}}"#).unwrap();
+        assert_eq!(req.env["COLORTERM"], "truecolor");
     }
 }

@@ -6,7 +6,7 @@
 import type { PortEntry, SandboxSpec } from "@atelier/spec";
 import { config } from "../../shared/lib/config.ts";
 import { createChildLogger } from "../../shared/lib/logger.ts";
-import type { AgentClient } from "../agent/index.ts";
+import { AGENT_ATTACH_PORT, type AgentClient } from "../agent/index.ts";
 import {
   type BootInput,
   type BootOutput,
@@ -24,9 +24,6 @@ import type {
 } from "./backend.types.ts";
 
 const log = createChildLogger("runtime-backend-kube");
-
-/** WS attach-bridge port the agent listens on (agent `attach::ATTACH_PORT`). */
-const ATTACH_PORT = 9997;
 
 /** CSI VolumeSnapshot / PVC storage plane. */
 class CsiVolumeBackend implements VolumeBackend {
@@ -121,8 +118,7 @@ export class KubernetesBackend implements SandboxBackend {
     return {
       host,
       agentPort: config.ports.agent,
-      attachPort: ATTACH_PORT,
-      terminalPort: config.ports.terminal,
+      attachPort: AGENT_ATTACH_PORT,
     };
   }
 }

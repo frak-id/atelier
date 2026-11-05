@@ -74,7 +74,13 @@ export function createServerContainer() {
   // (pod IP on k8s, mapped host ports on Docker) — the same instance is shared
   // with RuntimeService so there is a single source of endpoint truth.
   const backend = createSandboxBackend();
-  const agent = new AgentClient((id) => backend.resolveAgentEndpoint(id));
+  // The agent requires a per-sandbox bearer token: a booting sandbox hands it
+  // to the client directly, an already-booted one is read off its record.
+  const sandboxStore = new DrizzleSandboxStore();
+  const agent = new AgentClient(
+    (id) => backend.resolveAgentEndpoint(id),
+    (id) => sandboxStore.get(id)?.generated?.agentPassword,
+  );
   // One `images` store instance shared by the runtime (which reads it in
   // resolveImage to prefer a built image's pinned digest) and the image
   // builder service (which writes it) — a single source of truth for the
@@ -83,7 +89,7 @@ export function createServerContainer() {
   const runtime = new RuntimeService({
     agent,
     backend,
-    sandboxes: new DrizzleSandboxStore(),
+    sandboxes: sandboxStore,
     snapshots: new DrizzleSnapshotStore(),
     toolsets: new DrizzleToolsetStore(),
     sandboxToolsetRefs: new DrizzleSandboxToolsetRefStore(),

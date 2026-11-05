@@ -1,0 +1,23 @@
+{
+  "processes": [
+    {
+      "name": "web",
+      "status": "running",
+      "pid": 4242,
+      "ready": true,
+      "primary": true,
+      "startedAt": "2026-11-05T10:00:00Z",
+      "logFile": "/var/log/sandbox/web.log"
+    },
+    {
+      "name": "job",
+      "status": "stopped",
+      "pid": 0,
+      "ready": false,
+      "primary": false,
+      "exitCode": 1,
+      "startedAt": "2026-11-05T10:01:00Z",
+      "logFile": "/var/log/sandbox/job.log"
+    }
+  ]
+}

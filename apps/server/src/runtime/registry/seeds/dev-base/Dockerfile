@@ -10,7 +10,7 @@
 # fresh operator never has to build it first. Override with
 # `--build-arg AGENT_IMAGE=<ref>` (the server passes `sandbox.agentImage`) to
 # use a private/mirrored agent — e.g. an air-gapped cluster's own registry.
-ARG AGENT_IMAGE=ghcr.io/frak-id/sandbox-agent:latest
+ARG AGENT_IMAGE=ghcr.io/frak-id/sandbox-agent:3.0.2
 FROM ${AGENT_IMAGE} AS agent
 
 # Pin the Debian codename explicitly: dev-browser installs a KasmVNC .deb built
