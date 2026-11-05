@@ -45,19 +45,16 @@ describe("planBranchSwitch", () => {
     prebuildSurface: (ref: string) => surfaces[ref] ?? {},
   } as never;
 
-  test("starts from the default-branch prebuild, at its clone path", () => {
-    const records = [
-      bake("snap-dev", [{ url: URL, branch: "dev", clonePath: "wallet" }]),
-      bake(
-        "snap-multi",
-        [
-          { url: "https://github.com/frak-id/landing", clonePath: "landing" },
-          { url: `${URL}.git`, clonePath: "code/wallet" },
-        ],
-        ["cd code/wallet && bun install", "cd landing && bun install"],
-      ),
-    ];
-    expect(planBranchSwitch(runtime, records, URL, " feature/x ")).toEqual({
+  test("switches the base's clone, wherever it sits", () => {
+    const multi = bake(
+      "snap-multi",
+      [
+        { url: "https://github.com/frak-id/landing", clonePath: "landing" },
+        { url: `${URL}.git`, clonePath: "code/wallet" },
+      ],
+      ["cd code/wallet && bun install", "cd landing && bun install"],
+    );
+    expect(planBranchSwitch(runtime, multi, URL, " feature/x ")).toEqual({
       baseRef: "snap-multi",
       url: URL,
       branch: "feature/x",
@@ -67,13 +64,17 @@ describe("planBranchSwitch", () => {
     });
   });
 
-  test("nothing to start from, or nothing to switch to", () => {
-    const records = [bake("snap-default", [{ url: URL, clonePath: "wallet" }])];
-    expect(planBranchSwitch(runtime, records, URL, undefined)).toBeUndefined();
+  test("nothing to switch: no branch, another repo, or already on it", () => {
+    const main = bake("snap-main", [
+      { url: URL, branch: "main", clonePath: "wallet" },
+    ]);
+    expect(planBranchSwitch(runtime, main, URL, undefined)).toBeUndefined();
+    expect(planBranchSwitch(runtime, main, URL, " ")).toBeUndefined();
     expect(
-      planBranchSwitch(runtime, records, "https://github.com/a/b", "x"),
+      planBranchSwitch(runtime, main, "https://github.com/a/b", "x"),
     ).toBeUndefined();
-    expect(planBranchSwitch(runtime, records, URL, "x")?.build).toEqual([]);
+    expect(planBranchSwitch(runtime, main, URL, "main")).toBeUndefined();
+    expect(planBranchSwitch(runtime, main, URL, "x")?.build).toEqual([]);
   });
 });
 

@@ -255,7 +255,31 @@ describe("`repo` on the create body", () => {
     captured = undefined;
   });
 
-  test("repo with prebuild or a snapshot source is a 400", async () => {
+  test("a prebuild snapshot of the repo boots as picked, to be switched", async () => {
+    captured = [];
+    existingBakes = [
+      {
+        ref: "snap:main",
+        spec: {
+          source: { image: "registry.test/base:1" },
+          repos: [{ url: repo.url, branch: "main", clonePath: "app" }],
+        },
+      },
+    ];
+    bakedFor.length = 0;
+    const res = await call("alice", "POST", "/v1/sandboxes", {
+      ...body,
+      source: { snapshot: "snap:main" },
+      repo,
+    });
+    expect(res.status).toBe(202);
+    await settle(((await res.json()) as { id: string }).id);
+    expect(bakedFor).toHaveLength(0);
+    expect(captured[0]?.source).toEqual({ snapshot: "snap:main" });
+    captured = undefined;
+  });
+
+  test("repo with prebuild, or a snapshot that is no prebuild of it, is a 400", async () => {
     const withPrebuild = await call("alice", "POST", "/v1/sandboxes", {
       ...body,
       repo,

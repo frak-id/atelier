@@ -326,12 +326,13 @@ export function registerSandboxTools(
           .object({ url: z.string(), branch: z.string().optional() })
           .optional()
           .describe(
-            "A git repo to boot from: a prebuild of that branch is reused; " +
-              "else the repo's default-branch prebuild boots switched to the " +
-              "branch, its build steps re-running in the background " +
-              "(`get_sandbox` `setup`); else one is baked on " +
-              "`spec.source.image`. Not with `prebuild` or a " +
-              "`spec.source.snapshot`.",
+            "A git repo to boot from. With `spec.source.image`: a prebuild " +
+              "of that branch is reused; else another prebuild of the repo " +
+              "(its default branch's first) boots switched to the branch, " +
+              "its build steps re-running in the background (`get_sandbox` " +
+              "`setup`); else one is baked on the image. With " +
+              "`spec.source.snapshot` = a prebuild of that repo: it boots " +
+              "switched to `branch` (required). Not with `prebuild`.",
           ),
         orgId: z
           .string()

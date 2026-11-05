@@ -5,6 +5,7 @@ import {
   findRepoBranchPrebuild,
   normalizeBranch,
   type PrebuildRecord,
+  prebuildRepoFor,
   type SandboxSpec,
 } from "@atelier/spec";
 import {
@@ -321,21 +322,20 @@ function SelectedRepo({
     branchParam,
     repo.defaultBranch,
   );
-  // The server's own rule (`createForUser`): a default-branch bake on an
-  // image, matched without the default-branch hint the server lacks.
+  // No bake of this branch: boot another bake of the repo (its default
+  // branch's first) and let the server switch it. The request names the
+  // snapshot, so the server switches exactly the one shown here.
   const base = matched
     ? undefined
     : findRepoBasePrebuild(
-        entry.prebuilds.filter(
-          (p) => p.spec !== undefined && "image" in p.spec.source,
-        ),
+        entry.prebuilds,
         repo.cloneUrl,
         branchParam,
+        repo.defaultBranch,
       );
-  const baseImage =
-    base?.spec && "image" in base.spec.source
-      ? base.spec.source.image
-      : undefined;
+  const baseBranch = base
+    ? (prebuildRepoFor(base, repo.cloneUrl)?.branch ?? repo.defaultBranch)
+    : undefined;
   const buildingThis = activeJobForBranch(entry, branchParam) !== undefined;
   // The recipe path needs the detected steps (see `useRepoInspection`).
   const stepsReady = !inspection.detecting;
@@ -358,10 +358,12 @@ function SelectedRepo({
         ...baseSpec({ snapshot: matched.ref }),
         metadata,
       });
-    } else if (base && baseImage) {
+    } else if (base) {
       onSpawn({
-        ...baseSpec({ image: baseImage }),
-        repo: { url: repo.cloneUrl, branch: branchParam },
+        ...baseSpec({ snapshot: base.ref }),
+        // The branch by name, the default one too: it is what gets checked
+        // out.
+        repo: { url: repo.cloneUrl, branch },
         metadata,
       });
     } else {
@@ -408,8 +410,8 @@ function SelectedRepo({
       <SpawnPlan
         matchedAt={matched?.createdAt}
         base={base}
+        baseBranch={baseBranch}
         branch={branch}
-        defaultBranch={repo.defaultBranch}
         otherRepos={otherReposNote(matched ?? base)}
         building={buildingThis}
         steps={inspection.suggestedBuild}
@@ -452,18 +454,19 @@ function SelectedRepo({
 function SpawnPlan({
   matchedAt,
   base,
+  baseBranch,
   branch,
-  defaultBranch,
   otherRepos,
   building,
   steps,
   stepsPending,
 }: {
   matchedAt?: string;
-  /** The default-branch prebuild a spawn of `branch` boots and switches. */
+  /** The bake of another branch a spawn of `branch` boots and switches. */
   base?: PrebuildRecord;
+  /** The branch `base` cloned the repo at. */
+  baseBranch?: string;
   branch: string;
-  defaultBranch?: string;
   /** `otherReposNote` of the matched prebuild: spawning it brings the
    * other repos it clones along too. */
   otherRepos: string;
@@ -487,8 +490,9 @@ function SpawnPlan({
         <GitBranch className="mt-0.5 size-4 shrink-0" />
         <div className="min-w-0 space-y-1">
           <p>
-            Boots from the {defaultBranch ?? "default-branch"} prebuild built{" "}
-            {formatRelativeTime(base.createdAt)}
+            Boots from the prebuild of{" "}
+            <span className="font-mono">{baseBranch ?? "another branch"}</span>{" "}
+            built {formatRelativeTime(base.createdAt)}
             {otherRepos}, switched to{" "}
             <span className="font-mono">{branch}</span>.{" "}
             {baseSteps.length > 0

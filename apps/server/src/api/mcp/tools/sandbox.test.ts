@@ -201,6 +201,8 @@ function fakeRuntime() {
       calls.annotations.push([key, value]);
     },
     // createSandboxForUser
+    // Every snapshot is a shared prebuild (no owning sandbox).
+    snapshotOwner: () => undefined,
     prebuildSurface: () => surface,
     listPrebuilds: () => bakes,
     cachedPrebuild: async () => undefined,
@@ -460,6 +462,69 @@ describe("create_sandbox", () => {
           warnings: [expect.stringContaining("cd app && bun install (exit 1)")],
         },
       });
+    });
+
+    test("a bake saved with an explicit default branch is a base too", async () => {
+      const { call, fake, jobs } = await setup();
+      fake.setBakes([
+        {
+          ...defaultBake,
+          ref: "snap-explicit-main",
+          spec: {
+            ...defaultBake.spec,
+            repos: [{ url: repo.url, branch: "main", clonePath: "app" }],
+          },
+        },
+      ]);
+      await call("create_sandbox", {
+        spec: { source: { image: "dev-base" } },
+        repo,
+      });
+      await settle(jobs);
+      expect(fake.calls.baked).toHaveLength(0);
+      expect(fake.calls.created[0]?.source).toEqual({
+        snapshot: "snap-explicit-main",
+      });
+      expect(fake.calls.exec[0]?.req.command).toContain(
+        "git checkout -B 'feature/x'",
+      );
+    });
+
+    test("a picked prebuild snapshot boots switched to the branch", async () => {
+      const { call, fake, jobs } = await setup();
+      fake.setBakes([
+        defaultBake,
+        { ...defaultBake, ref: "snap-other", spec: { ...defaultBake.spec } },
+      ]);
+      await call("create_sandbox", {
+        spec: { source: { snapshot: "snap-other" } },
+        repo,
+      });
+      await settle(jobs);
+      expect(fake.calls.baked).toHaveLength(0);
+      expect(fake.calls.created[0]?.source).toEqual({ snapshot: "snap-other" });
+      expect(fake.calls.exec.map((e) => e.req.command)).toEqual([
+        expect.stringContaining("git checkout -B 'feature/x'"),
+        "cd app && bun install",
+      ]);
+    });
+
+    test("a snapshot source needs a prebuild of the repo and a branch", async () => {
+      const { call, fake } = await setup();
+      fake.setBakes([defaultBake]);
+      const noBranch = await call("create_sandbox", {
+        spec: { source: { snapshot: "snap-main" } },
+        repo: { url: repo.url },
+      });
+      expect(noBranch.isError).toBe(true);
+      expect(noBranch.raw).toContain("needs the `branch`");
+      const otherRepo = await call("create_sandbox", {
+        spec: { source: { snapshot: "snap-main" } },
+        repo: { url: "https://github.com/acme/other", branch: "x" },
+      });
+      expect(otherRepo.isError).toBe(true);
+      expect(otherRepo.raw).toContain("needs a prebuild that clones");
+      expect(fake.calls.created).toEqual([]);
     });
 
     test("an exact bake of the branch, or another base image, wins", async () => {

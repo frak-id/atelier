@@ -161,8 +161,14 @@ never deletes the newest one.
 
 **Spawning a branch nobody baked.** A `repo` spawn (`POST /v1/sandboxes`,
 MCP `create_sandbox`, the console's repo card) on a branch with no prebuild
-of its own boots from that repo's default-branch prebuild on the same base
-image instead of baking (`findRepoBasePrebuild`, `api/app/branch-setup.ts`):
+of its own boots from another prebuild of that repo instead of baking, and
+switches it to the branch (`findRepoBasePrebuild`,
+`api/app/branch-setup.ts`). Any bake of the repo will do, since the switch
+fetches the branch by name; the default branch's is preferred. With an
+image `source` the server picks it among the bakes on that image. With a
+`snapshot` source, `repo` names the branch to switch that prebuild to: the
+console sends the one it picked, knowing the repo's default branch from
+GitHub, which the server does not.
 
 1. Inside the create, after `postCreate` and before any process starts
    (`RuntimeCreateOptions.beforeProcesses`, never stored in the spec, so a

@@ -193,27 +193,45 @@ describe("findRepoBasePrebuild", () => {
     record("snap-other", "https://github.com/frak-id/wallet"),
   ];
 
-  test("a feature branch falls back to the default-branch prebuild", () => {
+  test("prefers the default-branch prebuild, else any other bake", () => {
+    // newest-first input: the `dev` bake is newer, the default one wins
     expect(findRepoBasePrebuild(rows, url, "feature/x")?.ref).toBe(
       "snap-default",
     );
-    // Only the default branch is a base: another feature branch never is.
-    expect(findRepoBasePrebuild(rows.slice(0, 1), url, "feature/x")).toBe(
-      undefined,
+    expect(findRepoBasePrebuild(rows.slice(0, 1), url, "feature/x")?.ref).toBe(
+      "snap-dev",
+    );
+    // Never the bake of the branch itself (that is an exact match).
+    expect(findRepoBasePrebuild(rows.slice(0, 1), url, "dev")).toBeUndefined();
+    expect(
+      findRepoBasePrebuild(rows, "https://github.com/a/b", "x"),
+    ).toBeUndefined();
+  });
+
+  test("an explicit default branch is a base, best with the hint", () => {
+    const rowsMain = [
+      record("snap-dev", url, "dev"),
+      record("snap-main", url, "main"),
+    ];
+    // Without the hint `main` is just another branch: newest wins.
+    expect(findRepoBasePrebuild(rowsMain, url, "feature/x")?.ref).toBe(
+      "snap-dev",
+    );
+    expect(findRepoBasePrebuild(rowsMain, url, "feature/x", "main")?.ref).toBe(
+      "snap-main",
     );
   });
 
-  test("a default-branch spawn has nothing to switch to", () => {
-    expect(findRepoBasePrebuild(rows, url, undefined)).toBeUndefined();
-    expect(findRepoBasePrebuild(rows, url, "  ")).toBeUndefined();
-    expect(findRepoBasePrebuild(rows, url, "main", "main")).toBeUndefined();
-  });
-
-  test("the default-branch hint counts an explicit default as a base", () => {
-    const explicit = [record("snap-main", url, "main")];
-    expect(findRepoBasePrebuild(explicit, url, "feature/x")).toBeUndefined();
-    expect(findRepoBasePrebuild(explicit, url, "feature/x", "main")?.ref).toBe(
-      "snap-main",
+  test("the default branch is a target only when it has a name", () => {
+    const onlyDev = rows.slice(0, 1);
+    expect(findRepoBasePrebuild(onlyDev, url, undefined)).toBeUndefined();
+    expect(findRepoBasePrebuild(onlyDev, url, "  ")).toBeUndefined();
+    expect(findRepoBasePrebuild(onlyDev, url, undefined, "main")?.ref).toBe(
+      "snap-dev",
+    );
+    // The default bake itself is no base for the default branch.
+    expect(findRepoBasePrebuild(rows, url, "main", "main")?.ref).toBe(
+      "snap-dev",
     );
   });
 });

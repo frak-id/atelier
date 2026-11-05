@@ -1,10 +1,11 @@
 /**
- * Spawning a repo on a branch nobody baked: boot from the repo's
- * default-branch prebuild instead of baking a new one, switch its clone to
- * the branch before any process starts, then re-run the prebuild's build
- * steps in the live sandbox (a `sandbox-setup` job) while the caller already
- * works in it. The snapshot holds the clone and the installed dependencies,
- * so the checkout is one shallow fetch and the re-run is incremental.
+ * Spawning a repo on a branch nobody baked: boot from another prebuild of
+ * the repo (its default branch's when there is one, `findRepoBasePrebuild`)
+ * instead of baking a new one, switch its clone to the branch before any
+ * process starts, then re-run the prebuild's build steps in the live sandbox
+ * (a `sandbox-setup` job) while the caller already works in it. The snapshot
+ * holds the clone and the installed dependencies, so the checkout is one
+ * shallow fetch and the re-run is incremental.
  *
  * Every failure is a warning, never a failed spawn: a failed checkout leaves
  * the sandbox on the default branch, a failed step leaves its dependencies as
@@ -13,7 +14,6 @@
  * the spawning user must not read, so it never enters their sandbox.
  */
 import {
-  findRepoBasePrebuild,
   type PrebuildRecord,
   prebuildRepoFor,
   repoShortName,
@@ -35,7 +35,7 @@ type SetupRuntime = Pick<
 /** What a spawn boots from and does to land on `branch` (see the module
  * doc). */
 export interface BranchSwitch {
-  /** The default-branch prebuild the sandbox boots from. */
+  /** The prebuild the sandbox boots from. */
   baseRef: string;
   url: string;
   branch: string;
@@ -49,20 +49,19 @@ export interface BranchSwitch {
 }
 
 /**
- * The switch for a spawn of `url` on `branch` from `records` (already
- * narrowed to the requested base image), or `undefined` when there is no
- * default-branch prebuild to start from (or nothing to switch to).
+ * The switch of `base`'s clone of `url` to `branch`, or `undefined` when
+ * `base` does not clone `url`, no branch is named, or the clone is already
+ * on it (nothing to switch).
  */
 export function planBranchSwitch(
   runtime: Pick<RuntimeService, "prebuildSurface">,
-  records: readonly PrebuildRecord[],
+  base: PrebuildRecord,
   url: string,
   branch: string | undefined,
 ): BranchSwitch | undefined {
-  const base = findRepoBasePrebuild(records, url, branch);
-  const clone = base && prebuildRepoFor(base, url);
+  const clone = prebuildRepoFor(base, url);
   const target = branch?.trim();
-  if (!base || !clone || !target) return undefined;
+  if (!clone || !target || clone.branch?.trim() === target) return undefined;
   return {
     baseRef: base.ref,
     url,

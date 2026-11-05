@@ -16,10 +16,13 @@ import {
   type CreateSandboxRequest,
   type ExecRequest,
   type ForkSandboxRequest,
+  findRepoBasePrebuild,
   findRepoBranchPrebuild,
   type PatchFilesRequest,
+  type PrebuildRecord,
   type PrebuildSpec,
   prebuildJobTarget,
+  prebuildRepoFor,
   type ResumeRequest,
   runtimeSurfaceOf,
   SANDBOX_NAME_ANNOTATION,
@@ -100,16 +103,30 @@ function sandboxLabel(req: CreateSandboxRequest): string {
   );
 }
 
-/** `repo` is sugar over `prebuild` with an image base: both at once, or a
- * snapshot source, leave no unambiguous recipe (400). */
-function assertRepoRequest(req: CreateSandboxRequest): void {
-  if (!req.repo) return;
+/** `repo` is sugar over `prebuild` with an image base (the server picks or
+ * bakes the prebuild), or names the branch to switch a prebuild `snapshot`
+ * source of that repo to (the caller picked it). With a `prebuild` too, no
+ * recipe is unambiguous (400). */
+function assertRepoRequest(
+  req: CreateSandboxRequest,
+  prebuilds: () => readonly PrebuildRecord[],
+): void {
+  const { repo, source } = req;
+  if (!repo) return;
   if (req.prebuild) {
     throw new ValidationError("`repo` cannot be combined with `prebuild`");
   }
-  if (!("image" in req.source)) {
+  if ("image" in source) return;
+  if (!repo.branch?.trim()) {
     throw new ValidationError(
-      "`repo` needs an image `source` (the base the repo is baked on)",
+      "`repo` with a snapshot `source` needs the `branch` to switch it to",
+    );
+  }
+  const record = prebuilds().find((p) => p.ref === source.snapshot);
+  if (!record || !prebuildRepoFor(record, repo.url)) {
+    throw new ValidationError(
+      "`repo` with a snapshot `source` needs a prebuild that clones that " +
+        "repo (or an image `source` to pick or bake one)",
     );
   }
 }
@@ -257,7 +274,7 @@ export class SandboxOps {
 
   private prepareCreate(user: SandboxActor, req: CreateSandboxRequest) {
     // Checked up front for a synchronous 400/403/404, not a failed job.
-    assertRepoRequest(req);
+    assertRepoRequest(req, () => this.runtime.listPrebuilds());
     resolveOrgId(this.control, user.id, req.orgId);
     requireSourceAccess(this.guard, user.id, req.source, req.prebuild?.source);
     const id = safeNanoid();
@@ -324,13 +341,19 @@ export class SandboxOps {
         memoryMb: resources?.memoryMb ?? defaultMemoryMb(),
       },
     };
-    // `repo`: boot from an existing bake of that branch; else from the
-    // repo's default-branch bake, switched to the branch (`branch-setup.ts`);
-    // else bake a quick one-repo prebuild below (on `source.image`, the base
-    // `assertRepoRequest` checked).
+    // `repo` with an image source: boot from an existing bake of that branch;
+    // else from another bake of the repo, switched to the branch
+    // (`branch-setup.ts`); else bake a quick one-repo prebuild below. With a
+    // snapshot source (a prebuild of the repo, `assertRepoRequest` checked):
+    // boot it, switched to the branch.
     let prebuild = bodyPrebuild;
     let branchSwitch: BranchSwitch | undefined;
-    if (repo && "image" in spec.source) {
+    if (repo && "snapshot" in spec.source) {
+      const ref = spec.source.snapshot;
+      const picked = runtime.listPrebuilds().find((p) => p.ref === ref);
+      branchSwitch =
+        picked && planBranchSwitch(runtime, picked, repo.url, repo.branch);
+    } else if (repo && "image" in spec.source) {
       // Only a bake on the requested base image: another base is another
       // environment.
       const baseImage = spec.source.image;
@@ -343,9 +366,11 @@ export class SandboxOps {
             record.spec.source.image === baseImage,
         );
       const baked = findRepoBranchPrebuild(onBase, repo.url, repo.branch);
-      branchSwitch = baked
+      const base = baked
         ? undefined
-        : planBranchSwitch(runtime, onBase, repo.url, repo.branch);
+        : findRepoBasePrebuild(onBase, repo.url, repo.branch);
+      branchSwitch =
+        base && planBranchSwitch(runtime, base, repo.url, repo.branch);
       if (baked) {
         spec = { ...spec, source: { snapshot: baked.ref } };
       } else if (branchSwitch) {

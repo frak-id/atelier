@@ -152,14 +152,13 @@ export function findRepoBranchPrebuild(
 }
 
 /**
- * The prebuild a spawn of `url` on `branch` can boot from and then switch
- * to `branch` when no bake of that branch exists: the repo's default-branch
- * prebuild (same preference as `findRepoBranchPrebuild`). Its snapshot
- * already holds the clone and the installed dependencies, so checking the
- * branch out and re-running the build steps beats a cold bake. `undefined`
- * for a default-branch spawn (nothing to switch to) or when the repo has no
- * default-branch prebuild. The server and the console MUST both call this,
- * or the console would promise a fast boot the server doesn't do.
+ * The prebuild a spawn of `url` on `branch` boots from and then switches to
+ * `branch` when no bake of that branch exists. Any other bake of the repo
+ * will do (the switch fetches `branch` by name, and the build steps re-run
+ * on top of its installed dependencies); the default branch's is preferred,
+ * then the newest, a prebuild that clones only this repo first in each.
+ * `undefined` when the repo has no other bake, or when the spawn targets
+ * the default branch without its name (`defaultBranch`) to check out.
  */
 export function findRepoBasePrebuild(
   records: readonly PrebuildRecord[],
@@ -167,8 +166,19 @@ export function findRepoBasePrebuild(
   branch: string | undefined,
   defaultBranch?: string,
 ): PrebuildRecord | undefined {
-  if (normalizeBranch(branch, defaultBranch) === undefined) return undefined;
-  return findRepoBranchPrebuild(records, url, undefined, defaultBranch);
+  const want = normalizeBranch(branch, defaultBranch);
+  if (want === undefined && !defaultBranch?.trim()) return undefined;
+  const branchOf = (record: PrebuildRecord) =>
+    normalizeBranch(prebuildRepoFor(record, url)?.branch, defaultBranch);
+  const others = findRepoPrebuilds(records, url).filter(
+    (record) => branchOf(record) !== want,
+  );
+  const preferSolo = (list: PrebuildRecord[]) =>
+    list.find((record) => prebuildRepos(record).length === 1) ?? list[0];
+  return (
+    preferSolo(others.filter((record) => branchOf(record) === undefined)) ??
+    preferSolo(others)
+  );
 }
 
 /**
