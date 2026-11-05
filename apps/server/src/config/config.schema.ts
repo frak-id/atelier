@@ -14,7 +14,7 @@ import { type Static, Type } from "@sinclair/typebox";
 // Domain
 // ---------------------------------------------------------------------------
 
-export const SshConfigSchema = Type.Object(
+const SshConfigSchema = Type.Object(
   {
     /** SSH proxy listen port */
     port: Type.Number({ default: 2222 }),
@@ -30,9 +30,7 @@ export const SshConfigSchema = Type.Object(
   { default: {} },
 );
 
-export type SshConfig = Static<typeof SshConfigSchema>;
-
-export const DomainConfigSchema = Type.Object(
+const DomainConfigSchema = Type.Object(
   {
     /** Base domain for all services (e.g., example.com) */
     baseDomain: Type.String({ default: "localhost" }),
@@ -44,13 +42,11 @@ export const DomainConfigSchema = Type.Object(
   { default: {} },
 );
 
-export type DomainConfig = Static<typeof DomainConfigSchema>;
-
 // ---------------------------------------------------------------------------
 // Auth
 // ---------------------------------------------------------------------------
 
-export const GithubAuthConfigSchema = Type.Object(
+const GithubAuthConfigSchema = Type.Object(
   {
     /** GitHub OAuth client ID */
     clientId: Type.String({ default: "" }),
@@ -60,9 +56,7 @@ export const GithubAuthConfigSchema = Type.Object(
   { default: {} },
 );
 
-export type GithubAuthConfig = Static<typeof GithubAuthConfigSchema>;
-
-export const AuthConfigSchema = Type.Object(
+const AuthConfigSchema = Type.Object(
   {
     /** GitHub OAuth credentials */
     github: GithubAuthConfigSchema,
@@ -84,13 +78,11 @@ export const AuthConfigSchema = Type.Object(
   { default: {} },
 );
 
-export type AuthConfig = Static<typeof AuthConfigSchema>;
-
 // ---------------------------------------------------------------------------
 // Kubernetes
 // ---------------------------------------------------------------------------
 
-export const KubernetesConfigSchema = Type.Object(
+const KubernetesConfigSchema = Type.Object(
   {
     /** Namespace for sandbox pods */
     namespace: Type.String({ default: "atelier-sandboxes" }),
@@ -146,13 +138,11 @@ export const KubernetesConfigSchema = Type.Object(
   { default: {} },
 );
 
-export type KubernetesConfig = Static<typeof KubernetesConfigSchema>;
-
 // ---------------------------------------------------------------------------
 // Server
 // ---------------------------------------------------------------------------
 
-export const RuntimeModeSchema = Type.Union(
+const RuntimeModeSchema = Type.Union(
   [
     // Real cluster runtime + GitHub OAuth + secure cookies.
     Type.Literal("production"),
@@ -165,9 +155,7 @@ export const RuntimeModeSchema = Type.Union(
   { default: "production" },
 );
 
-export type RuntimeMode = Static<typeof RuntimeModeSchema>;
-
-export const ServerConfigSchema = Type.Object(
+const ServerConfigSchema = Type.Object(
   {
     /** Runtime mode: production (real VMs, the default) or local (real
      * runtime, bypassed auth — the single-user laptop/dev path). */
@@ -180,13 +168,45 @@ export const ServerConfigSchema = Type.Object(
   { default: {} },
 );
 
-export type ServerConfig = Static<typeof ServerConfigSchema>;
-
 // ---------------------------------------------------------------------------
 // Sandbox defaults
 // ---------------------------------------------------------------------------
 
-export const SandboxDefaultsSchema = Type.Object(
+const IdleModeSchema = Type.Union(
+  [Type.Literal("off"), Type.Literal("observe"), Type.Literal("enforce")],
+  { default: "observe" },
+);
+
+/**
+ * Idle auto-pause: pause running sandboxes nobody uses. Read by the reaper
+ * every minute. Operator-only: there is deliberately no org or per-user
+ * override of the idle time.
+ */
+const IdleConfigSchema = Type.Object(
+  {
+    /** observe computes (and shows) when a sandbox would pause without
+     * pausing it; enforce pauses it; off disables the feature. */
+    mode: IdleModeSchema,
+    /** Minutes without activity before a sandbox is paused. */
+    minutes: Type.Number({ default: 120, minimum: 1 }),
+    /** Network traffic at or above `networkMinBytesPerMinute` is activity. */
+    network: Type.Boolean({ default: true }),
+    /** Bytes (received + sent) a minute must reach to count as activity. */
+    networkMinBytesPerMinute: Type.Number({ default: 65536, minimum: 1 }),
+    /** File writes in the sandbox count as activity. */
+    files: Type.Boolean({ default: true }),
+    /** CPU usage above `cpuMinMillicores` counts as activity. Off by
+     * default: a runaway process would keep its sandbox awake forever. */
+    cpu: Type.Boolean({ default: false }),
+    /** Average CPU over a minute, in millicores (1000 = one core). */
+    cpuMinMillicores: Type.Number({ default: 250, minimum: 1 }),
+    /** The longest a user may exempt a sandbox from idle auto-pause. */
+    maxKeepAwakeHours: Type.Number({ default: 24, minimum: 1 }),
+  },
+  { default: {} },
+);
+
+const SandboxDefaultsSchema = Type.Object(
   {
     /** Default image for new sandboxes */
     defaultImage: Type.String({ default: "dev-base" }),
@@ -209,11 +229,11 @@ export const SandboxDefaultsSchema = Type.Object(
      * `resources.memoryMb`. Under runtime-rs this is the whole guest RAM.
      */
     defaultMemoryMb: Type.Number({ default: 4096, minimum: 256 }),
+    /** Idle auto-pause policy. */
+    idle: IdleConfigSchema,
   },
   { default: {} },
 );
-
-export type SandboxDefaults = Static<typeof SandboxDefaultsSchema>;
 
 // ---------------------------------------------------------------------------
 // Ports — infra-level service ports.
@@ -224,14 +244,12 @@ export type SandboxDefaults = Static<typeof SandboxDefaultsSchema>;
 // Service dedup and silently shadows the spec's real entry.
 // ---------------------------------------------------------------------------
 
-export const PortsConfigSchema = Type.Object(
+const PortsConfigSchema = Type.Object(
   {
     agent: Type.Number({ default: 9998 }),
   },
   { default: {} },
 );
-
-export type PortsConfig = Static<typeof PortsConfigSchema>;
 
 // ---------------------------------------------------------------------------
 // Image Builder
@@ -250,14 +268,7 @@ export type PortsConfig = Static<typeof PortsConfigSchema>;
 //               the BuildKit daemon at `endpoint` (required).
 // ---------------------------------------------------------------------------
 
-export const ImageBuilderKindSchema = Type.Union([
-  Type.Literal("docker"),
-  Type.Literal("buildkit"),
-]);
-
-export type ImageBuilderKind = Static<typeof ImageBuilderKindSchema>;
-
-export const ImageBuilderTlsConfigSchema = Type.Object(
+const ImageBuilderTlsConfigSchema = Type.Object(
   {
     /**
      * Name of a K8s Secret (in the sandbox namespace, where build Jobs run)
@@ -278,9 +289,7 @@ export const ImageBuilderTlsConfigSchema = Type.Object(
   { default: {} },
 );
 
-export type ImageBuilderTlsConfig = Static<typeof ImageBuilderTlsConfigSchema>;
-
-export const ImageBuilderConfigSchema = Type.Object(
+const ImageBuilderConfigSchema = Type.Object(
   {
     /**
      * Which builder strategy to use. `docker` is the local-mode daemon
@@ -337,13 +346,11 @@ export const ImageBuilderConfigSchema = Type.Object(
   { default: {} },
 );
 
-export type ImageBuilderConfig = Static<typeof ImageBuilderConfigSchema>;
-
 // ---------------------------------------------------------------------------
 // Runtime backend
 // ---------------------------------------------------------------------------
 
-export const RuntimeConfigSchema = Type.Object(
+const RuntimeConfigSchema = Type.Object(
   {
     /**
      * Which `SandboxBackend` orchestrates sandbox compute + network:
@@ -359,13 +366,11 @@ export const RuntimeConfigSchema = Type.Object(
   { default: {} },
 );
 
-export type RuntimeConfig = Static<typeof RuntimeConfigSchema>;
-
 // ---------------------------------------------------------------------------
 // Jobs — the durable, observable long-op queue (JobService).
 // ---------------------------------------------------------------------------
 
-export const JobsConfigSchema = Type.Object(
+const JobsConfigSchema = Type.Object(
   {
     /**
      * How many *pooled* jobs (prebuild bake, toolset build/capture — the
@@ -380,7 +385,31 @@ export const JobsConfigSchema = Type.Object(
   { default: {} },
 );
 
-export type JobsConfig = Static<typeof JobsConfigSchema>;
+// ---------------------------------------------------------------------------
+// Prebuild + snapshot retention
+// ---------------------------------------------------------------------------
+
+const PrebuildConfigSchema = Type.Object(
+  {
+    /** Monitor the git HEAD of repositories baked into a prebuild and
+     * rebuild it automatically when upstream moves (costs compute). */
+    gitTracking: Type.Boolean({ default: true }),
+    /** Superseded, unused prebuild snapshots kept per prebuild lineage
+     * (history for spawning older versions). 0 keeps only the newest;
+     * in-use snapshots are never pruned. */
+    pruneKeep: Type.Number({ default: 3, minimum: 0 }),
+  },
+  { default: {} },
+);
+
+const SnapshotConfigSchema = Type.Object(
+  {
+    /** Manual snapshots kept per sandbox; taking a new one deletes the
+     * oldest beyond this count (never one another sandbox boots from). */
+    manualKeep: Type.Number({ default: 5, minimum: 1 }),
+  },
+  { default: {} },
+);
 
 // ---------------------------------------------------------------------------
 // Root config
@@ -392,6 +421,8 @@ export const AtelierConfigSchema = Type.Object({
   server: ServerConfigSchema,
   runtime: RuntimeConfigSchema,
   jobs: JobsConfigSchema,
+  prebuild: PrebuildConfigSchema,
+  snapshot: SnapshotConfigSchema,
   kubernetes: KubernetesConfigSchema,
   sandbox: SandboxDefaultsSchema,
   ports: PortsConfigSchema,
@@ -414,6 +445,9 @@ export const ENV_VAR_MAPPING = {
   ATELIER_SSH_UPSTREAM_USER: "domain.ssh.upstreamUser",
   ATELIER_RUNTIME_BACKEND: "runtime.backend",
   ATELIER_JOBS_CONCURRENCY: "jobs.concurrency",
+  ATELIER_PREBUILD_GIT_TRACKING: "prebuild.gitTracking",
+  ATELIER_PREBUILD_PRUNE_KEEP: "prebuild.pruneKeep",
+  ATELIER_SNAPSHOT_MANUAL_KEEP: "snapshot.manualKeep",
 
   ATELIER_GITHUB_CLIENT_ID: "auth.github.clientId",
   ATELIER_GITHUB_CLIENT_SECRET: "auth.github.clientSecret",
@@ -440,6 +474,14 @@ export const ENV_VAR_MAPPING = {
   ATELIER_AGENT_IMAGE: "sandbox.agentImage",
   ATELIER_DEFAULT_VCPUS: "sandbox.defaultVcpus",
   ATELIER_DEFAULT_MEMORY_MB: "sandbox.defaultMemoryMb",
+  ATELIER_IDLE_MODE: "sandbox.idle.mode",
+  ATELIER_IDLE_MINUTES: "sandbox.idle.minutes",
+  ATELIER_IDLE_NETWORK: "sandbox.idle.network",
+  ATELIER_IDLE_NETWORK_MIN_BYTES: "sandbox.idle.networkMinBytesPerMinute",
+  ATELIER_IDLE_FILES: "sandbox.idle.files",
+  ATELIER_IDLE_CPU: "sandbox.idle.cpu",
+  ATELIER_IDLE_CPU_MIN_MILLICORES: "sandbox.idle.cpuMinMillicores",
+  ATELIER_IDLE_MAX_KEEP_AWAKE_HOURS: "sandbox.idle.maxKeepAwakeHours",
   ATELIER_AGENT_PORT: "ports.agent",
 
   ATELIER_IMAGE_BUILDER_KIND: "imageBuilder.kind",
@@ -453,4 +495,15 @@ export const ENV_VAR_MAPPING = {
   ATELIER_IMAGE_BUILDER_TLS_SERVER_NAME: "imageBuilder.tls.serverName",
 } as const;
 
-export type EnvVarName = keyof typeof ENV_VAR_MAPPING;
+/** The value type at a dotted config path (`"sandbox.idle.mode"` →
+ * `IdleMode`). Lets path-keyed consumers derive their types from the schema. */
+export type ConfigValueAt<
+  P extends string,
+  T = AtelierConfig,
+> = P extends `${infer Head}.${infer Rest}`
+  ? Head extends keyof T
+    ? ConfigValueAt<Rest, T[Head]>
+    : never
+  : P extends keyof T
+    ? T[P]
+    : never;

@@ -11,7 +11,7 @@
  */
 import { afterEach, beforeEach, describe, expect, spyOn, test } from "bun:test";
 import type { SandboxSpec } from "@atelier/spec";
-import { VM } from "@frak/atelier-shared/constants";
+import { VM } from "../config/constants.ts";
 import { type BootInput, bootSandbox } from "./boot.ts";
 import { KubeApiError, type KubeResource, kubeClient } from "./kube/index.ts";
 import type { KubeDeleteOptions } from "./kube/kube.client.ts";

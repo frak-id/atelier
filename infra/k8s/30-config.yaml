@@ -5,6 +5,13 @@
 # cluster infra owned by infra-core, referenced here by name only (see
 # README.md "Cluster prerequisites").
 #
+# Only infrastructure keys (domains, namespaces, auth, registry, ports, storage,
+# runtime class, ingress annotations, image builder) belong here. Operational
+# keys (idle auto-pause, retention, jobs concurrency, default image/size/
+# resources, agent image) are edited by server admins on the console Config
+# page: leave them out so they stay editable; setting one here locks it
+# (kubernetes.defaultVolumeSize below is pinned to 20Gi on purpose).
+#
 # NOTE: nothing caps concurrent sandboxes: the only limit is what the node
 # can schedule (~12 at the 4Gi default with the kata-atelier-clh-rs 384Mi pod
 # overhead; build pods take 4Gi while they run).
@@ -77,8 +84,5 @@ data:
           "secretName": "buildkit-client-tls",
           "serverName": "buildkitd.buildkit.svc.cluster.local"
         }
-      },
-      "sandbox": {
-        "defaultImage": "dev-base"
       }
     }

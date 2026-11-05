@@ -1,4 +1,4 @@
-import type { AgentSessionStatus, AgentTodo } from "@frak/atelier-shared";
+import type { AgentSessionStatus, AgentTodo } from "@atelier/spec";
 import type { VariantProps } from "class-variance-authority";
 import type { BadgeVariant } from "@/components/ui/badge";
 import type { statusDotVariants } from "@/components/ui/status-dot";

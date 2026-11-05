@@ -27,9 +27,8 @@ function ConfigPage() {
       <div>
         <h2 className="text-sm font-medium">Server configuration</h2>
         <p className="text-sm text-muted-foreground">
-          Runtime knobs for this server. Changes apply live. Keys set via an
-          environment variable are locked and shown read-only, as is everything
-          for non-admins.
+          Operational settings are editable by server admins and apply live.
+          Infrastructure settings are set by the deployment and shown read-only.
         </p>
       </div>
       {isPending ? (
@@ -39,13 +38,38 @@ function ConfigPage() {
           {error instanceof Error ? error.message : "Failed to load"}
         </p>
       ) : (
-        <div className="space-y-2">
-          {data.map((entry) => (
-            <ConfigRow key={entry.key} entry={entry} />
-          ))}
-        </div>
+        <>
+          <ConfigGroup
+            title="Editable"
+            entries={data.filter((entry) => entry.plane)}
+          />
+          <ConfigGroup
+            title="Set by deployment (read-only)"
+            entries={data.filter((entry) => !entry.plane)}
+          />
+        </>
       )}
     </div>
+  );
+}
+
+function ConfigGroup({
+  title,
+  entries,
+}: {
+  title: string;
+  entries: ConfigEntry[];
+}) {
+  if (entries.length === 0) return null;
+  return (
+    <section className="space-y-2">
+      <h3 className="pt-2 font-medium text-muted-foreground text-xs uppercase">
+        {title}
+      </h3>
+      {entries.map((entry) => (
+        <ConfigRow key={entry.key} entry={entry} />
+      ))}
+    </section>
   );
 }
 
@@ -64,7 +88,7 @@ function ConfigRow({ entry }: { entry: ConfigEntry }) {
             <code className="rounded bg-muted px-1 py-0.5 font-mono text-[11px] text-muted-foreground">
               {entry.key}
             </code>
-            {entry.locked ? (
+            {entry.locked && entry.plane ? (
               <span
                 className="text-[11px] text-warning"
                 title={
@@ -80,7 +104,7 @@ function ConfigRow({ entry }: { entry: ConfigEntry }) {
             ) : null}
           </div>
           <p className="text-xs text-muted-foreground">{entry.description}</p>
-          {entry.locked ? (
+          {entry.locked && entry.plane ? (
             <p className="text-[11px] text-muted-foreground">
               {entry.lockedBy === "env" ? (
                 <>

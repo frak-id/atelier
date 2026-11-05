@@ -15,6 +15,7 @@
 
 import type { PortEntry, SandboxSpec } from "@atelier/spec";
 import { ValidationError } from "../../shared/errors.ts";
+import { config } from "../../shared/lib/config.ts";
 import { createChildLogger } from "../../shared/lib/logger.ts";
 import { AGENT_ATTACH_PORT, type AgentClient } from "../agent/index.ts";
 import type { BootInput, BootOutput } from "../boot.ts";
@@ -32,7 +33,7 @@ import { DockerVolumeBackend } from "./docker-volume.backend.ts";
 const log = createChildLogger("runtime-backend-docker");
 
 /** Container port the guest agent's HTTP control plane listens on. */
-const AGENT_PORT = 9998;
+const AGENT_PORT = config.ports.agent;
 /** Container SSH port. */
 const SSH_PORT = 22;
 

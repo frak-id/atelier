@@ -69,6 +69,9 @@
           "items": {
             "type": "string"
           }
+        },
+        "defaultOrg": {
+          "type": "string"
         }
       }
     },
@@ -129,6 +132,32 @@
         }
       }
     },
+    "prebuild": {
+      "default": {},
+      "type": "object",
+      "properties": {
+        "gitTracking": {
+          "default": true,
+          "type": "boolean"
+        },
+        "pruneKeep": {
+          "default": 3,
+          "minimum": 0,
+          "type": "number"
+        }
+      }
+    },
+    "snapshot": {
+      "default": {},
+      "type": "object",
+      "properties": {
+        "manualKeep": {
+          "default": 5,
+          "minimum": 1,
+          "type": "number"
+        }
+      }
+    },
     "kubernetes": {
       "default": {},
       "type": "object",
@@ -177,6 +206,15 @@
               "type": "string"
             }
           }
+        },
+        "wakeIngressAnnotations": {
+          "default": {},
+          "type": "object",
+          "patternProperties": {
+            "^(.*)$": {
+              "type": "string"
+            }
+          }
         }
       }
     },
@@ -201,6 +239,61 @@
           "default": 4096,
           "minimum": 256,
           "type": "number"
+        },
+        "idle": {
+          "default": {},
+          "type": "object",
+          "properties": {
+            "mode": {
+              "default": "observe",
+              "anyOf": [
+                {
+                  "const": "off",
+                  "type": "string"
+                },
+                {
+                  "const": "observe",
+                  "type": "string"
+                },
+                {
+                  "const": "enforce",
+                  "type": "string"
+                }
+              ]
+            },
+            "minutes": {
+              "default": 120,
+              "minimum": 1,
+              "type": "number"
+            },
+            "network": {
+              "default": true,
+              "type": "boolean"
+            },
+            "networkMinBytesPerMinute": {
+              "default": 65536,
+              "minimum": 1,
+              "type": "number"
+            },
+            "files": {
+              "default": true,
+              "type": "boolean"
+            },
+            "cpu": {
+              "default": false,
+              "type": "boolean"
+            },
+            "cpuMinMillicores": {
+              "default": 250,
+              "minimum": 1,
+              "type": "number"
+            },
+            "maxKeepAwakeHours": {
+              "default": 24,
+              "minimum": 1,
+              "type": "number"
+            }
+          }
         }
       }
     },

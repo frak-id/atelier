@@ -8,10 +8,6 @@
       "project": ["src/**/*.{ts,tsx,css}"],
       "entry": ["src/**/*.test.{ts,tsx}"]
     },
-    "packages/shared": {
-      "project": ["src/**/*.ts"],
-      "entry": ["src/**/*.test.ts"]
-    },
     "packages/spec": {
       "project": ["src/**/*.ts"],
       "entry": ["src/**/*.test.ts"]

@@ -139,7 +139,7 @@ function deepMerge(
   return result;
 }
 
-export const CONFIG_FILE_NAME = "sandbox.config.json";
+const CONFIG_FILE_NAME = "sandbox.config.json";
 
 function deriveDomainFields(config: AtelierConfig): void {
   const base = config.domain.baseDomain;
@@ -151,6 +151,11 @@ function deriveDomainFields(config: AtelierConfig): void {
     config.domain.ssh.hostname =
       base === "localhost" ? "ssh.localhost" : `ssh.${base}`;
   }
+}
+
+/** The config with only schema defaults applied (no file, no env). */
+export function schemaDefaults(): AtelierConfig {
+  return Value.Default(AtelierConfigSchema, {}) as AtelierConfig;
 }
 
 export interface LoadConfigOptions {
@@ -291,17 +296,4 @@ export function validateConfig(
   }
 
   return errors;
-}
-
-export function assertConfigValid(
-  config: AtelierConfig,
-  options: ValidateConfigOptions = {},
-): void {
-  const errors = validateConfig(config, options);
-  if (errors.length > 0) {
-    const messages = errors
-      .map((e) => `  - ${e.field}: ${e.message}`)
-      .join("\n");
-    throw new Error(`Configuration validation failed:\n${messages}`);
-  }
 }

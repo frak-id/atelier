@@ -7,8 +7,8 @@
  */
 
 import { repoCloneName, SANDBOX_NAME_ANNOTATION } from "@atelier/spec";
-import { VM } from "@frak/atelier-shared/constants";
 import { Elysia, sse, t } from "elysia";
+import { VM } from "../config/constants.ts";
 import { createChildLogger } from "../shared/lib/logger.ts";
 import { createAuthPlugin } from "./auth.plugin.ts";
 import type { ServerContainer } from "./container.ts";

@@ -3,15 +3,15 @@
  * (design.md §3.1) — this file is the only place that constructs the
  * composition root and starts listening.
  */
-import { validateConfig } from "@frak/atelier-shared/config-loader";
+
 import { createServerContainer } from "./api/container.ts";
 import { createApp } from "./api/index.ts";
 import { startScheduler } from "./api/scheduler.ts";
+import { validateConfig } from "./config/config.loader.ts";
 import { assertSecretsKeyConfigured, initDatabase } from "./control/index.ts";
 import { config, isProduction } from "./shared/lib/config.ts";
 import { logger } from "./shared/lib/logger.ts";
 import { appPaths } from "./shared/lib/paths.ts";
-import { bindRuntimeConfig } from "./shared/lib/runtime-config.ts";
 import { startSshGateway } from "./ssh/index.ts";
 
 const configErrors = validateConfig(config);
@@ -33,10 +33,6 @@ await initDatabase();
 logger.info({ dbPath: appPaths.database }, "Control database ready");
 
 const container = createServerContainer();
-// Route the runtime-config resolver (registry URL + image builder knobs) at
-// the DB-backed config plane so console/env edits apply live. Env-set keys
-// stay authoritative and read-only (see ServerConfigService's env lock).
-bindRuntimeConfig(container.control.serverConfigService);
 container.control.defaultOrg.warnIfDefaultOrgUnset();
 
 // The in-server ssh2 gateway binds its own socket and lives for the process

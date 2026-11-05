@@ -16,7 +16,8 @@
     },
     "jwtSecret": "dev-secret-change-in-production",
     "allowedOrg": "",
-    "allowedUsers": []
+    "allowedUsers": [],
+    "defaultOrg": ""
   },
   "server": {
     "mode": "production",
@@ -29,6 +30,13 @@
   "jobs": {
     "concurrency": 4
   },
+  "prebuild": {
+    "gitTracking": true,
+    "pruneKeep": 3
+  },
+  "snapshot": {
+    "manualKeep": 5
+  },
   "kubernetes": {
     "namespace": "atelier-sandboxes",
     "kubeconfig": "/etc/rancher/k3s/k3s.yaml",
@@ -39,13 +47,24 @@
     "storageClass": "",
     "volumeSnapshotClass": "",
     "defaultVolumeSize": "10Gi",
-    "vsCodeIngressAnnotations": {}
+    "vsCodeIngressAnnotations": {},
+    "wakeIngressAnnotations": {}
   },
   "sandbox": {
     "defaultImage": "dev-base",
     "agentImage": "ghcr.io/frak-id/sandbox-agent:3.0.2",
     "defaultVcpus": 2,
-    "defaultMemoryMb": 4096
+    "defaultMemoryMb": 4096,
+    "idle": {
+      "mode": "off",
+      "minutes": 120,
+      "network": true,
+      "networkMinBytesPerMinute": 65536,
+      "files": true,
+      "cpu": false,
+      "cpuMinMillicores": 250,
+      "maxKeepAwakeHours": 24
+    }
   },
   "ports": {
     "agent": 9998

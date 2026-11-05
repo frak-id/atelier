@@ -1,5 +1,7 @@
+export * from "./agent.schema.ts";
 export * from "./canonical-json.ts";
 export * from "./create-request.ts";
+export * from "./job-record.ts";
 export * from "./prebuild-spec.ts";
 export * from "./repo-prebuild.ts";
 export * from "./runtime-api.ts";

@@ -10,6 +10,7 @@
     "build": "bun build src/index.ts --target=bun --outfile=dist/server.js --minify --external cpu-features --external '*.node'",
     "db:generate": "drizzle-kit generate",
     "db:migrate": "drizzle-kit migrate",
+    "generate-schema": "bun run scripts/generate-schema.ts",
     "check:boundary": "bun run scripts/check-boundaries.ts",
     "typecheck": "tsc --noEmit"
   },
@@ -21,7 +22,6 @@
     "@atelier/spec": "workspace:*",
     "@elysiajs/cors": "^1.4.2",
     "@elysiajs/openapi": "^1.4.16",
-    "@frak/atelier-shared": "workspace:*",
     "@modelcontextprotocol/sdk": "^1.32.2",
     "@sinclair/typebox": "^0.34.52",
     "drizzle-orm": "^0.45.4",

@@ -1,4 +1,4 @@
-import { VM } from "@frak/atelier-shared/constants";
+import { VM } from "../../config/constants.ts";
 import { config } from "../../shared/lib/config.ts";
 import {
   storageClass,

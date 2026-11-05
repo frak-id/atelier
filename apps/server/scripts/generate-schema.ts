@@ -1,6 +1,6 @@
 import { mkdir, writeFile } from "node:fs/promises";
 import { resolve } from "node:path";
-import { AtelierConfigSchema } from "../src/config.schema.ts";
+import { AtelierConfigSchema } from "../src/config/config.schema.ts";
 
 type JsonSchema = Record<string, unknown>;
 

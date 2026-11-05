@@ -7,7 +7,7 @@
  */
 
 import { describe, expect, test } from "bun:test";
-import { VM } from "@frak/atelier-shared/constants";
+import { VM } from "../../config/constants.ts";
 
 const { buildPvc, buildSandboxPod } = await import("./kube.resources.ts");
 

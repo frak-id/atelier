@@ -31,8 +31,8 @@
  * task ids don't leak existence.
  */
 import type { SessionNotification } from "@agentclientprotocol/sdk";
-import type { AgentTodo } from "@frak/atelier-shared";
-import { VM } from "@frak/atelier-shared/constants";
+import type { AgentTodo } from "@atelier/spec";
+import { VM } from "../config/constants.ts";
 import type { RuntimeService } from "../runtime/index.ts";
 import {
   ConflictError,

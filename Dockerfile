@@ -22,7 +22,6 @@ WORKDIR /build
 # so ALL members must be present or the lockfile is considered out of sync
 # — even the ones whose source this image never builds.
 COPY package.json bun.lock ./
-COPY packages/shared/package.json packages/shared/
 COPY packages/spec/package.json packages/spec/
 COPY apps/server/package.json apps/server/
 COPY apps/console/package.json apps/console/
@@ -44,13 +43,11 @@ ENV NODE_ENV=production
 
 # Installed node_modules from the deps stage (root + per-workspace symlinks)
 COPY --from=deps /build/node_modules node_modules
-COPY --from=deps /build/packages/shared/node_modules packages/shared/node_modules
 COPY --from=deps /build/packages/spec/node_modules packages/spec/node_modules
 COPY --from=deps /build/apps/server/node_modules apps/server/node_modules
 COPY --from=deps /build/apps/console/node_modules apps/console/node_modules
 
 # Source
-COPY packages/shared packages/shared
 COPY packages/spec packages/spec
 COPY apps/server apps/server
 COPY apps/console apps/console

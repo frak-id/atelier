@@ -1,17 +1,20 @@
 /**
- * Runtime server config (the config plane). A thin, typed layer over the
- * `settings` key/value table, bounded to the keys declared in `registry.ts`.
+ * Runtime server config. A thin, typed layer over the `settings` key/value
+ * table, bounded to the keys declared in `registry.ts`.
  *
- * Provenance / lock: a key is LOCKED (read-only, live) when the operator set
- * it explicitly — either via a config-file path (mounted `sandbox.config.json`)
- * or its env var. Locked keys surface the operator's actual value and reject
- * `set`, so the console/CLI/MCP can display but never change them. When a key
- * is NOT locked, resolution for `get` is: stored console override → default.
+ * Two kinds of key (the registry's `plane` flag):
+ *  - infrastructure (`plane: false`): set by the deployment (config file or
+ *    env) only. Always read straight off `config`, never stored, never
+ *    editable here.
+ *  - operational (`plane: true`): editable by server admins. LOCKED
+ *    (read-only, live) when the operator set it explicitly in the config file
+ *    or its env var; otherwise resolution for `get` is: stored console
+ *    override -> schema default.
  */
 import {
   getConfigValue,
   hasConfigPath,
-} from "@frak/atelier-shared/config-loader";
+} from "../../../config/config.loader.ts";
 import { ValidationError } from "../../../shared/errors.ts";
 import { config, providedConfig } from "../../../shared/lib/config.ts";
 import { createChildLogger } from "../../../shared/lib/logger.ts";
@@ -22,7 +25,6 @@ import {
   type ConfigValue,
   type ConfigValues,
   configDef,
-  configPathFor,
   isConfigKey,
 } from "./registry.ts";
 import type { ServerConfigRepository } from "./server-config.repository.ts";
@@ -38,11 +40,15 @@ export interface ConfigEntry {
   options?: readonly string[];
   value: ConfigValue;
   default: ConfigValue;
+  /** true = operational, editable from the console unless locked; false =
+   * infrastructure, set by the deployment and always read-only. */
+  plane: boolean;
   /** true when the operator set nothing and no console override exists. */
   isDefault: boolean;
-  /** true when the operator set this via config file or env — read-only. */
+  /** true when the value cannot be changed here: infrastructure keys, or an
+   * operational key the operator set via config file or env. */
   locked: boolean;
-  /** How it is locked, for the UI hint (null when unlocked). */
+  /** What set it, for the UI hint (null when nothing did). */
   lockedBy: "file" | "env" | null;
   /** The env var that also locks this key when set. */
   envVar: string;
@@ -59,45 +65,30 @@ interface Lock {
 export class ServerConfigService {
   constructor(private readonly repository: ServerConfigRepository) {}
 
-  /** Resolve whether a key is operator-locked and, if so, its live value.
-   * A key locks when the operator set it explicitly: for config-file-backed
-   * keys, presence in the merged file+env sources; for plane-only keys, a
-   * non-empty env var. `config` already reflects file+env+defaults, so the
-   * locked value is read straight off it. */
-  private lockOf(def: ConfigDef<ConfigValue>): Lock {
-    const rawEnv = process.env[def.envVar];
-    const envSet = rawEnv !== undefined && rawEnv !== "";
-    const path = configPathFor(def.key as ConfigKey);
-    if (path !== undefined) {
-      if (hasConfigPath(providedConfig, path)) {
-        return {
-          locked: true,
-          source: envSet ? "env" : "file",
-          value: getConfigValue<ConfigValue>(config, path),
-        };
-      }
+  /** Whether the operator set this key explicitly (path present in the merged
+   * config file + env sources) and, if so, its live value. `config` already
+   * reflects file+env+schema defaults, so the value is read off it. */
+  private providedBy(def: ConfigDef): Lock {
+    if (!hasConfigPath(providedConfig, def.key)) {
       return { locked: false, source: null };
     }
-    // Plane-only key: env var is the only operator source.
-    if (envSet) {
-      try {
-        return { locked: true, source: "env", value: def.parseEnv(rawEnv) };
-      } catch {
-        log.warn(
-          { key: def.key, envVar: def.envVar, value: rawEnv },
-          "invalid env-locked config; treating as unset",
-        );
-      }
-    }
-    return { locked: false, source: null };
+    const rawEnv = process.env[def.envVar];
+    const envSet = rawEnv !== undefined && rawEnv !== "";
+    return {
+      locked: true,
+      source: envSet ? "env" : "file",
+      value: getConfigValue<ConfigValue>(config, def.key),
+    };
   }
 
-  /** Typed read of a known key. Operator lock (file/env) wins and is live;
-   * else the console override; else the default. */
+  /** Typed read of a known key. Infrastructure keys and operator-locked
+   * (file/env) keys come straight off `config`; else the console override;
+   * else the default. */
   get<K extends ConfigKey>(key: K): ConfigValues[K] {
     const def = configDef(key);
-    const lock = this.lockOf(def);
-    if (lock.locked) return lock.value as ConfigValues[K];
+    if (!def.plane || this.providedBy(def).locked) {
+      return getConfigValue<ConfigValues[K]>(config, key);
+    }
 
     const row = this.repository.get(key);
     if (row !== undefined) {
@@ -111,30 +102,27 @@ export class ServerConfigService {
         );
       }
     }
-    // No override: for file-backed keys the static config already carries the
-    // schema default; plane-only keys use their hard-coded default.
-    const path = configPathFor(key);
-    if (path !== undefined)
-      return getConfigValue<ConfigValues[K]>(config, path);
-    return def.default as ConfigValues[K];
+    // No override: the static config already carries the schema default.
+    return getConfigValue<ConfigValues[K]>(config, key);
   }
 
   /** Every known key with its current value + metadata, for the surfaces. */
   list(): ConfigEntry[] {
     return CONFIG_DEFS.map((def) => {
-      const lock = this.lockOf(def);
-      const row = this.repository.get(def.key);
+      const provided = this.providedBy(def);
+      const row = def.plane ? this.repository.get(def.key) : undefined;
       return {
-        key: def.key as ConfigKey,
+        key: def.key,
         label: def.label,
         description: def.description,
         type: def.type,
         ...(def.options ? { options: def.options } : {}),
-        value: this.get(def.key as ConfigKey),
+        value: this.get(def.key),
         default: def.default,
-        isDefault: !lock.locked && row === undefined,
-        locked: lock.locked,
-        lockedBy: lock.source,
+        plane: def.plane,
+        isDefault: !provided.locked && row === undefined,
+        locked: !def.plane || provided.locked,
+        lockedBy: provided.source,
         envVar: def.envVar,
         updatedAt: row?.updatedAt ?? null,
       };
@@ -149,7 +137,14 @@ export class ServerConfigService {
       throw new ValidationError(`unknown config key "${key}"`);
     }
     const def = configDef(key);
-    const lock = this.lockOf(def);
+    if (!def.plane) {
+      throw new ValidationError(
+        `config key "${key}" is an infrastructure setting set by the ` +
+          `deployment (config file or the ${def.envVar} env var); it cannot ` +
+          "be changed here.",
+      );
+    }
+    const lock = this.providedBy(def);
     if (lock.locked) {
       const via =
         lock.source === "env"

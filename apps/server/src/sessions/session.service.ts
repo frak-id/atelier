@@ -14,7 +14,7 @@ import type {
   AgentSession,
   AgentSessionStatus,
   AgentTodo,
-} from "@frak/atelier-shared";
+} from "@atelier/spec";
 import type { RuntimeService } from "../runtime/index.ts";
 import { ConflictError, NotFoundError } from "../shared/errors.ts";
 import { createChildLogger } from "../shared/lib/logger.ts";

@@ -1,4 +1,4 @@
-import { Type } from "@sinclair/typebox";
+import { JobRecordSchema } from "@atelier/spec";
 import { Check } from "@sinclair/typebox/value";
 import {
   queryOptions,
@@ -17,23 +17,9 @@ type JobsResponse = NonNullable<
 >;
 export type Job = JobsResponse[number];
 
-const JobShape = Type.Object({
-  id: Type.String(),
-  kind: Type.String(),
-  status: Type.Union([
-    Type.Literal("queued"),
-    Type.Literal("running"),
-    Type.Literal("succeeded"),
-    Type.Literal("failed"),
-    Type.Literal("canceled"),
-  ]),
-  createdAt: Type.String(),
-  updatedAt: Type.String(),
-});
-
 /** Runtime check for a job pushed over the SSE feed. */
 export function isJob(value: unknown): value is Job {
-  return Check(JobShape, value);
+  return Check(JobRecordSchema, value);
 }
 
 /** True only while a job is actually executing (not merely waiting for a

@@ -39,7 +39,7 @@ import {
   type SessionInfo,
   type SessionNotification,
 } from "@agentclientprotocol/sdk";
-import type { AgentSessionStatus, AgentTodo } from "@frak/atelier-shared";
+import type { AgentSessionStatus, AgentTodo } from "@atelier/spec";
 import type { Harness } from "../../harnesses/harness.ts";
 import { findHarness } from "../../harnesses/index.ts";
 import type { AgentClient } from "../../runtime/index.ts";

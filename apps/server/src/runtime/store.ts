@@ -12,6 +12,9 @@
  */
 import type {
   Generated,
+  JobKind,
+  JobRecord,
+  JobStatus,
   PrebuildSpec,
   SandboxSpec,
   SandboxStatus,
@@ -156,48 +159,11 @@ export interface SandboxToolsetRefStore {
   referencedRefs(): Set<string>;
 }
 
-/** The long-running operations tracked by `JobService` (see `db/schema.ts`'s
- * `jobs` table doc). Global, no identity scope. The `sandbox-*` kinds are
- * lifecycle ops tracked for feed visibility (they bypass the concurrency
- * pool); the rest are pooled throwaway-pod builds. */
-export type JobKind =
-  | "prebuild"
-  | "toolset-build"
-  | "toolset-capture"
-  | "toolbox-refresh"
-  | "image-build"
-  | "sandbox-create"
-  | "sandbox-pause"
-  | "sandbox-resume"
-  | "sandbox-snapshot"
-  | "sandbox-destroy";
-/** `queued` = waiting for a concurrency slot (pooled jobs only). */
-export type JobStatus =
-  | "queued"
-  | "running"
-  | "succeeded"
-  | "failed"
-  | "canceled";
+export type { JobKind, JobRecord, JobStatus };
 
 /** The settled (non-cancellable, non-active) states. */
 export function isJobTerminal(status: JobStatus): boolean {
   return status === "succeeded" || status === "failed" || status === "canceled";
-}
-
-export interface JobRecord {
-  id: string;
-  kind: JobKind;
-  status: JobStatus;
-  /** Human-facing label for the queue UI (prebuild/toolset name). */
-  target?: string;
-  /** Opaque display context (repo, slug, …). */
-  metadata?: Record<string, string>;
-  /** The operation's success payload (e.g. `{ ref }`), once `succeeded`. */
-  result?: unknown;
-  error?: string;
-  createdAt: string;
-  updatedAt: string;
-  finishedAt?: string;
 }
 
 export interface JobStore {

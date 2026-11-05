@@ -1,40 +1,54 @@
 /**
- * The server-config registry: the single source of truth for every runtime-
- * tunable server setting (the server config plane). Each entry declares
- * its type, a safe hard-coded default, an env var it can be preseeded from,
- * and a validator — so the store never has to guess a value's shape and the
- * API/CLI/MCP/console surfaces all render from one description.
+ * The server-config registry: what the console needs on top of the config
+ * schema for each key shown on the Config page — a label, a description, a
+ * validator and the `plane` flag.
  *
- * Values live in the `settings` table (key → JSON). This registry is the only
- * place that knows what a key *means*; the repository is dumb key/value.
+ * The TypeBox schema (`config/config.schema.ts`) owns every key's type and
+ * default and the env var that sets it; nothing is duplicated here. A key is
+ * either:
+ *   - `plane: true`  — an operational setting a server admin edits from the
+ *     console (stored in the `settings` table, key → JSON), unless the
+ *     deployment sets it in the config file/env (then it is locked);
+ *   - `plane: false` — infrastructure, set by the deployment (file/env) and
+ *     shown read-only.
  */
 
+import { schemaDefaults } from "../../../config/config.loader.ts";
+import {
+  type ConfigValueAt,
+  ENV_VAR_MAPPING,
+} from "../../../config/config.schema.ts";
 import { ValidationError } from "../../../shared/errors.ts";
 
 export type ConfigValue = boolean | number | string;
 
-export interface ConfigDef<T extends ConfigValue> {
-  key: string;
-  type: T extends boolean ? "boolean" : T extends number ? "number" : "string";
+/** A registry entry before schema-derived fields are filled in. */
+interface ConfigSpec {
+  /** true = operational, editable from the console; false = infrastructure,
+   * set by the deployment (file/env) and read-only here. */
+  plane: boolean;
   label: string;
   description: string;
   /** For string keys constrained to a fixed set — the console renders a
    * select instead of a free-text input, and `validate` rejects anything
-   * outside the set. */
+   * outside the set. Must match the schema's literal union (see test). */
   options?: readonly string[];
-  /** Env var this key can be locked by. When the env var is set (non-empty),
-   * its value is authoritative and live, and the stored/console value is
-   * read-only (see `ServerConfigService`). Otherwise it is just a one-time
-   * default source. */
-  envVar: string;
-  default: T;
-  /** Parse a raw env string into a typed value (throws on garbage). */
-  parseEnv: (raw: string) => T;
-  /** Validate an untyped value (from HTTP/MCP/CLI) into the typed value. */
-  validate: (value: unknown) => T;
+  /** Validate an untyped value (from HTTP/MCP) into the typed value. */
+  validate: (value: unknown) => ConfigValue;
 }
 
-function parseBoolEnv(raw: string): boolean {
+export interface ConfigDef extends ConfigSpec {
+  key: ConfigKey;
+  /** Derived from the schema default's type. */
+  type: "boolean" | "number" | "string";
+  /** Schema default. */
+  default: ConfigValue;
+  /** The env var that sets this key (from the schema's env mapping). */
+  envVar: string;
+}
+
+/** Accepts the usual spellings so MCP/HTTP callers can pass "yes"/"off". */
+function parseBool(raw: string): boolean {
   const v = raw.trim().toLowerCase();
   if (["1", "true", "yes", "on"].includes(v)) return true;
   if (["0", "false", "no", "off"].includes(v)) return false;
@@ -43,7 +57,7 @@ function parseBoolEnv(raw: string): boolean {
 
 function validateBool(value: unknown): boolean {
   if (typeof value === "boolean") return value;
-  if (typeof value === "string") return parseBoolEnv(value);
+  if (typeof value === "string") return parseBool(value);
   throw new ValidationError(`expected a boolean, got ${typeof value}`);
 }
 
@@ -138,60 +152,38 @@ const validateBuilderKind = oneOf(builderKinds);
 const idleModes = ["off", "observe", "enforce"] as const;
 const validateIdleMode = oneOf(idleModes);
 
-/**
- * The two first config keys (see request): prebuild git tracking + the
- * retention window for the snapshots it produces.
- */
-const CONFIG_REGISTRY = {
+/** Registry specs keyed by config path (== the schema path). */
+const CONFIG_SPECS = {
   "prebuild.gitTracking": {
-    key: "prebuild.gitTracking",
-    type: "boolean",
+    plane: true,
     label: "Prebuild git tracking",
     description:
       "Monitor the git HEAD of repositories baked into a prebuild and " +
       "rebuild the prebuild automatically when upstream moves. On by " +
       "default; disable to stop automatic rebuilds (they cost compute).",
-    envVar: "ATELIER_PREBUILD_GIT_TRACKING",
-    default: true,
-    parseEnv: parseBoolEnv,
     validate: validateBool,
-  } satisfies ConfigDef<boolean>,
+  },
   "prebuild.pruneKeep": {
-    key: "prebuild.pruneKeep",
-    type: "number",
+    plane: true,
     label: "Prebuild retention",
     description:
       "How many superseded, unused prebuild snapshots to keep per prebuild " +
       "lineage (history for spawning older versions). 0 keeps only the " +
       "newest snapshot of each lineage; 3 keeps the last three. In-use " +
       "snapshots are never pruned.",
-    envVar: "ATELIER_PREBUILD_PRUNE_KEEP",
-    default: 3,
-    parseEnv: nonNegativeInt,
     validate: nonNegativeInt,
-  } satisfies ConfigDef<number>,
-
+  },
   "snapshot.manualKeep": {
-    key: "snapshot.manualKeep",
-    type: "number",
+    plane: true,
     label: "Manual snapshot retention",
     description:
       "How many manual snapshots to keep per sandbox. Taking a new one " +
       "deletes the oldest beyond this count; a snapshot another sandbox " +
       "boots from is never deleted.",
-    envVar: "ATELIER_SNAPSHOT_MANUAL_KEEP",
-    default: 5,
-    parseEnv: positiveInt,
     validate: positiveInt,
-  } satisfies ConfigDef<number>,
-
-  // ── image registry + builder (the "where/how images are stored & built"
-  //    plane). registryUrl is read on every spawn/prebuild/toolset op; the
-  //    imageBuilder.* keys are re-read per build (backend is rebuilt each
-  //    build) so console edits apply live. ──────────────────────────────
+  },
   "kubernetes.registryUrl": {
-    key: "kubernetes.registryUrl",
-    type: "string",
+    plane: false,
     label: "Image registry URL",
     description:
       "OCI registry host[:port] where sandbox and prebuild images live. No " +
@@ -199,399 +191,259 @@ const CONFIG_REGISTRY = {
       "default) means no external registry: images are built into and run " +
       "from the local Docker daemon (local mode). A cluster " +
       "sets it to its in-cluster registry (e.g. the bundled Zot).",
-    envVar: "ATELIER_K8S_REGISTRY_URL",
-    default: "",
-    parseEnv: registryHost,
     validate: registryHost,
-  } satisfies ConfigDef<string>,
+  },
   "imageBuilder.kind": {
-    key: "imageBuilder.kind",
-    type: "string",
     options: builderKinds,
+    plane: false,
     label: "Image builder",
     description:
       "Which build backend to use: docker (shell out to a Docker daemon, " +
       "local mode) or buildkit (in-cluster builds, dispatched to the " +
       "buildkitd endpoint set below).",
-    envVar: "ATELIER_IMAGE_BUILDER_KIND",
-    default: "docker",
-    parseEnv: validateBuilderKind,
     validate: validateBuilderKind,
-  } satisfies ConfigDef<string>,
+  },
   "imageBuilder.image": {
-    key: "imageBuilder.image",
-    type: "string",
+    plane: false,
     label: "Builder image override",
     description:
       "Override the buildkit buildctl client image. Empty uses the pinned " +
       "default. Ignored for the docker backend.",
-    envVar: "ATELIER_IMAGE_BUILDER_IMAGE",
-    default: "",
-    parseEnv: optionalString,
     validate: optionalString,
-  } satisfies ConfigDef<string>,
+  },
   "imageBuilder.endpoint": {
-    key: "imageBuilder.endpoint",
-    type: "string",
+    plane: false,
     label: "BuildKit endpoint",
     description:
       "Address of the buildkitd daemon (e.g. " +
       "tcp://buildkitd.buildkit.svc:1234). Required when the builder is " +
       "buildkit; ignored for the docker backend.",
-    envVar: "ATELIER_IMAGE_BUILDER_ENDPOINT",
-    default: "",
-    parseEnv: optionalString,
     validate: optionalString,
-  } satisfies ConfigDef<string>,
+  },
   "imageBuilder.dockerHost": {
-    key: "imageBuilder.dockerHost",
-    type: "string",
+    plane: false,
     label: "Docker host",
     description:
       "Docker daemon URL (e.g. tcp://docker-host:2375) for the docker " +
       "backend. Empty inherits the process DOCKER_HOST / local socket. " +
       "Ignored for other backends.",
-    envVar: "ATELIER_IMAGE_BUILDER_DOCKER_HOST",
-    default: "",
-    parseEnv: optionalString,
     validate: optionalString,
-  } satisfies ConfigDef<string>,
+  },
   "imageBuilder.platform": {
-    key: "imageBuilder.platform",
-    type: "string",
+    plane: false,
     label: "Build platform",
     description:
       "Target build platform for every backend (e.g. linux/amd64, " +
       "linux/arm64). Empty (the default) builds for the daemon's native " +
       "architecture — no emulation on an arm64 host.",
-    envVar: "ATELIER_IMAGE_BUILDER_PLATFORM",
-    default: "",
-    parseEnv: optionalString,
     validate: optionalString,
-  } satisfies ConfigDef<string>,
+  },
   "imageBuilder.cacheRepo": {
-    key: "imageBuilder.cacheRepo",
-    type: "string",
+    plane: false,
     label: "Build cache repo",
     description:
       "Cache repository used by the builder. Empty defaults to " +
       "`<registry>/cache`.",
-    envVar: "ATELIER_IMAGE_BUILDER_CACHE_REPO",
-    default: "",
-    parseEnv: optionalString,
     validate: optionalString,
-  } satisfies ConfigDef<string>,
+  },
   "imageBuilder.insecureRegistry": {
-    key: "imageBuilder.insecureRegistry",
-    type: "boolean",
+    plane: false,
     label: "Insecure registry",
     description:
       "Treat the destination/cache registry as insecure (HTTP / self-signed). " +
       "On by default because the bundled Zot runs without TLS; turn off for a " +
       "TLS registry.",
-    envVar: "ATELIER_IMAGE_BUILDER_INSECURE_REGISTRY",
-    default: true,
-    parseEnv: parseBoolEnv,
     validate: validateBool,
-  } satisfies ConfigDef<boolean>,
+  },
   "imageBuilder.tls.secretName": {
-    key: "imageBuilder.tls.secretName",
-    type: "string",
+    plane: false,
     label: "BuildKit TLS secret",
     description:
       "Name of a K8s Secret (ca.crt/tls.crt/tls.key) for mTLS to buildkitd. " +
       "Empty talks plaintext. Only relevant for the buildkit backend.",
-    envVar: "ATELIER_IMAGE_BUILDER_TLS_SECRET_NAME",
-    default: "",
-    parseEnv: optionalString,
     validate: optionalString,
-  } satisfies ConfigDef<string>,
+  },
   "imageBuilder.tls.serverName": {
-    key: "imageBuilder.tls.serverName",
-    type: "string",
+    plane: false,
     label: "BuildKit TLS server name",
     description:
       "Override the server name used for buildkitd TLS hostname verification " +
       "(--tlsservername). Only relevant for the buildkit backend.",
-    envVar: "ATELIER_IMAGE_BUILDER_TLS_SERVER_NAME",
-    default: "",
-    parseEnv: optionalString,
     validate: optionalString,
-  } satisfies ConfigDef<string>,
-
-  // ── sandbox defaults + infra selection (read per spawn/prebuild/snapshot,
-  //    so console edits apply to the next sandbox). ─────────────────────────
+  },
   "sandbox.defaultImage": {
-    key: "sandbox.defaultImage",
-    type: "string",
+    plane: true,
     label: "Default sandbox image",
     description:
       "Base image used for a new sandbox (or toolset build) when the request " +
       "does not name one. A built image / seed name (e.g. dev-base) or a " +
       "registered external ref.",
-    envVar: "ATELIER_DEFAULT_IMAGE",
-    default: "dev-base",
-    parseEnv: requiredString,
     validate: requiredString,
-  } satisfies ConfigDef<string>,
+  },
   "sandbox.defaultVcpus": {
-    key: "sandbox.defaultVcpus",
-    type: "number",
+    plane: true,
     label: "Default sandbox vCPUs",
     description:
       "vCPUs given to a new sandbox whose create request omits " +
       "`resources.vcpus`.",
-    envVar: "ATELIER_DEFAULT_VCPUS",
-    default: 2,
-    parseEnv: positiveInt,
     validate: positiveInt,
-  } satisfies ConfigDef<number>,
+  },
   "sandbox.defaultMemoryMb": {
-    key: "sandbox.defaultMemoryMb",
-    type: "number",
+    plane: true,
     label: "Default sandbox memory (MB)",
     description:
       "Guest RAM in MB given to a new sandbox whose create request omits " +
       "`resources.memoryMb`.",
-    envVar: "ATELIER_DEFAULT_MEMORY_MB",
-    default: 4096,
-    parseEnv: memoryMb,
     validate: memoryMb,
-  } satisfies ConfigDef<number>,
+  },
   "sandbox.agentImage": {
-    key: "sandbox.agentImage",
-    type: "string",
+    plane: true,
     label: "In-pod agent image",
     description:
       "Prebuilt Rust agent image the base seeds bake in via the AGENT_IMAGE " +
       "build-arg (COPY --from). Defaults to the public GHCR image so no " +
       "in-cluster agent build is needed; point it at a private/mirrored ref " +
       "for air-gapped clusters that cannot reach GHCR.",
-    envVar: "ATELIER_AGENT_IMAGE",
-    default: "ghcr.io/frak-id/sandbox-agent:3.0.2",
-    parseEnv: requiredString,
     validate: requiredString,
-  } satisfies ConfigDef<string>,
+  },
   "kubernetes.defaultVolumeSize": {
-    key: "kubernetes.defaultVolumeSize",
-    type: "string",
+    plane: true,
     label: "Default volume size",
     description:
       "Default sandbox PVC size (K8s quantity, e.g. 10Gi) when a request " +
       "does not set an explicit disk size.",
-    envVar: "ATELIER_K8S_DEFAULT_VOLUME_SIZE",
-    default: "10Gi",
-    parseEnv: k8sQuantity,
     validate: k8sQuantity,
-  } satisfies ConfigDef<string>,
+  },
   "kubernetes.storageClass": {
-    key: "kubernetes.storageClass",
-    type: "string",
+    plane: false,
     label: "Storage class",
     description:
       "StorageClass for sandbox PVCs. Empty uses the cluster default. Must " +
       "support Block volumes + block-volume VolumeSnapshots (e.g. " +
       "topolvm-thin).",
-    envVar: "ATELIER_K8S_STORAGE_CLASS",
-    default: "",
-    parseEnv: optionalString,
     validate: optionalString,
-  } satisfies ConfigDef<string>,
+  },
   "kubernetes.volumeSnapshotClass": {
-    key: "kubernetes.volumeSnapshotClass",
-    type: "string",
+    plane: false,
     label: "Volume snapshot class",
     description:
       "VolumeSnapshotClass for prebuild snapshots (required for instant " +
       "clone-from-prebuild). Empty uses the cluster default.",
-    envVar: "ATELIER_K8S_VOLUME_SNAPSHOT_CLASS",
-    default: "",
-    parseEnv: optionalString,
     validate: optionalString,
-  } satisfies ConfigDef<string>,
-  // ── idle auto-pause (docs/proposals/sandbox-idle-autopause.md). Read by
-  //    the reaper every minute, so edits apply live. Operator-only: there is
-  //    deliberately no org or per-user override of the idle time. ─────────
+  },
   "sandbox.idle.mode": {
-    key: "sandbox.idle.mode",
-    type: "string",
     options: idleModes,
+    plane: true,
     label: "Idle auto-pause",
     description:
       "Pause running sandboxes nobody uses. observe computes and shows when " +
       "each sandbox would pause without pausing it (use it to tune the " +
       "thresholds below); enforce pauses them; off disables the feature.",
-    envVar: "ATELIER_IDLE_MODE",
-    default: "observe",
-    parseEnv: validateIdleMode,
     validate: validateIdleMode,
-  } satisfies ConfigDef<string>,
+  },
   "sandbox.idle.minutes": {
-    key: "sandbox.idle.minutes",
-    type: "number",
+    plane: true,
     label: "Idle time before pause (minutes)",
     description:
       "How long a sandbox must go without activity before it is paused.",
-    envVar: "ATELIER_IDLE_MINUTES",
-    default: 120,
-    parseEnv: positiveInt,
     validate: positiveInt,
-  } satisfies ConfigDef<number>,
+  },
   "sandbox.idle.network": {
-    key: "sandbox.idle.network",
-    type: "boolean",
+    plane: true,
     label: "Idle: network traffic counts",
     description:
       "Count network traffic at or above the threshold below as activity " +
       "(its URLs, SSH, an agent calling an LLM API, git).",
-    envVar: "ATELIER_IDLE_NETWORK",
-    default: true,
-    parseEnv: parseBoolEnv,
     validate: validateBool,
-  } satisfies ConfigDef<boolean>,
+  },
   "sandbox.idle.networkMinBytesPerMinute": {
-    key: "sandbox.idle.networkMinBytesPerMinute",
-    type: "number",
+    plane: true,
     label: "Idle: network bytes per minute",
     description:
       "Bytes received plus sent a minute must reach to count as " +
       "activity. Keeps the heartbeats of a forgotten editor tab or SSH " +
       "session from holding a sandbox awake.",
-    envVar: "ATELIER_IDLE_NETWORK_MIN_BYTES",
-    default: 65536,
-    parseEnv: positiveInt,
     validate: positiveInt,
-  } satisfies ConfigDef<number>,
+  },
   "sandbox.idle.files": {
-    key: "sandbox.idle.files",
-    type: "boolean",
+    plane: true,
     label: "Idle: file writes count",
     description:
       "Count file writes in the sandbox (the agent's built-in filter skips " +
       "dependency installs, build output, logs and tool state) as activity.",
-    envVar: "ATELIER_IDLE_FILES",
-    default: true,
-    parseEnv: parseBoolEnv,
     validate: validateBool,
-  } satisfies ConfigDef<boolean>,
+  },
   "sandbox.idle.cpu": {
-    key: "sandbox.idle.cpu",
-    type: "boolean",
+    plane: true,
     label: "Idle: CPU usage counts",
     description:
       "Count CPU usage above the threshold below as activity (catches a " +
       "long unattended build). Off by default: a runaway process would " +
       "keep its sandbox awake forever.",
-    envVar: "ATELIER_IDLE_CPU",
-    default: false,
-    parseEnv: parseBoolEnv,
     validate: validateBool,
-  } satisfies ConfigDef<boolean>,
+  },
   "sandbox.idle.cpuMinMillicores": {
-    key: "sandbox.idle.cpuMinMillicores",
-    type: "number",
+    plane: true,
     label: "Idle: CPU threshold (millicores)",
     description:
       "Average CPU over a minute, in millicores (1000 = one core), for " +
       "that minute to count when CPU usage counts.",
-    envVar: "ATELIER_IDLE_CPU_MIN_MILLICORES",
-    default: 250,
-    parseEnv: positiveInt,
     validate: positiveInt,
-  } satisfies ConfigDef<number>,
+  },
   "sandbox.idle.maxKeepAwakeHours": {
-    key: "sandbox.idle.maxKeepAwakeHours",
-    type: "number",
+    plane: true,
     label: "Idle: longest keep-awake (hours)",
     description:
       "The longest a user may exempt a sandbox from idle auto-pause.",
-    envVar: "ATELIER_IDLE_MAX_KEEP_AWAKE_HOURS",
-    default: 24,
-    parseEnv: positiveInt,
     validate: positiveInt,
-  } satisfies ConfigDef<number>,
+  },
   "jobs.concurrency": {
-    key: "jobs.concurrency",
-    type: "number",
+    plane: true,
     label: "Build job concurrency",
     description:
       "How many pooled build jobs (prebuild bake, toolset build/capture) may " +
       "run at once. Extra dispatches queue. Sandbox lifecycle jobs bypass " +
       "this limit.",
-    envVar: "ATELIER_JOBS_CONCURRENCY",
-    default: 4,
-    parseEnv: positiveInt,
     validate: positiveInt,
-  } satisfies ConfigDef<number>,
-} as const;
+  },
+} as const satisfies Record<string, ConfigSpec>;
 
-export type ConfigKey = keyof typeof CONFIG_REGISTRY;
+export type ConfigKey = keyof typeof CONFIG_SPECS;
 
-/** The typed value each key resolves to. */
-export interface ConfigValues {
-  "prebuild.gitTracking": boolean;
-  "prebuild.pruneKeep": number;
-  "snapshot.manualKeep": number;
-  "kubernetes.registryUrl": string;
-  "imageBuilder.kind": "docker" | "buildkit";
-  "imageBuilder.image": string;
-  "imageBuilder.endpoint": string;
-  "imageBuilder.dockerHost": string;
-  "imageBuilder.platform": string;
-  "imageBuilder.cacheRepo": string;
-  "imageBuilder.insecureRegistry": boolean;
-  "imageBuilder.tls.secretName": string;
-  "imageBuilder.tls.serverName": string;
-  "sandbox.defaultImage": string;
-  "sandbox.agentImage": string;
-  "sandbox.defaultVcpus": number;
-  "sandbox.defaultMemoryMb": number;
-  "kubernetes.defaultVolumeSize": string;
-  "kubernetes.storageClass": string;
-  "kubernetes.volumeSnapshotClass": string;
-  "sandbox.idle.mode": "off" | "observe" | "enforce";
-  "sandbox.idle.minutes": number;
-  "sandbox.idle.network": boolean;
-  "sandbox.idle.networkMinBytesPerMinute": number;
-  "sandbox.idle.files": boolean;
-  "sandbox.idle.cpu": boolean;
-  "sandbox.idle.cpuMinMillicores": number;
-  "sandbox.idle.maxKeepAwakeHours": number;
-  "jobs.concurrency": number;
+/** The typed value each key resolves to, derived from the schema. */
+export type ConfigValues = { [K in ConfigKey]: ConfigValueAt<K> };
+
+const defaults = schemaDefaults();
+
+function defaultAt(path: string): ConfigValue {
+  let current: unknown = defaults;
+  for (const part of path.split(".")) {
+    current = (current as Record<string, unknown>)[part];
+  }
+  return current as ConfigValue;
 }
 
-export const CONFIG_DEFS = Object.values(
-  CONFIG_REGISTRY,
-) as ConfigDef<ConfigValue>[];
+const envVarByPath = new Map<string, string>(
+  Object.entries(ENV_VAR_MAPPING).map(([envVar, path]) => [path, envVar]),
+);
+
+export const CONFIG_DEFS: ConfigDef[] = (
+  Object.entries(CONFIG_SPECS) as [ConfigKey, ConfigSpec][]
+).map(([key, spec]) => {
+  const value = defaultAt(key);
+  return {
+    ...spec,
+    key,
+    type: typeof value as ConfigDef["type"],
+    default: value,
+    envVar: envVarByPath.get(key) ?? "",
+  };
+});
 
 export function isConfigKey(key: string): key is ConfigKey {
-  return key in CONFIG_REGISTRY;
+  return key in CONFIG_SPECS;
 }
 
-/** Keys that live ONLY in the config plane (DB/env) with no counterpart in the
- * static AtelierConfig file. Everything else mirrors a file config path whose
- * dotted name equals the plane key (e.g. `kubernetes.registryUrl`). */
-const PLANE_ONLY_KEYS = new Set<ConfigKey>([
-  "prebuild.gitTracking",
-  "prebuild.pruneKeep",
-  "snapshot.manualKeep",
-  "sandbox.idle.mode",
-  "sandbox.idle.minutes",
-  "sandbox.idle.network",
-  "sandbox.idle.networkMinBytesPerMinute",
-  "sandbox.idle.files",
-  "sandbox.idle.cpu",
-  "sandbox.idle.cpuMinMillicores",
-  "sandbox.idle.maxKeepAwakeHours",
-]);
-
-/** The AtelierConfig dotted path a key mirrors (for reading the operator's
- * file/env value + detecting whether they set it), or undefined for plane-only
- * keys. By construction the plane key IS the config path for mirrored keys. */
-export function configPathFor(key: ConfigKey): string | undefined {
-  return PLANE_ONLY_KEYS.has(key) ? undefined : key;
-}
-
-export function configDef(key: ConfigKey): ConfigDef<ConfigValue> {
-  return CONFIG_REGISTRY[key] as ConfigDef<ConfigValue>;
+export function configDef(key: ConfigKey): ConfigDef {
+  return CONFIG_DEFS.find((def) => def.key === key) as ConfigDef;
 }

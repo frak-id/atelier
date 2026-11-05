@@ -26,7 +26,6 @@
   "references": [
     { "path": "./apps/server" },
     { "path": "./apps/console" },
-    { "path": "./packages/shared" },
     { "path": "./packages/spec" }
   ],
   "files": []

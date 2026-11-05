@@ -1,9 +1,9 @@
+import type { AgentSession, AgentSessionStatus } from "@atelier/spec";
 import {
   repoShortName,
   SANDBOX_IDLE_PAUSED_ANNOTATION,
   type SandboxSummary,
 } from "@atelier/spec";
-import type { AgentSession, AgentSessionStatus } from "@frak/atelier-shared";
 import { useQueries, useQuery } from "@tanstack/react-query";
 import { createFileRoute, Link } from "@tanstack/react-router";
 import {

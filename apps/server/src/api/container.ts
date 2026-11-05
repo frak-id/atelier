@@ -25,13 +25,20 @@ import {
   SessionService,
   TerminalService,
 } from "../sessions/index.ts";
-import { registryUrl } from "../shared/lib/runtime-config.ts";
+import {
+  bindRuntimeConfig,
+  registryUrl,
+} from "../shared/lib/runtime-config.ts";
 import { SandboxOps } from "./app/sandbox-ops.ts";
 import { ToolboxOps } from "./app/toolbox-ops.ts";
 import { IdleReaper } from "./idle-reaper.ts";
 
 export function createServerContainer() {
   const control = createControlContainer();
+  // The runtime reads operational config (default image/size, agent image,
+  // snapshot retention) through the console-editable config plane. Injected
+  // here so runtime/ and shared/ never import control/.
+  bindRuntimeConfig((key) => control.serverConfigService.get(key));
   // Construct the backend once and dial its resolved endpoint from the agent
   // (pod IP on k8s, mapped host ports on Docker) — the same instance is shared
   // with RuntimeService so there is a single source of endpoint truth.

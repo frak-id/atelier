@@ -1,4 +1,4 @@
-import { type AgentEvent, AgentEventSchema } from "@frak/atelier-shared";
+import { type AgentEvent, AgentEventSchema } from "@atelier/spec";
 import { Check } from "@sinclair/typebox/value";
 import { type QueryClient, useQueryClient } from "@tanstack/react-query";
 import { useEffect, useState } from "react";

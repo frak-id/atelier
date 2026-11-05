@@ -18,7 +18,6 @@ const PACKAGE_JSON_PATHS = [
   "package.json",
   "apps/server/package.json",
   "apps/console/package.json",
-  "packages/shared/package.json",
 ];
 
 /**
@@ -28,10 +27,9 @@ const PACKAGE_JSON_PATHS = [
  * together, so a rebuilt base never pulls an agent from another release.
  */
 const AGENT_IMAGE_PIN_PATHS = [
-  "packages/shared/src/config.schema.ts",
-  "packages/shared/schemas/atelier.config.schema.json",
-  "packages/shared/schemas/sandbox.config.full-example.json",
-  "apps/server/src/control/modules/server-config/registry.ts",
+  "apps/server/src/config/config.schema.ts",
+  "apps/server/schemas/atelier.config.schema.json",
+  "apps/server/schemas/sandbox.config.full-example.json",
   "apps/server/src/runtime/registry/seeds/dev-base/Dockerfile",
 ];
 const AGENT_IMAGE_PIN_RE = /(ghcr\.io\/frak-id\/sandbox-agent:)\d+\.\d+\.\d+/g;
