@@ -4,7 +4,7 @@ import { cn } from "@/lib/utils";
 /**
  * A reusable empty-state block: icon + title + one-line description + an
  * optional primary action. Use for "nothing here yet" surfaces instead of
- * ad-hoc copy in a bare Card (see IMPLEMENTATION_PLAN.md §0.4).
+ * ad-hoc copy in a bare Card.
  */
 export function EmptyState({
   icon: Icon,

@@ -1,25 +1,33 @@
 # @atelier/console
 
-The Atelier web GUI — the primary product surface over `@atelier/server`.
-React 19 + rolldown-vite + TanStack Router/Query + Tailwind v4 + shadcn/Radix +
-xterm, typed end-to-end against the server's exported `App` type via Eden Treaty.
+The Atelier web GUI, the main product surface over `@atelier/server`.
+React 19, Vite, TanStack Router and Query, Tailwind v4, shadcn/Radix and
+xterm, typed end to end against the server's exported `App` type through Eden
+Treaty.
 
 ## Develop
 
 ```sh
-# from the repo root, start the server in mock mode (listens on :4000)
-cd apps/server && ATELIER_SERVER_MODE=mock bun run src/index.ts
+# from the repo root: server in local mode with the Docker backend (:4000)
+bun run --filter @atelier/server dev
 
-# in another shell, start the console (Vite on :5174, proxies /v1 /api
-# /sessions /auth /health /mcp to :4000 with ws upgrade)
-cd apps/console && bun run dev
+# in another shell: Vite on :5174, proxying the server paths (with WebSocket
+# upgrade) to :4000
+bun run --filter @atelier/console dev
 ```
+
+The server needs a running Docker daemon. The proxied paths are listed in
+`PROXY_PATHS` in `vite.config.ts`. `infra/nginx/console.conf` holds the
+production copy, and the two lists must stay in sync.
 
 ## Build
 
 ```sh
-bun run build      # tsc --noEmit && vite build → dist/ (static)
+bun run --filter @atelier/console build   # tsc --noEmit && vite build -> dist/
 ```
+
+`vite build` also regenerates `src/routeTree.gen.ts`. Do not edit that file by
+hand.
 
 ## Container
 
@@ -30,19 +38,26 @@ docker build --target server  -t atelier-server  .
 docker build --target console -t atelier-console .
 ```
 
-- **server** — `apps/server` bundled to a single Bun file, drizzle migrations
-  applied at boot (`MIGRATIONS_DIR`), base-image seeds baked in
-  (`ATELIER_SEEDS_DIR`), SQLite under `DATA_DIR` (mount a PVC). Listens `:4000`.
-- **console** — this SPA served by nginx (`infra/nginx/console.conf`), which
-  reverse-proxies `/v1 /api /sessions /auth /health /mcp /swagger` to the
-  server on `localhost:4000` — same origin, so the auth cookie and WS/SSE work
-  with no CORS. Run the server + console as two containers in one pod.
+- **server**: `apps/server` bundled into one Bun file, migrations applied at
+  boot (`MIGRATIONS_DIR`), base-image seeds baked in (`ATELIER_SEEDS_DIR`),
+  SQLite under `DATA_DIR` (mount a volume). Listens on `:4000`.
+- **console**: this SPA served by nginx (`infra/nginx/console.conf`), which
+  reverse-proxies the server paths to `localhost:4000`. The same origin keeps
+  the auth cookie and WS/SSE free of CORS. Run both containers in one pod, or
+  with host networking as `docker-compose.local.yml` does.
 
 ## Surfaces
 
-- `/` — sandbox fleet (status, harness, lifecycle actions)
-- `/sandboxes/$id` — detail (urls, processes, logs, ports, read-only attach)
-- `/sandboxes/$id/sessions` — live ACP sessions, todos, permissions, terminals
-- `/spawn` — saved specs, compose presets, JSONC spec editor
-- `/settings/*` — operator console (api-keys, ssh-keys, secrets, orgs, policy, catalog)
+| Route | Content |
+|-------|---------|
+| `/` | Task inbox (needs review, running, failed, seen) above the sandbox list |
+| `/sandboxes/$id` | Action-first detail: terminal, harness URL, sessions, pause or resume, keep awake, fork, snapshot, destroy; processes, logs, urls, ports, "booted from" |
+| `/sandboxes/$id/sessions` | Live ACP sessions, todos, tasks and terminals |
+| `/spawn` | Repo card with recents, toolbox picker, org picker, advanced spec editor |
+| `/library/*` | Prebuilds, toolboxes and toolsets, images (building is admin only) |
+| `/jobs` | The job feed with logs and cancel |
+| `/settings/*` | API keys, SSH keys, secrets, config, organizations, users |
 
+Settings > Config groups keys into "Editable" and "Set by deployment
+(read-only)". Actions that need a server admin are hidden from other users
+(`hooks/use-is-admin.ts`, from `GET /auth/me`).

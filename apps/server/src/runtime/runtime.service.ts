@@ -1,6 +1,6 @@
 /**
  * `RuntimeService` — THE SEAM. `runtime.create(spec)` as a function signature
- * that policy code cannot reach past (design.md §3). Mechanism only: it knows
+ * that policy code cannot reach past (docs/archive/design.md §3). Mechanism only: it knows
  * how to boot/pause/resume/destroy, push files/env, supervise processes,
  * expose ports, run hooks, exec, and snapshot. It never parses ACP, reads a
  * harness config, or models "MCP". It imports nothing from control/ or
@@ -311,7 +311,7 @@ export class RuntimeService {
     let booted = false;
     try {
       // bootSandbox pushes config + writes files[]. The fixed phase order
-      // (design.md §6): files/env -> postCreate -> processes -> postStart.
+      // (docs/archive/design.md §6): files/env -> postCreate -> processes -> postStart.
       progress("booting pod…");
       const boot = await this.backend.boot(
         id,
@@ -543,7 +543,7 @@ export class RuntimeService {
    * `status: "error"` records — a failed create/resume can be retried here.
    *
    * Toolsets are materialized on EVERY boot, including resume
-   * (toolset-overlay-squashfs.md §6) — not skipped as under the old
+   * (docs/archive/proposals/toolset-overlay-squashfs.md §6) — not skipped as under the old
    * extract-into-PVC model. Materialize is now mount-only and idempotent: the
    * squashfs blobs already live under `/data/toolsets` on the resumed PVC, so
    * this degrades to loop-mount + overlay re-assembly, no re-pull, no
@@ -1203,7 +1203,7 @@ export class RuntimeService {
   }
 
   /**
-   * `live` process statuses gate `ready` (design ui-evolution.md §4.1) —
+   * `live` process statuses gate `ready` —
    * omitted at create time (nothing has started yet), present at `get()`.
    */
   private async urlsFor(id: string, spec: SandboxSpec, live?: ProcessStatus[]) {

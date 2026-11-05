@@ -1,11 +1,11 @@
 /**
- * Client-side spec merge (design.md §3: "the spec-file merge … defined once
+ * Client-side spec merge (docs/archive/design.md §3: "the spec-file merge … defined once
  * here, not an open question: deep-merge, arrays merged by `name`/`path`,
  * last layer wins").
  *
  * A fragment is a `Partial<SandboxSpec>`: what a preset, a harness composer,
  * or a repo's `atelier.jsonc` contributes. `mergeSpecs` folds any number of
- * fragments, left to right, into one fragment. The caller (CLI/console/MCP)
+ * fragments, left to right, into one fragment. The caller (console/MCP)
  * is responsible for validating the final result is a complete `SandboxSpec`
  * (has `source` + `resources`) before calling the runtime API.
  */

@@ -19,7 +19,7 @@ type ImmersiveSandbox = {
   annotations?: Record<string, string>;
 };
 
-/** "Open" prefers the harness's own web UI (design ui-evolution.md §3.3) — the
+/** "Open" prefers the harness's own web UI — the
  * url whose name matches the `atelier.dev/harness` annotation, by convention
  * (opencode/pi's composer names their web-UI port after the harness id).
  * Falls back to the terminal tab when the harness has no web UI (or the

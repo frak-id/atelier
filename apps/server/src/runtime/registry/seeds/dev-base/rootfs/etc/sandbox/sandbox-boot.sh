@@ -3,8 +3,8 @@
 #
 # The workspace PVC is attached as a RAW BLOCK device and this script formats
 # (first boot) + mounts it at /data — not at /home/dev (see
-# docs/proposals/toolset-overlay-squashfs.md §3 and
-# docs/plans/toolset-inplace-update-fix-options.md §3). /home/dev itself is a bare,
+# docs/archive/proposals/toolset-overlay-squashfs.md §3 and
+# docs/archive/plans/toolset-inplace-update-fix-options.md §3). /home/dev itself is a bare,
 # empty mountpoint until the agent's `materialize` (crate::toolset) assembles
 # it as a SINGLE overlay (skel + any toolset erofs/squashfs lowers, upper/work on
 # `/data`) — this script does NOT mount a base overlay. That single-assembly
@@ -141,15 +141,15 @@ done
 # halves inside the public image. Generate fresh, per-boot keys here —
 # BEFORE starting the agent below — so `GET /ssh/host-keys` (apps/agent/
 # src/ssh.rs) can report the real key as soon as the agent is reachable; the
-# server pins whatever it gets back into the sshpiper Pipe / in-server proxy
-# right after boot. `-A` only (re)generates keys that are missing, so this is
+# server pins whatever it gets back into the in-server SSH proxy right after
+# boot. `-A` only (re)generates keys that are missing, so this is
 # a no-op on a resumed disk... except /etc/ssh lives on the container's
 # EPHEMERAL rootfs (not /data), so every restart regenerates — intentional:
 # per-boot keys, nothing persisted to leak.
 ssh-keygen -A >/dev/null 2>&1
 
 # ── SSH key staging ───────────────────────────────────────────────────
-# The sshpiper public key is mounted by K8s from the atelier-ssh-pipe-key
+# The SSH gateway's public key is mounted by K8s from the atelier-ssh-pipe-key
 # Secret. Write it into the overlay upperdir now — /home/dev isn't mounted
 # yet, but /data/upper IS what /home/dev/.ssh resolves to once the agent's
 # overlay goes live, so this is available immediately without waiting.

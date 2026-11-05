@@ -1,5 +1,5 @@
 //! Sandbox activity measurement for idle auto-pause
-//! (docs/proposals/sandbox-idle-autopause.md §3.1). The agent *measures*:
+//! (docs/idle-autopause.md §3.1). The agent *measures*:
 //! network bytes (interface counters), file writes under the home (where
 //! repos are cloned), CPU time, into one-minute buckets over the last hour.
 //! The server *judges* (thresholds, idle rules): `GET /activity` hands it the

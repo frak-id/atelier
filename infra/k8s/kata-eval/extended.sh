@@ -4,7 +4,7 @@
 #   - materialize the freshly built artifact in a NEW VM
 #   - pause/resume shape: guest sync, VolumeSnapshot of the live PVC, clone,
 #     boot the clone (no reformat, data + toolset blob intact)
-#   - ssh into the guest as `dev` (what sshpiper / the in-server proxy do)
+#   - ssh into the guest as `dev` (what the in-server proxy does)
 #
 #   infra/k8s/kata-eval/extended.sh <runtimeClass>
 #

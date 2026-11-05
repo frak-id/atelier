@@ -51,7 +51,7 @@ const detailSchema = z
  * sandbox from it gets (`processes`, without their env) and the URLs they
  * serve (`ports`), and when it was baked. The base image, hash and build
  * recipe (and the env values / file contents in it, which can be literal
- * secrets) stay out; the console, CLI and `GET /v1/prebuilds` have the full
+ * secrets) stay out; the console and `GET /v1/prebuilds` have the full
  * record. */
 function prebuildView(p: PrebuildRecord) {
   const metadata = p.metadata ?? p.spec?.metadata;

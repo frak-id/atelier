@@ -1,6 +1,6 @@
 /**
  * Block-volume wiring for the workspace PVC (Option C,
- * docs/plans/toolset-inplace-update-fix-options.md §3). The PVC is attached as
+ * docs/archive/plans/toolset-inplace-update-fix-options.md §3). The PVC is attached as
  * a raw block device (virtio-blk under Kata) and the guest formats/mounts it —
  * so the pod must use `volumeDevices` (not `volumeMounts`) and the PVC must
  * declare `volumeMode: Block`.

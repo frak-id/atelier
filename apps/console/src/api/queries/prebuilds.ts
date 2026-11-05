@@ -33,7 +33,7 @@ export function prebuildsListQuery() {
  * Run a chained, content-addressed repo prebuild (POST /v1/prebuilds): bake
  * `build[]`/`repos` into a VolumeSnapshot and get back its ref, usable as a
  * boot `source`. The repo tier beside the toolset tier
- * (composed-prebuild-volumes.md). `force` bypasses the content-hash cache hit
+ * (docs/archive/proposals/composed-prebuild-volumes.md). `force` bypasses the content-hash cache hit
  * — the "rebuild" action on an existing prebuild.
  */
 export function useRunPrebuild() {

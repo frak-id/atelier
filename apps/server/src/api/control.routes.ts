@@ -1,5 +1,5 @@
 /**
- * `/api/*` — control CRUD (design.md §3.1 api/ table: "/api/* → control
+ * `/api/*` — control CRUD (docs/archive/design.md §3.1 api/ table: "/api/* → control
  * CRUD"). Identity, orgs, secrets, toolboxes. Thin Elysia
  * binding; all policy logic lives in `control/`.
  */
@@ -236,7 +236,7 @@ export function createControlRoutes(container: ServerContainer) {
   // Org secrets: list = any member, set/delete = owner. Global
   // (org-less) secrets hold server-owned values (e.g. the SSH gateway host
   // key), so they are server-managed — manageable over the API only when auth
-  // is bypassed (mock/local single-user modes).
+  // is bypassed (local single-user mode).
   const requireSecretAccess = (
     userId: string,
     orgId: string | undefined,

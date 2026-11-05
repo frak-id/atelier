@@ -501,7 +501,7 @@ export class AgentClient {
 
   /**
    * Assemble the `/home/dev` overlay before the files/env phase (agent
-   * `POST /toolsets`, toolset-overlay-squashfs.md §5). `references` are full,
+   * `POST /toolsets`, docs/archive/proposals/toolset-overlay-squashfs.md §5). `references` are full,
    * digest-pinned pull refs (`<registry>/toolsets/<name>@sha256:…`), ordered
    * — later wins (topmost overlay lower). The agent pulls each squashfs blob
    * to `/data/toolsets` (skipped if already present — the resume case),

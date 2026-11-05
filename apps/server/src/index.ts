@@ -1,6 +1,6 @@
 /**
  * Atelier server bootstrap. One deployable, three internal modules
- * (design.md §3.1) — this file is the only place that constructs the
+ * (docs/archive/design.md §3.1) — this file is the only place that constructs the
  * composition root and starts listening.
  */
 

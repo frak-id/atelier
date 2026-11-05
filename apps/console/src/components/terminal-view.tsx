@@ -17,7 +17,7 @@ import { useTheme } from "@/providers/theme";
  * Writes a labeled divider line into the terminal's own scrollback — a real,
  * honest "block" boundary rather than a guessed one. There is no
  * command/output boundary signal anywhere in this stack (no OSC 133 shell
- * integration, no structured server event; see IMPLEMENTATION_PLAN.md §5.3),
+ * integration, no structured server event),
  * so this deliberately does NOT try to detect commands by regex-guessing
  * prompts on raw output — that would misfire constantly and undermine the
  * calm, audit-trail feel it's meant to convey. Markers are either explicit

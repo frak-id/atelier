@@ -65,7 +65,7 @@ function toolboxIdOfRef(ref: string): string | undefined {
   return ref.match(/(?:^|\/)tb\/([^/@]+)(?:@|$)/)?.[1];
 }
 
-/** The winning harness a spawn's toolboxes declare (entities-toolbox.md): the
+/** The winning harness a spawn's toolboxes declare: the
  * last applied toolbox that names one. Undefined when none does. */
 export function toolboxHarness(applied: ToolboxConfig[]): string | undefined {
   return [...applied].reverse().find((config) => config.harness)?.harness;
@@ -90,7 +90,7 @@ export function withToolboxFiles(
 
 /**
  * Collect the processes + ports every applied toolbox contributes
- * (entities-toolbox.md). A toolbox is not just files: it can carry a tool's
+ *. A toolbox is not just files: it can carry a tool's
  * *runtime surface* — vscode's `code-server` process + its port, or the
  * browser stack's kasmvnc/openbox/chromium (binaries baked into the
  * dev-browser base image, so no `build`/`paths`; a browserless base like
@@ -137,8 +137,8 @@ export class ToolboxOps {
 
   /**
    * The harness the toolbox behind a single toolset name declares, if any.
-   * Viewer-independent (unlike the compose map). Used to enrich the global
-   * toolset list so the compose surface can tag any toolset.
+   * Caller-independent. Used to enrich the global toolset list so the console
+   * can tag any toolset with its harness.
    */
   harnessForToolset(name: string): string | undefined {
     return this.forRef(name)?.harness;
@@ -147,7 +147,7 @@ export class ToolboxOps {
   // ── spawn ──────────────────────────────────────────────────────────────
 
   /**
-   * Resolve the toolboxes a spawn applies (entities-toolbox.md §5): the spawn
+   * Resolve the toolboxes a spawn applies: the spawn
    * org's auto-inject toolboxes, then the explicitly picked `tb/<id>`
    * selectors. `orgId` is optional (`undefined` skips the org tier — spawn
    * bare, never throw); a selected toolbox must belong to an org the caller is

@@ -1,5 +1,5 @@
 /**
- * The toolset tier (composed-prebuild-volumes.md). A toolset is a
+ * The toolset tier (docs/archive/proposals/composed-prebuild-volumes.md). A toolset is a
  * content-addressed `tar.gz` published as an OCI artifact in the in-cluster
  * registry and materialized by the guest agent into native home paths at
  * boot, BEFORE the files/env phase. It is the second prebuild axis beside the

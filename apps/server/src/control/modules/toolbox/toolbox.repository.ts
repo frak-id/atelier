@@ -37,7 +37,7 @@ export class ToolboxRepository {
       .map(rowToConfig);
   }
 
-  /** Auto-inject toolboxes, oldest-first (entities-toolbox.md R6). */
+  /** Auto-inject toolboxes, oldest-first. */
   listAutoInject(orgId: string): ToolboxConfig[] {
     return getDatabase()
       .select()

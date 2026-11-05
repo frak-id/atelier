@@ -4,7 +4,7 @@
  * Pure (no React, no API client) so it is unit-tested directly.
  *
  * Identity comes from `@atelier/spec`'s shared `repoKey`, so a prebuild made
- * from the CLI with an scp URL still matches the https repo GitHub lists.
+ * with an scp URL still matches the https repo GitHub lists.
  */
 import {
   findRepoBranchPrebuild,

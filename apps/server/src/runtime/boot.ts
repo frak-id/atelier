@@ -40,7 +40,7 @@ export interface BootInput {
   preserveDisk?: boolean;
   /**
    * Full, digest-pinned toolset pull references to materialize into the home
-   * before the files/env phase (toolset-overlay-squashfs.md §5-6). Set on
+   * before the files/env phase (docs/archive/proposals/toolset-overlay-squashfs.md §5-6). Set on
    * EVERY boot — create AND resume — and passed to `agent.materializeToolsets`
    * unconditionally, even when empty: materialize is what assembles the
    * `/home/dev` overlay at all (the entrypoint never mounts it — see

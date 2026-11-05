@@ -1,5 +1,5 @@
 /**
- * Runtime-owned state. Per design.md §3.1, the runtime's tables are
+ * Runtime-owned state. Per docs/archive/design.md §3.1, the runtime's tables are
  * `sandboxes(id, spec, status, generated, metadata)` and
  * `snapshots(hash, parent, ref)` — with NO FK to any identity table. Callers
  * are just "authenticated principals" to it.
@@ -143,7 +143,7 @@ export interface ToolsetStore {
 }
 
 /** One mounted toolset on one sandbox — the many-to-many join
- * (toolset-overlay-squashfs.md §6-7): the GC guard refuses to delete a ref
+ * (docs/archive/proposals/toolset-overlay-squashfs.md §6-7): the GC guard refuses to delete a ref
  * in `referencedRefs()`. */
 export interface SandboxToolsetRefEntry {
   ref: string;

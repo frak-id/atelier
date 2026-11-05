@@ -1,170 +1,126 @@
 # Atelier Server
 
-The server deployable: `apps/server` ("the Atelier server", design.md §3.1).
-One process, three internal modules with import boundaries enforced by
-`scripts/check-boundaries.ts`, not convention. See `docs/design.md` §3.
+The server deployable. One Bun process, several internal modules whose import
+boundaries are enforced by `scripts/check-boundaries.ts`, not by convention.
+Design background: `docs/archive/design.md` (historical) and
+`docs/architecture.md`.
 
 ## Structure
 
 ```
 src/
-├── runtime/    MECHANISM. prebuild/boot/pause/resume/destroy · files/env/
-│               processes/ports/hooks/exec/attach · kube builders · CSI
-│               snapshots · agent client. Takes SandboxSpec, never Workspace.
-│               MUST compile without control/ or sessions/ (the future
-│               extraction seam). No FK to any identity table.
-├── control/    POLICY. Identity (users/orgs/org-members), API keys, SSH
-│               keys, saved specs (the Workspace replacement), the control
-│               secrets store, org policy specs, and the two seam-crossing
-│               enrichment steps (resolveSecrets + injectOrgPolicy). MUST
-│               NOT import runtime/'s internals or sessions/.
-├── sessions/   AGENT APP-TIER. ACP client + session facade (agent-dispatch,
-│               acp-stream, session-surface) — parses ACP, so banned from
-│               runtime/. A privileged CLIENT of runtime (attach + files,
-│               same API anyone could use). MUST NOT import control/.
-└── api/        HTTP shell: /v1/* → runtime (through control's authn +
-                enrichment) · /api/* → control CRUD · /sessions/* →
-                sessions · /mcp → same three. The only place all three
-                modules are wired together (api/container.ts).
+├── runtime/    MECHANISM. create/boot/pause/resume/destroy, prebuilds,
+│               snapshots, toolsets, files/processes/ports/exec/attach, K8s
+│               and Docker backends, agent client, image builders. Takes a
+│               SandboxSpec, never identity. Compiles without control/,
+│               sessions/, api/, ssh/ or harnesses/ (the extraction seam).
+├── control/    POLICY. Users, orgs (owner|member), the default org and server
+│               admins, API keys, SSH keys, secrets, toolboxes and versions,
+│               server config plane, idle policy; spec enrichment and
+│               resolveBootSpec. Uses runtime's barrel only.
+├── sessions/   AGENT APP-TIER. ACP client (agent-dispatch, acp-stream) and
+│               persisted agent tasks (task.service, task.store). Uses
+│               runtime's barrel only; never imports control/.
+├── harnesses/  Pure harness definitions (opencode, pi) and mergeSpecs. A leaf.
+├── config/     Config schema (TypeBox), loader, constants. A leaf.
+├── shared/     Errors, logger, db handle, runtime-config; may reach config/ only.
+├── ssh/        The in-server SSH gateway (production mode only).
+└── api/        HTTP + MCP shell and the only wiring point (container.ts).
+    ├── app/    Application layer under HTTP and MCP: SandboxOps, ToolboxOps.
+    │           No routes, no MCP tools, no elysia.
+    └── mcp/    /mcp (13 sandbox tools) and /mcp/admin (4 admin tools).
 ```
+
+Rules in one place: `scripts/check-boundaries.ts`. Run it with
+`bun run check:boundary`.
+
+## Where To Look
+
+| Task | Location |
+|------|----------|
+| Sandbox create, fork, pause, resume, snapshot, destroy flow | `api/app/sandbox-ops.ts` (jobs, validation), `runtime/runtime.service.ts` (mechanism) |
+| Prebuild keys, last-good fallback, retention | `runtime/prebuild.service.ts` |
+| Toolset build and capture | `runtime/toolset.service.ts`, `runtime/build-pod.ts` |
+| Toolbox authoring, pin, publish, transfer | `api/app/toolbox-ops.ts`, `control/modules/toolbox*` |
+| Auto-resume on access | `api/forward-auth.ts`, `api/auth.routes.ts` (`/auth/wake`), `SandboxOps.ensureRunning` |
+| Cron jobs | `api/scheduler.ts` |
+| Idle auto-pause | `api/idle-reaper.ts`, `runtime/activity.ts`, `control/modules/idle-policy/` |
+| Config keys and which are console-editable | `config/config.schema.ts`, `control/modules/server-config/registry.ts` |
+| Agent HTTP/WS client, token, timeouts | `runtime/agent/` (`agent.contract.ts` holds the shared constants) |
+| Agent tasks and results | `sessions/task.service.ts`, `sessions/task-result.ts`, `api/sessions.routes.ts` |
+| Secrets resolution at boot | `control/enrichment.ts` (`resolveBootSpec`) |
+| Default org, server admin rule | `control/default-org.ts` |
+| Migrations | `drizzle/` (generate with `bun run db:generate`) |
 
 ## The seam
 
-`RuntimeService` (`runtime/runtime.service.ts`) is `runtime.create(spec)` as
-a function signature policy code cannot reach past. `SandboxSpec`
-(`@atelier/spec`) is the one document the runtime understands — no
-`harness`, `mcp`, `skills`, or `dev` fields. Those are user-defined content:
-files + processes + ports, composed client-side by `@atelier/compose`.
+`RuntimeService` (`runtime/runtime.service.ts`) is a facade over
+`PrebuildService`, `ToolsetService` and the lifecycle code, reachable as
+`runtime.prebuilds` and `runtime.toolsets`. `SandboxSpec` (`@atelier/spec`) is
+the one document the runtime understands: files, processes and ports. There
+are no `harness`, `mcp` or `skills` fields. Harness content is composed in
+`harnesses/` and applied in `control/enrichment.ts`.
+
+Stored specs keep `{"$secret": "NAME"}` references. `resolveBootSpec` resolves
+secrets and rebuilds git credentials at every boot (create, resume, fork), so
+no secret value or token sits in a stored spec. The runtime receives the
+resolver as `RuntimeDeps.resolveBootSpec`.
 
 ## Commands
 
 ```bash
-ATELIER_SERVER_MODE=mock bun run --watch src/index.ts   # dev, no K8s needed
-bun run scripts/check-boundaries.ts                       # enforce module boundaries
-bun run typecheck                                          # tsc --noEmit (TypeScript 7)
-bunx drizzle-kit generate                                  # control/db schema migration
+bun run dev               # local mode, Docker backend, :4000 (needs Docker)
+bun run check:boundary    # module boundaries
+bun run typecheck         # tsc --noEmit
+bun run db:generate       # drizzle-kit generate (control, runtime and sessions schemas)
+bun run generate-schema   # regenerate schemas/*.json from config/config.schema.ts
 ```
 
-## Conventions
+Run them from `apps/server`, or from the root with `bun run --filter
+@atelier/server <script>`.
 
-See root `AGENTS.md`: manual DI in
-`api/container.ts` / `control/container.ts`, `createChildLogger("name")`,
-the `SandboxError` hierarchy, TypeBox schemas. The difference is *where*
-things live, not the wiring style.
+## Modes
+
+`ATELIER_SERVER_MODE` is `production` (default) or `local`. Local bypasses
+auth (one fixed user, everyone is a server admin) and skips the SSH gateway.
+The backend is chosen separately by `ATELIER_RUNTIME_BACKEND`
+(`kubernetes` or `docker`). Production requires `SANDBOX_SECRETS_KEY`.
 
 ## Browser-consumable `App` type
 
-Browser clients (`apps/console`) type their Eden Treaty client with
-`import type { App } from "@atelier/server"`, so the console's TS program
-(DOM lib) traverses this package's source. DOM's `WebSocket.send()` excludes
-`SharedArrayBuffer`-backed views, so the WS byte-relays cast outgoing chunks
-`as Uint8Array<ArrayBuffer>` (`api/v1.routes.ts`, `api/sessions.routes.ts`,
-`sessions/acp/acp-stream.ts`). The values are always `ArrayBuffer`-backed at
-runtime (Bun delivers binary frames as `Buffer`); the cast is a lib-compat
-narrowing only. Any new Bun-specific WS/stream code that participates in the
-`App` type may need the same narrowing.
-
-The process-attach WS (`/v1/sandboxes/:id/attach/:name`) accepts an optional
-`?mode=rw|ro` query (default `rw`): `ro` joins the runtime's read-only
-fan-out and drops any client→upstream bytes. This is a pure passthrough —
-`runtime.attach(id, name, mode)` already models both modes; the route just
-exposes the existing capability so the GUI can offer a read-only attach.
+The console types its Eden Treaty client with `import type { App } from
+"@atelier/server"`, so its TS program (DOM lib) reads this package's source.
+DOM's `WebSocket.send()` excludes `SharedArrayBuffer`-backed views, so the WS
+byte relays cast outgoing chunks `as Uint8Array<ArrayBuffer>`
+(`api/v1.routes.ts`, `api/sessions.routes.ts`, `sessions/acp/acp-stream.ts`).
+The values are always `ArrayBuffer`-backed at runtime. New Bun-specific WS or
+stream code that participates in the `App` type may need the same cast.
 
 ## Sandbox access rule
 
-`control/sandbox-access.ts` (`canAccessSandbox`, pure) is the one rule for
-who may address a sandbox id: owner (`atelier.dev/owner-id`) or member of its
-org (`atelier.dev/org-id`); bypassed-auth modes are open, a sandbox with
-neither label is reachable by nobody. `api/sandbox-guard.ts` binds it: ONE `onBeforeHandle` guard per
-router whose `:id` is a sandbox (`/v1` after the jobs sub-router,
-`/sessions/sandboxes/:id/{agent,terminal}`), `requireSandboxAccess` in the WS
-`open` handlers and every MCP tool taking a sandbox id, `accessibleSandboxes`
-for list endpoints. Denied and unknown are the same `NotFoundError`. A new
-`/v1` route with a sandbox `:id` is covered by registering it after the
-guard; the guard only acts on paths under its prefix (`/v1/sandboxes/`,
-`/sessions/sandboxes/`), and a missing user is a 401 except on a WS upgrade
-(the socket's `open` check covers it). A sandbox id arriving in a body or
-query (e.g. `POST /api/toolboxes/:id/versions/capture`) needs an explicit
-`requireSandboxAccess`.
-Not covered: `/v1/jobs` (feed unscoped), secrets routes.
+`control/sandbox-access.ts` (`canAccessSandbox`) is the one rule for who may
+address a sandbox id: the owner (`atelier.dev/owner-id`) or a member of its
+org (`atelier.dev/org-id`). Auth-bypassed mode is open, and a sandbox with
+neither label is reachable by nobody. `api/sandbox-guard.ts` binds it: one
+`onBeforeHandle` guard per router whose `:id` is a sandbox, `requireSandboxAccess`
+in WS `open` handlers and in every MCP tool taking a sandbox id, and
+`accessibleSandboxes` for list endpoints. Denied and unknown both answer
+`NotFoundError`. A new `/v1` route with a sandbox `:id` is covered by
+registering it after the guard. A sandbox id arriving in a body or query needs
+an explicit `requireSandboxAccess`. Not covered: `/v1/jobs` (the feed is
+unscoped).
 
-## Integrations
+## Server admins
 
-`integrations/` is a registry of compiled-in links to external agent UIs
-(`catalog.ts` lists them; `integration.ts` is the contract). The operator
-enables each with `ATELIER_INTEGRATION_<ID>=true` (read once at boot by
-`registry.ts`, never over the API); each person connects their own account
-(`/api/integrations`, `control/modules/integration-connection/`). Vendor code
-lives only in `integrations/<id>/`.
+A server admin is an owner of the org named by `auth.defaultOrg`
+(`control/default-org.ts`). Admin-only: `PUT /api/config`, image build,
+register and delete, toolset publish and remove, prebuild delete, and the
+whole `/mcp/admin` endpoint. If `auth.defaultOrg` is unset, or in local mode,
+everyone is an admin.
 
-- **Boundary** (`check:boundary`): `integrations/` never imports `control/`,
-  `sessions/` or `runtime/`; a vendor dir imports only `../integration.ts`,
-  `shared/` and packages; only `catalog.ts` imports a vendor dir. Everything
-  an integration touches arrives as arguments wired in `api/container.ts`.
-- **Outbound:** `IntegrationHub` (`hub.ts`) is the `PermissionNotifier` of
-  `AgentDispatch`. It routes a prompt to the sandbox OWNER's connections,
-  filtered by risk and delay; the first answer wins and never throws.
+## Related docs
 
-See `docs/integrations/README.md`.
-
-## Idle auto-pause
-
-`docs/proposals/sandbox-idle-autopause.md`. One rule (the operator's
-`sandbox.idle.*` config keys; no org or user override except a bounded
-keep-awake annotation) over activity clocks, split along the boundaries:
-
-- `runtime/activity.ts`: the in-memory recorder. `runtime.touch(id, signal)`
-  (called for mutating runtime ops, create/resume, and by the callbacks
-  below) and `runtime.pollActivity` (agent `GET /activity`, thresholds passed
-  in). Not persisted: a restart floors every clock at the restart.
-- `control/modules/idle-policy/`: reads the keys, validates keep-awake, and
-  the pure `evaluateIdle`.
-- `api/idle-reaper.ts`: the `Bun.cron` every minute (index.ts), the
-  activity view, list decoration, keep-awake. It is the only place that
-  sees ACP work (`AgentDispatch.workFor`) and jobs together with the rule.
-- Signal hooks reach the runtime through callbacks wired in
-  `api/container.ts` / `ssh/index.ts` (`AgentDispatch` `onActivity`, the SSH
-  proxy's `onActivity`) or directly in api/ (`ws-relay.ts` `isUserInput`).
-
-## Status notes & known gaps
-
-- **Runtime runs on the in-pod agent (`apps/agent`).**
-  `runtime/agent-config.ts` (`specToAgentConfig`) losslessly projects the
-  spec onto the agent; boot pushes config via `PUT /config` (never
-  ConfigMap-mounted) + `files/write`, then drives the phase order
-  (postCreate -> reconcile -> primary `/health` gate -> postStart). Live-ops
-  routes (process start/stop/logs/status, attach, addProcess) all target the
-  agent's `/processes` + unified attach bridge (:9997). The agent image is
-  built from `apps/agent` (self-building multi-stage image: the release
-  workflow, or `infra/k8s/deploy.sh agent` in-cluster); the in-pod binary
-  path stays `/usr/local/bin/sandbox-agent` (dev-base COPYs the agent's
-  `/atelier-agent` there, so `sandbox-boot.sh` is unchanged).
-- **No event bus.** The original POC's auth-sync watcher and cliproxy
-  refresh were not carried over; add them when a feature needs them.
-  Prebuild staleness is handled: `index.ts` schedules
-  `refreshStalePrebuilds` + `pruneUnusedPrebuilds` as a
-  `Bun.cron("*/30 * * * *")` job, gated on the `prebuild.gitTracking`
-  config and skipped in mock mode.
-- **Toolbox refresh** (docs/toolbox-versions.md §10): `api/toolbox-refresh.ts`
-  runs a toolbox's update commands over its pinned version in a throwaway
-  pod (`runtime.refreshToolset`), saves and pins the result. Triggered by
-  `POST /api/toolboxes/:id/refresh`, MCP `manage_toolbox action=refresh`,
-  and a `Bun.cron("* * * * *")` tick in `index.ts` for due schedules (every
-  mode).
-- **Toolset tier (composed-prebuild-volumes.md) is COMPLETE end-to-end.**
-  Built (`POST /v1/toolsets`) + captured (`POST /sandboxes/:id/toolsets/
-  capture`) artifacts, agent materialize before files/env, `shared-binaries`
-  killed (org toolbox is a built toolset), publish/delete lifecycle, full
-  CLI + console surface. Deferred (proposal §6 items 8–10, independent
-  control-plane work): repo-tier commit-keying/head-watching, the rung-1
-  baked-pair cache, host-share/overlay perf spikes.
-- **Pause/resume contract (fixed — was the `resume()` PVC collision).**
-  `pause()` syncs, snapshots, persists `pauseSnapshotRef` on the record,
-  then deletes pod/service/pipe (PVC kept). `resume()` reuses the live PVC
-  when it still exists (no clone, no 409), else clones from the persisted
-  pause snapshot, else falls back to the original `spec.source`; `error`
-  records are resumable (the recovery route). Lifecycle ops (create/pause/
-  resume/snapshot/destroy) serialize per sandbox id via an op lock and
-  check status preconditions; `reconcileOnStartup()` sweeps zombie
-  `creating`/pod-less `running` records to `error` at boot. Contract is
-  pinned by `src/runtime/runtime.lifecycle.test.ts`.
+- Idle auto-pause and auto-resume: `docs/idle-autopause.md`
+- Toolbox versions, refresh and transfer: `docs/toolbox-versions.md`
+- Config keys: `docs/advanced-configuration.md`
+- Conventions and DI: `docs/patterns.md`

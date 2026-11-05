@@ -1,5 +1,5 @@
 /**
- * Runtime's tables. Per design.md §3.1: `sandboxes(id, spec, status,
+ * Runtime's tables. Per docs/archive/design.md §3.1: `sandboxes(id, spec, status,
  * generated, metadata)` and `snapshots(hash, parent, ref)` — deliberately NO
  * FK to any identity table. `control/` treats the runtime as an
  * authenticated principal it talks to, not a database it joins against, and
@@ -95,7 +95,7 @@ export const images = sqliteTable("images", {
   seedId: text("seed_id"),
   /** The `sha256:...` digest resolved after a successful build/push. */
   digest: text("digest"),
-  /** Last-N lines of build output, for the images page/CLI to show without
+  /** Last-N lines of build output, for the images page to show without
    * requiring the build's live `/logs` stream to still be open. */
   buildLog: text("build_log"),
   error: text("error"),
@@ -168,7 +168,7 @@ export const toolsets = sqliteTable(
 );
 
 /**
- * Which toolset refs each sandbox has mounted (toolset-overlay-squashfs.md
+ * Which toolset refs each sandbox has mounted (docs/archive/proposals/toolset-overlay-squashfs.md
  * §6-7) — a many-to-many join, deliberately not a column on `sandboxes` (one
  * toolset can be referenced by many sandboxes) and not a column on
  * `toolsets` (one sandbox mounts many toolsets). Sole job: GC guard —

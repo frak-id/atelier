@@ -5,7 +5,9 @@
 > Code: agent `apps/agent/src/activity/` (`GET /activity`) · runtime
 > `apps/server/src/runtime/activity.ts` (recorder) · policy
 > `apps/server/src/control/modules/idle-policy/` · reaper
-> `apps/server/src/api/idle-reaper.ts` · contract
+> `apps/server/src/api/idle-reaper.ts`, scheduled in
+> `apps/server/src/api/scheduler.ts` · wake `apps/server/src/api/forward-auth.ts`
+> and `apps/server/src/api/app/sandbox-ops.ts` · contract
 > `packages/spec/src/sandbox-activity.ts`.
 
 ## 1. Problem
@@ -28,7 +30,7 @@ and operator rules for acting on it.
 | Per-process network | Not measured. Kata's stock guest kernel has no `inet_diag`, so traffic can't be attributed to a connection, let alone a process; the agent measures per interface. |
 | Agents | Nothing per provider. An ACP turn driven through Atelier counts as `agent`; an agent used through its own terminal or web UI counts through what it does (traffic, file edits, the user's typing). |
 | Who sets the rules | The **operator** only, through the server config plane (`sandbox.idle.*`). No org layer: an org can't change the idle time. A user can only ask to keep one sandbox awake, for a bounded time. |
-| Agent waiting on a person | A pending ACP permission request **blocks** the pause, as does a turn in flight. |
+| Agent running | A turn in flight **blocks** the pause. Agents never wait on a person: permission requests are auto-approved. |
 | Calibration | No P0 spike. Thresholds are guesses (§4), `observe` mode first, tuned after deployment. |
 
 About "DNS queries": sandbox hostnames resolve through wildcard DNS, so no
@@ -44,9 +46,9 @@ server.
 |---|---|---|
 | `ssh` | Client→sandbox bytes on a shell, exec or sftp channel (in-server SSH gateway). Port forwards (VS Code Remote-SSH) are measured as `network`, because their keepalives must stay under the threshold. | server, `ssh/proxy.ts` |
 | `console` | Client→sandbox frames on the attach (rw) and terminal relays: keystrokes, pastes and resizes, not output, and not the replies a terminal emulator sends on its own (cursor position, device attributes, OSC colors), which a TUI may poll. | server, `api/ws-relay.ts` |
-| `api` | A mutating runtime call: exec, files, env, process start/stop/add, ports, rw attach (HTTP `/v1` and MCP alike). Reads never count, the console polls them. | runtime |
+| `api` | A mutating runtime call: exec, files, process start/stop, ports, rw attach (HTTP `/v1` and MCP alike). Reads never count, the console polls them. | runtime |
 | `lifecycle` | Create and resume. The idle clock starts there. | runtime |
-| `agent` | An ACP turn driven through Atelier: a prompt starting or ending, a permission request (a turn in flight blocks the pause, §5). Any harness speaking ACP. Not `session/update`: the agent's attach bridge replays its output to every new connection, so a reconnect (the console listing sessions) would re-deliver an old turn's updates. | `sessions/acp/agent-dispatch.ts` |
+| `agent` | An ACP turn driven through Atelier: a prompt starting or ending (a turn in flight blocks the pause, §5). Any harness speaking ACP. Not `session/update`: the agent's attach bridge replays its output to every new connection, so a reconnect (the console listing sessions) would re-deliver an old turn's updates. | `sessions/acp/agent-dispatch.ts` |
 | `network` | Bytes received + sent per minute on the sandbox's interfaces, minus the agent's own control traffic. Counts when a minute reaches the threshold. | agent |
 | `files` | Writes under the home (where repos are cloned), minus build output, dependencies and the hidden tool state at the top of the home. | agent |
 | `cpu` | CPU time per minute above a threshold. Off by default. | agent |
@@ -66,7 +68,7 @@ The agent samples every 5 s into one-minute buckets
   (the activity poll, a console tab's terminal or logs: about 165 KB a
   minute was measured with the sandbox page open), so the agent counts the
   payload bytes it moves on its control ports (a wrapper on the streams
-  accepted on 9998, 9997 and 7681) and subtracts them, carrying them one
+  accepted on 9998 and 9997) and subtracts them, carrying them one
   sample because a write is counted before it reaches the wire. What remains
   is the TCP/IP headers of that traffic, a few KB a minute. The first sample
   is a baseline: boot traffic isn't activity.
@@ -111,7 +113,7 @@ Anyone with access to the sandbox may set it.
 
 ## 5. The reaper
 
-`api/idle-reaper.ts`, run every minute by `Bun.cron` in `index.ts`
+`api/idle-reaper.ts`, run every minute by `Bun.cron` in `api/scheduler.ts`
 (try/catch-guarded like the other crons), in every server mode; the
 `sandbox.idle.mode` key decides what it does. For each running sandbox,
 8 at a time:
@@ -121,8 +123,7 @@ Anyone with access to the sandbox may set it.
 2. Evaluates (`evaluateIdle`, pure):
    `lastActiveAt = max(counted signals, lifecycle, recorder start)`,
    `pausesAt = lastActiveAt + minutes`.
-3. Blockers, whatever the clock says: an ACP turn in flight, a pending
-   permission request, an active job targeting the sandbox (snapshot,
+3. Blockers, whatever the clock says: an ACP turn in flight, an active job targeting the sandbox (snapshot,
    capture, fork), a lifecycle op in progress, keep-awake in the future, and
    in `enforce` an agent that doesn't report while network/files/CPU are
    enabled.
@@ -160,10 +161,10 @@ delay a pause, never cause an early one.
 - `GET /v1/sandboxes` rows carry `idle: { mode, state, lastActiveAt,
   pausesAt? }`.
 - Console: an Activity card on the sandbox page (state, countdown,
-  keep-awake menu, signals, traffic per minute); the idle state in the
-  sandbox list; the rules on the Server configuration page.
-- MCP: `get_sandbox` returns `idle`; `sandbox_lifecycle` gains
-  `keep_awake` with `hours` (0 clears; the surface stays at 14 tools).
+  keep-awake button, signals, traffic per minute); the idle state in the
+  sandbox list; the rules on Settings > Config.
+- MCP: `get_sandbox` returns `idle`; `sandbox_lifecycle` has a
+  `keep_awake` action with `hours` (0 clears).
 
 ## 7. Prior art
 
@@ -172,18 +173,45 @@ delay a pause, never cause an early one.
 - **Coder**: autostop with an activity bump from agent-reported sessions. It
   counts sessions; we count bytes, because of the open-tab decision.
 
-## 8. Not in scope
+## 8. Auto-resume
 
-- A notice before pausing (console banner, `IntegrationHub`).
+A paused sandbox wakes when someone uses it. It keeps its Service and
+Ingresses while paused (only the pod is deleted), so a request still reaches
+Traefik and its forward-auth middleware.
+
+| Access | What happens |
+|---|---|
+| Tool URL with `auth: "forward"` | `GET /auth/forward`: when the caller is signed in and can access the sandbox (`canAccessSandbox`), the server starts a resume and answers 503. |
+| Public preview URL | The Ingress carries the `atelier-wake` middleware (`kubernetes.wakeIngressAnnotations`), which calls `GET /auth/wake`. It needs no login, resumes the sandbox and answers 503. It answers 200 when the sandbox is not paused. |
+| SSH | `ssh/index.ts` resumes the sandbox and waits up to 3 minutes. Channels opened during the wait are buffered. |
+| Operations | `exec`, files, `manage_process` and `send_prompt` (HTTP `/v1` and MCP) call `SandboxOps.ensureRunning(id)`, which joins an in-flight resume and waits up to 120 s. A resume that fails is a 409 and the command never runs. |
+
+The 503 is an auto-refreshing "Waking up sandbox" page for browser page loads
+and a `Retry-After` response for everything else. Only `paused` wakes: an
+`error` sandbox stays an error, and a `creating` one is left alone. Resumes
+run as an unpooled `sandbox-resume` job and concurrent requests share one. A
+failed wake-up has a 30 s cooldown, so a broken sandbox is not retried on
+every page refresh. The resume uses the owner's stored credentials, not the
+caller's, and goes through the same boot-time secret resolution as any resume.
+
+Not covered: `expose_port` and live env or process changes do not auto-resume.
+`/auth/wake` is unauthenticated by design: anyone who holds a preview URL (the
+sandbox id in the host is unguessable) can resume that sandbox. A wake counts
+as `lifecycle` activity, so the idle clock restarts.
+
+## 9. Not in scope
+
+- A notice before pausing (a console banner).
 - Keeping a sandbox awake with no end: raise `maxKeepAwakeHours` instead.
 - Per-process or per-direction traffic (needs a guest kernel with
   `inet_diag`).
 - Editing the file filter at runtime: it is compiled into the agent.
-- Wake on request: a paused sandbox's URLs still just fail.
-- Dormancy: destroying, or GC'ing snapshots of, long-paused sandboxes.
+- Dormancy: destroying long-paused sandboxes. (Snapshots are collected: a
+  resume deletes the previous pause snapshot, and a destroy sweeps the
+  sandbox's snapshots.)
 - Persisting the recorder across restarts.
 
-## 9. To check after the first deployment
+## 10. To check after the first deployment
 
 1. Per-minute bytes of an idle sandbox with code-server, opencode web,
    pi-web open, and with VS Code Remote-SSH connected (the Activity card's

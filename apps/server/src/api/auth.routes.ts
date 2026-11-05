@@ -312,7 +312,7 @@ export function createAuthRoutes(container: ServerContainer) {
         }),
       },
     )
-    // Public: lets the console detect an auth-bypassed (local/mock) server so
+    // Public: lets the console detect an auth-bypassed (local) server so
     // it can drop the user straight in instead of showing a GitHub button.
     .get("/mode", () => ({ bypassed: isAuthBypassed() }))
     .get("/me", async ({ cookie, set }) => {

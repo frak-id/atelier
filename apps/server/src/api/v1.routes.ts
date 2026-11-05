@@ -1,5 +1,5 @@
 /**
- * `/v1/*` — the whole runtime API (design.md §2 "Runtime API (the whole
+ * `/v1/*` — the whole runtime API (docs/archive/design.md §2 "Runtime API (the whole
  * thing)"). Thin HTTP: authenticate (control), parse, then call the
  * application layer (`sandboxOps`, `toolboxOps`) or the runtime. The runtime
  * itself never sees an unauthenticated caller.
@@ -284,7 +284,7 @@ export function createV1Routes(container: ServerContainer) {
         async ({ query, user, set }) => {
           control.defaultOrg.requireServerAdmin(user.id);
           // Throws ConflictError when a live/paused sandbox still has this
-          // ref mounted (toolset-overlay-squashfs.md §7) — the shared
+          // ref mounted (docs/archive/proposals/toolset-overlay-squashfs.md §7) — the shared
           // onError handler (api/index.ts) maps SandboxError subclasses to
           // their `statusCode`, so this surfaces as a 409 with no extra
           // handling needed here.

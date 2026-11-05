@@ -142,12 +142,12 @@ where
         (&Method::POST, "/files/write") => handle_write_files(req).await,
         // Build+push a toolset artifact from declared home path-sets (the
         // runtime drives this in a throwaway build pod; the tail of the
-        // toolset build path — composed-prebuild-volumes.md §2).
+        // toolset build path — docs/archive/proposals/composed-prebuild-volumes.md §2).
         (&Method::POST, "/toolsets/build") => {
             json_call(req, MAX_REQUEST_BODY_BYTES, toolset::build).await
         }
         // Capture a live sandbox's declared path-sets into a toolset artifact
-        // (secret-scanned, exclude-filtered) — composed-prebuild-volumes.md §2
+        // (secret-scanned, exclude-filtered) — docs/archive/proposals/composed-prebuild-volumes.md §2
         // "captured (result-keyed)".
         (&Method::POST, "/toolsets/capture") => {
             json_call(req, MAX_REQUEST_BODY_BYTES, toolset::capture).await

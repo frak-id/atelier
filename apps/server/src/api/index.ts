@@ -1,5 +1,5 @@
 /**
- * The HTTP shell (design.md §3.1): `/v1/* → runtime` (through control's
+ * The HTTP shell (docs/archive/design.md §3.1): `/v1/* → runtime` (through control's
  * authn + enrichment), `/api/* → control CRUD`, `/sessions/* → sessions`,
  * `/mcp → same three`.
  */

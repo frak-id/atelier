@@ -1,5 +1,5 @@
 /**
- * Entity-scoped toolbox configs (entities-toolbox.md). A toolbox config is the
+ * Entity-scoped toolbox configs. A toolbox config is the
  * control-plane, editable input to a `ToolsetBuildRequest`
  * (`toolset-spec.ts`) — control/compose knowledge, never seen by `runtime/`.
  * Each toolbox belongs to one org (a user's "personal" toolboxes live in
@@ -109,7 +109,7 @@ export const ToolboxRefreshStatusSchema = Type.Object(
 export type ToolboxRefreshStatus = Static<typeof ToolboxRefreshStatusSchema>;
 
 /**
- * Optional harness this toolbox provides (entities-toolbox.md). A harness id
+ * Optional harness this toolbox provides. A harness id
  * (e.g. "opencode", "pi") the api/ seam composes into the spawn's spec when no
  * higher-precedence harness is present (the spec's own harness wins over a toolbox's). The
  * toolbox's `build[]`/`paths[]` install the agent binary; this field declares
@@ -126,7 +126,7 @@ export const ToolboxHarnessSchema = Type.String({
  * Caller-supplied shape for create (and the base for patch).
  *
  * A toolbox is not just files: its `processes`/`ports` carry the *runtime
- * surface* of a tool (`runtime-surface.ts`, entities-toolbox.md) — e.g.
+ * surface* of a tool (`runtime-surface.ts`) — e.g.
  * vscode's `code-server` process + its public port, or the browser stack's
  * kasmvnc/openbox/chromium processes (whose binaries are baked into the
  * base image, so `build`/`paths` are empty). Mark long-running ones
@@ -189,7 +189,7 @@ export type ToolboxConfig = Static<typeof ToolboxConfigSchema>;
 /**
  * Partial update — everything but `slug` (immutable identity). Includes
  * `autoInject` as a first-class field: a pure `{autoInject:false}` patch must
- * not touch `build`/`paths` (per-org-toolboxes.md Oracle refinement R9).
+ * not touch `build`/`paths`.
  */
 export const ToolboxConfigPatchSchema = Type.Object(
   {

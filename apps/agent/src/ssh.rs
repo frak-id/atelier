@@ -1,7 +1,7 @@
 //! `GET /ssh/host-keys` — returns the sshd host public key line(s)
 //! (`/etc/ssh/ssh_host_*_key.pub`) so the runtime can pin them into the
-//! sshpiper `Pipe`'s `known_hosts_data` / the in-server proxy's host
-//! verifier instead of trusting the upstream blindly.
+//! in-server SSH proxy's host verifier instead of trusting the upstream
+//! blindly.
 //!
 //! Sandboxes no longer bake host keys into the image (dropped `ssh-keygen
 //! -A` from the Dockerfile): `sandbox-boot.sh` now runs it fresh on every

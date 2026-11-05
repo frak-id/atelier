@@ -1,5 +1,5 @@
 /**
- * Agent-neutral ACP hub (design.md §3.1 "sessions/"). Speaks ACP JSON-RPC to
+ * Agent-neutral ACP hub (docs/archive/design.md §3.1 "sessions/"). Speaks ACP JSON-RPC to
  * a sandbox's harness by **attaching to the already-supervised `acp` process**
  * through the runtime's unified attach bridge (agent attach.rs on :9997) —
  * not by spawning a per-session bridge subprocess. The `acp` process is

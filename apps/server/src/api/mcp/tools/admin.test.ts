@@ -385,7 +385,7 @@ describe("manage_images", () => {
   });
 });
 
-// ── list_toolboxes ──────────────────────────────────────────────────────────
+// ── manage_toolbox list ──────────────────────────────────────────────────────────
 
 function world() {
   const user = newUser();

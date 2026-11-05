@@ -127,7 +127,7 @@ export function resolveSpecToolsets(spec: SandboxSpec): string[] | undefined {
 }
 
 /** The host-relative refs a spec mounts, as the `sandbox_toolset_refs` join
- * stores them (toolset-overlay-squashfs.md §6-7). */
+ * stores them (docs/archive/proposals/toolset-overlay-squashfs.md §6-7). */
 export function toRefEntries(
   toolsetRefs: SandboxSpec["toolsets"],
 ): Array<{ ref: string }> {

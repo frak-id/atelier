@@ -3,7 +3,7 @@
  * becomes an Ingress routed at `{name}-{sandboxId}.{baseDomain}`. `auth:
  * "forward"` attaches the operator's forward-auth annotations, any other
  * public port the wake-only ones. No service
- * types, no protocols, no LB config (design.md §2 "ports stay thin").
+ * types, no protocols, no LB config (docs/archive/design.md §2 "ports stay thin").
  */
 import type { PortEntry } from "@atelier/spec";
 import { config } from "../shared/lib/config.ts";

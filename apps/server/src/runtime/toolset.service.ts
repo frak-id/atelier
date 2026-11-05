@@ -98,7 +98,7 @@ export class ToolsetService {
 
   /**
    * Build a reproducible, input-keyed toolset artifact
-   * (composed-prebuild-volumes.md §2). Runs `build[]` in a throwaway pod (as
+   * (docs/archive/proposals/composed-prebuild-volumes.md §2). Runs `build[]` in a throwaway pod (as
    * `dev`, so tools land in the home), then has the agent tar the `paths[]`
    * and `oras push` them to the registry. Idempotent: keyed by
    * `hash(source ⊕ build ⊕ paths)`; a hit returns instantly; concurrent builds
@@ -302,7 +302,7 @@ export class ToolsetService {
   }
 
   /** Delete a toolset record. Refuses when a live/paused sandbox still has it
-   * mounted (toolset-overlay-squashfs.md §7): deleting it out from under one
+   * mounted (docs/archive/proposals/toolset-overlay-squashfs.md §7): deleting it out from under one
    * would 404 a future `getByRef`/compose lookup for that ref. The registry
    * blob itself is left to zot retention/GC; this only drops the runtime's
    * handle to it. The mount set is the `sandbox_toolset_refs` join, populated
@@ -320,7 +320,7 @@ export class ToolsetService {
 
   /**
    * Capture a live sandbox's declared path-sets into a toolset artifact
-   * (composed-prebuild-volumes.md §2 "captured (result-keyed)"). The agent
+   * (docs/archive/proposals/composed-prebuild-volumes.md §2 "captured (result-keyed)"). The agent
    * tars `paths` minus the merged exclude globs, secret-scans the included
    * files, and pushes — no baseline diff (there's nothing to diff against at
    * capture time). Result-keyed: unlike `build`, there is no content hash to

@@ -1,6 +1,7 @@
 # Toolbox-Associated Toolset Versions ("Save toolset for toolbox")
 
-Status: **implemented**. §10 (refresh) was added later.
+Status: **implemented**. §10 (refresh) and §11 (ownership, files, transfer)
+were added later.
 
 Lets an operator spawn a sandbox from a toolbox, tune a tool's config live in
 that sandbox, then **save that live state back as a new, named version of the
@@ -14,10 +15,10 @@ current code; references point at the real entities.
 
 Two artifacts, on two sides of the runtime seam:
 
-- **Toolbox** — control-plane DB entity (`entity_toolboxes`,
-  `apps/server/src/control/db/schema.ts`), owned by an `org` or a `user`.
+- **Toolbox** — control-plane DB entity (`toolboxes`,
+  `apps/server/src/control/db/schema.ts`), owned by an org (`org_id`; see §11).
   Fields: `{ slug, description, source?, build[], paths[], harness?, processes?,
-  ports?, autoInject }`. It is the editable **recipe**: `source` = git/image,
+  ports?, files?, autoInject }`. It is the editable **recipe**: `source` = git/image,
   `build[]` = shell steps (e.g. `npm install -g --prefix ~/.local
   @earendil-works/pi-coding-agent pi-acp @jmfederico/pi-web`), `paths[]` =
   home-relative paths to capture into the artifact.
@@ -29,14 +30,15 @@ Two artifacts, on two sides of the runtime seam:
   - `built`: **input-keyed**. `hash = sha256({name, source, build, paths})`
     (`hashToolset`). Idempotent + inflight-deduped. Runs `build[]` in a
     throwaway `dev-base` pod as `dev`, then `oras push` of `paths[]`.
-  - `captured`: **result-keyed**. `POST /v1/sandboxes/:id/toolsets/capture
-    {name, paths, exclude, overrides}` tars the **live** paths out of a running
-    sandbox, secret-scans, pushes. `hash = digest` (no pre-image),
+  - `captured`: **result-keyed**. `ToolboxOps` asks the runtime
+    (`runtime.captureToolset`) to tar the **live** paths out of a running
+    sandbox, secret-scan and push them. There is no standalone capture route:
+    capture happens through a toolbox (§7). `hash = digest` (no pre-image),
     `private: true`, `provenance:{kind:"captured", capturedFrom}`.
 
-At spawn (`resolveToolboxRefs`, `apps/server/src/api/container.ts`), for each
-applied toolbox the server calls `buildToolset({name:"tb/<ownerType>/<ownerId>/
-<slug>", source, build, paths})` **fresh every spawn** (no memo; relies on the
+At spawn (`ToolboxOps.resolveForSpawn`, `apps/server/src/api/app/toolbox-ops.ts`),
+for each applied toolbox the server calls `buildToolset({name:"tb/<toolboxId>",
+source, build, paths})` **fresh every spawn** (no memo; relies on the
 content-hash cache). The resulting `ToolsetRef`s are prepended to
 `SandboxSpec.toolsets`, which the agent materializes into `$HOME` at boot.
 
@@ -65,7 +67,7 @@ explicit and versionable.
   of the toolbox's deliverable **provided it captures the toolbox's own
   `paths[]` contract** (see the invariant below).
 - The toolbox gains an **active pin**: a nullable `active_version_id`.
-  - Pin set → `resolveToolboxRefs` returns the pinned `ref` directly and
+  - Pin set → `resolveForSpawn` returns the pinned `ref` directly and
     **skips `buildToolset` entirely**.
   - Pin null → today's behavior (recipe build, content-hash cached),
     byte-for-byte unchanged.
@@ -114,18 +116,18 @@ entities, same boundary rule as harness names). The settings "toolset details"
 view joins version rows to runtime records by `ref`.
 
 ```
-entity_toolbox_versions:
+toolbox_versions:
   id            text PK
-  toolbox_id    text  FK → entity_toolboxes.id   (indexed)
+  toolbox_id    text  FK → toolboxes.id   (indexed)
   label         integer     -- monotonic per toolbox: v1, v2, …
-  ref           text        -- toolsets/tb/<owner>/<slug>@sha256:…
+  ref           text        -- toolsets/tb/<toolboxId>@sha256:…
   description   text
   provenance    text json   -- {kind:"captured", capturedFrom, capturedBy}
                             -- | {kind:"built", recipeHash, sourceImageDigest}
   created_at    text
 
-entity_toolboxes:
-  + active_version_id  text  nullable   -- FK → entity_toolbox_versions.id
+toolboxes:
+  + active_version_id  text  nullable   -- FK → toolbox_versions.id
 ```
 
 - Do **not** put `description` on the runtime toolset record — it is a
@@ -165,12 +167,11 @@ Capture-as-pin is fine; capture-as-the-only-story is dangerous.
 
 ## 6. Failure & UX edges
 
-- **Who can capture-for-toolbox?** First cut: only the toolbox's owner (a user captures
-  a user toolbox; an org admin captures an org toolbox). Trap: a user capturing
-  an org toolbox and pinning it org-wide ships their personal config (and creds)
-  to everyone. If a user wants to personalize an org toolbox, the existing model
-  already answers it — capture into a **user-owned overlay toolbox** (user
-  toolboxes already shadow org ones at spawn).
+- **Who can capture-for-toolbox?** A member of the toolbox's org. Trap: a
+  member capturing a shared toolbox and pinning it org-wide ships their
+  personal config (and creds) to everyone. The publish-before-pin guard (§5)
+  covers it: a private capture cannot be pinned until it is published. To
+  personalize, capture into a toolbox of your **personal org**.
 - **Concurrent captures**: harmless. Captures are result-keyed; each is a
   distinct version row; last pin wins. No dedup needed.
 - **GC / retention**: never GC the active pin or the latest `built` row. Keep
@@ -185,16 +186,16 @@ Capture-as-pin is fine; capture-as-the-only-story is dangerous.
 
 ## 7. Recommended first cut (small, corner-free)
 
-1. **Migration**: `entity_toolbox_versions` table + `active_version_id` column
-   on `entity_toolboxes`.
-2. **Capture endpoint**: `POST /control/toolboxes/:id/versions/capture
+1. **Migration**: `toolbox_versions` table + `active_version_id` column
+   on `toolboxes`.
+2. **Capture endpoint**: `POST /api/toolboxes/:id/versions/capture
    { sandboxId, description }`. Server derives `name` / `paths` / `exclude` from
    the toolbox config, calls the existing `runtime.captureToolset`, inserts a
    row with `label = max+1`. **Does not auto-pin** — returns the row. Pinning is
    a second, explicit call.
-3. **Pin endpoint**: `PUT /control/toolboxes/:id/active-version { versionId | null }`.
+3. **Pin endpoint**: `PUT /api/toolboxes/:id/active-version { versionId | null }`.
    Sets/clears `active_version_id`; records `recipeHash` at pin time.
-4. **Resolution**: in `resolveToolboxRefs` / `resolveSelectedToolboxes`, if the
+4. **Resolution**: in `ToolboxOps.resolveForSpawn`, if the
    config has an active version → push its `ref` and **skip the build** (keep
    the existing try/catch skip-on-failure semantics).
 5. **Console**:
@@ -270,13 +271,12 @@ loop on the server (`api/toolbox-refresh.ts`).
   an older version. This replaces the §7 "Save and Pin as two steps" rule
   for refreshes only: a refresh is the operator's explicit "update what
   every spawn gets".
-- **Publish**: on an org toolbox the refreshed artifact is published, since
-  it replaces a version that was already shared org-wide and the
-  publish-before-pin guard requires it. A user toolbox's stays private.
+- **Publish**: the refreshed artifact is always published, since a pin
+  reaches every member's sandbox and the publish-before-pin guard requires
+  it.
 - **Triggers**: Settings → Toolboxes → Refresh in the console,
   `POST /api/toolboxes/:id/refresh` (a `202` job of kind `toolbox-refresh`),
-  MCP `manage_toolbox` `action=refresh`, `atelier toolbox refresh <id>`, and
-  the schedule. One refresh per toolbox at a time: triggering it again
+  admin MCP `manage_toolbox` `action=refresh`, and the schedule. One refresh per toolbox at a time: triggering it again
   returns the job already running.
 - **Schedule**: `refreshSchedule`, a cron expression (5 fields, or a nickname
   like `@daily`), read in UTC and parsed by `Bun.cron.parse`. At most once an
@@ -288,8 +288,8 @@ loop on the server (`api/toolbox-refresh.ts`).
   runs a missed slot once.
 - **Outcome**: `lastRefresh` on the toolbox, `{ at, trigger, outcome:
   updated | unchanged | failed, versionId?, pinned?, error?, jobId? }`. It is
-  shown in the console, in `list_toolboxes` (`refresh.last`) and in `atelier
-  toolbox ls`. Nobody is notified elsewhere (no Steery or Slack message).
+  shown in the console and in admin MCP `manage_toolbox` `action=list`
+  (`refresh.last`). Nobody is notified elsewhere.
 
 Left out on purpose:
 
@@ -301,3 +301,39 @@ Left out on purpose:
   native modules the commands do not touch stay as they were captured.
 - A recipe edit made while a version is pinned is still ignored; the
   "recipe changed since pin" badge still applies.
+
+---
+
+## 11. Ownership, files and transfer
+
+Status: **implemented**.
+
+- **Org-owned only.** A toolbox belongs to an org (`org_id`). There are no
+  user-owned toolboxes: every user has a personal org, and a toolbox you keep
+  for yourself lives there. The unique key is `(org_id, slug)`. Any member of
+  the org can create and edit its toolboxes. Anyone creating a toolbox picks
+  the org with `owner=me` (your personal org, the default) or `owner=org:<id>`.
+- **Artifact name.** A toolbox builds to `tb/<toolboxId>`
+  (`toolboxArtifactName`), and `create_sandbox` selects one with the selector
+  `tb/<toolboxId>`. The caller must belong to the toolbox's org, else 403.
+  Version rows created before the migration keep their old
+  `tb/<ownerType>/<ownerId>/<slug>` refs, and pinned versions still resolve
+  through the stored ref. An unpinned toolbox rebuilds once under the new name.
+- **Files.** A toolbox can carry `files`, entries of `{path, content, mode,
+  owner}` (content is text or a `$secret` reference) written into every
+  sandbox that applies the toolbox. A toolbox with only `files` (no `paths`, no
+  build) is valid and builds no toolset. Files merge into the spec before
+  enrichment; a file the spec itself declares at the same path wins. This
+  replaces the old per-org policy.
+- **Org defaults.** The migration turned each org's policy into an
+  auto-inject toolbox named `org-defaults` holding the policy's files,
+  processes, ports and harness. Policy hooks had no equivalent and were
+  dropped.
+- **Transfer.** `GET /api/transfers/preview?from=<orgId>&to=<orgId>` and `POST
+  /api/transfers {from, to, selection: {secrets, toolboxes}}` move secrets and
+  toolboxes between orgs by org id. The caller must own the source org and be a
+  member of the target. Moving secrets also needs ownership of the target, so a
+  member cannot write secrets into a team org. Admin MCP `manage_toolbox`
+  `action=transfer` does the same (`dryRun` previews).
+- **Version deletes** take the toolbox id and return 404 for a version of
+  another toolbox.

@@ -34,10 +34,10 @@ export const Route = createFileRoute("/library/prebuilds/")({
 });
 
 /**
- * The repo tier beside the toolset tier (composed-prebuild-volumes.md):
+ * The repo tier beside the toolset tier (docs/archive/proposals/composed-prebuild-volumes.md):
  * content-addressed VolumeSnapshots, chained, node-local. The top card lists
  * the user's GitHub repos with one-click prebuild creation. The list below
- * is every stored snapshot, including ones made by hand or from the CLI.
+ * is every stored snapshot, including ones made by hand or over MCP.
  */
 function PrebuildsPage() {
   return (

@@ -146,7 +146,7 @@ export function buildSandboxPod(options: SandboxPodOptions): KubeResource {
           command: ["/etc/sandbox/sandbox-boot.sh"],
           // runAsUser 0 + CAP_SYS_ADMIN: the agent loop-mounts squashfs
           // toolset blobs and assembles the /home/dev overlay from INSIDE the
-          // container (toolset-overlay-squashfs.md §3). uid 0 alone gets the
+          // container (docs/archive/proposals/toolset-overlay-squashfs.md §3). uid 0 alone gets the
           // default OCI capability set, which excludes CAP_SYS_ADMIN, so
           // mount(2) would EPERM. Cheap under Kata: the VM (not the container
           // capset) is the isolation boundary. Pre-cutover, verify in a booted

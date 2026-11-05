@@ -7,7 +7,7 @@ import { useServiceGate } from "@/hooks/use-service-gate";
 
 /** A url is "not running" only when it declares gating processes AND the
  * server says they're not all ready — no gating info means always show as a
- * normal link (design ui-evolution.md §4.2: never hide, and don't guess). */
+ * normal link (never hide, and don't guess). */
 export function UrlsSection({
   sandboxId,
   urls,
@@ -36,7 +36,7 @@ export function UrlsSection({
 }
 
 function UrlRow({ sandboxId, url }: { sandboxId: string; url: SandboxUrl }) {
-  // Same gate as the ImmersiveView iframe (design ui-evolution.md §4.2), so a
+  // Same gate as the ImmersiveView iframe, so a
   // URL's running/not-running state can't diverge between the two surfaces.
   const gate = useServiceGate(sandboxId, url);
 

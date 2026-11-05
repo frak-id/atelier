@@ -123,7 +123,7 @@ describe("RuntimeService lifecycle", () => {
     expect(runtime.snapshot("sb1")).rejects.toThrow(ConflictError);
   });
 
-  // ── toolset mount bookkeeping (toolset-overlay-squashfs.md §6-7) ────────
+  // ── toolset mount bookkeeping (docs/archive/proposals/toolset-overlay-squashfs.md §6-7) ────────
 
   // `getForSandbox` was removed as dead code (H4) — these assert through
   // `referencedRefs()`, the one accessor an actual caller (the `deleteToolset`

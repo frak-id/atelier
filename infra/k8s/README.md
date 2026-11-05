@@ -34,7 +34,9 @@ release in sync with it when either side changes.
 - `atelier-v2-sandboxes` ns: sandbox pods land here. opencode +
   code-server are the `org-toolbox` built toolset artifact (published to Zot,
   materialized by the guest agent at boot into `~/.local`) — no PVC/Job
-  (composed-prebuild-volumes.md §6 "kill shared-binaries").
+  (`docs/archive/proposals/composed-prebuild-volumes.md` §6 "kill
+  shared-binaries"). A default-deny NetworkPolicy
+  (`85-network-policy.yaml`) admits only the server pod and Traefik.
 - Runtime class: sandboxes run under `kata-atelier-clh-rs` (`30-config.yaml`),
   a kata-deploy `customRuntimes` = stock runtime-rs `clh-runtime-rs` + a Kata
   `config.d` drop-in (virtio-blk + `block_device_cache_direct`) and a 384Mi
@@ -65,6 +67,21 @@ kubectl --context hetzner-atelier -n atelier-v2-system create secret generic ate
   --from-literal=SANDBOX_SECRETS_KEY=<32-char-hex>
 ```
 
+`SANDBOX_SECRETS_KEY` is required: the server refuses to start in production
+without it. It also encrypts users' stored GitHub tokens, so never rotate it
+casually.
+
+## Config rule
+
+`30-config.yaml` holds infrastructure keys only: domains, namespaces, auth
+(including `auth.defaultOrg`), registry, storage, runtime class, ingress
+annotations and the image builder. Operational keys (idle auto-pause,
+retention, jobs concurrency, default image, size and resources, agent image)
+are edited by server admins on the console Config page. Setting one in the file
+locks it, so leave them out unless you want to pin them. The server refuses to
+start on invalid JSON or an unknown key. See
+[`docs/advanced-configuration.md`](../../docs/advanced-configuration.md).
+
 The GitHub OAuth app's callback URL must be
 `https://atelier.hetzner-staging.frak.id/auth/callback`, org restricted to
 `frak-id`.
@@ -82,7 +99,8 @@ kubectl --context hetzner-atelier apply -f infra/k8s/40-server-pvc.yaml
 kubectl --context hetzner-atelier apply -f infra/k8s/50-deployment.yaml
 kubectl --context hetzner-atelier apply -f infra/k8s/60-service.yaml
 kubectl --context hetzner-atelier apply -f infra/k8s/70-ingress.yaml
-# forward-auth for `auth: "forward"` tool URLs (referenced by 30-config.yaml)
+# forward-auth for `auth: "forward"` tool URLs and the atelier-wake middleware for
+# public previews (both referenced by 30-config.yaml)
 kubectl --context hetzner-atelier apply -f infra/k8s/80-forward-auth.yaml
 # default-deny ingress for sandbox pods (only the server + ingress controller get in)
 kubectl --context hetzner-atelier apply -f infra/k8s/85-network-policy.yaml
@@ -107,6 +125,9 @@ infra/k8s/deploy.sh agent dev-base  # bootstrap: rebuild the base-image chain
   with `imagePullPolicy: IfNotPresent`, so a node restart never pulls a
   different image. The manifest in `50-deployment.yaml` keeps the floating
   `:v2` as the bootstrap value for a first apply.
+- `deploy.sh` applies `60-service.yaml`, `80-forward-auth.yaml` and
+  `30-config.yaml` before the roll, but **not** `85-network-policy.yaml`: apply
+  that one by hand. See `docs/setup.md` for the upgrade order.
 - `agent` and `dev-base` are opt-in: the running server builds base images on
   demand through BuildKit (`imageBuilder.kind=buildkit`). Build them by hand
   only to bootstrap a fresh registry. `dev-base` COPYs the agent from Zot, so

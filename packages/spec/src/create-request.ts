@@ -24,7 +24,7 @@ import {
  * latest toolset build; `prebuild` is a recipe resolved (idempotently, a cache
  * hit when unchanged) to the current snapshot, overriding `source`. A plain
  * `SandboxSpec` (neither field) is still a valid body, so the
- * CLI/editor paths are unchanged.
+ * editor paths are unchanged.
  *
  * `orgId` picks the organization the sandbox runs in: its secrets, policy
  * and auto-injected toolboxes. The caller must be a member; absent, it's

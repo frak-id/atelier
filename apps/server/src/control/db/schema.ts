@@ -1,5 +1,5 @@
 /**
- * Control's tables. Per design.md §3.1: "everything identity-shaped lives
+ * Control's tables. Per docs/archive/design.md §3.1: "everything identity-shaped lives
  * here and ONLY here". No FK to runtime's `sandboxes`/`snapshots` tables —
  * control treats the runtime as an authenticated principal talks to, not a
  * database it joins against.
@@ -122,7 +122,7 @@ export const apiKeys = sqliteTable(
 );
 
 /**
- * Org-owned toolbox configs (entities-toolbox.md). "Personal" means "in the
+ * Org-owned toolbox configs. "Personal" means "in the
  * user's personal org". `source`/`build`/`paths` mirror `ToolboxConfigInput`;
  * `files` are written into every sandbox the toolbox applies to (secret refs
  * resolved by enrichment). Auto-inject toolboxes are built into refs and

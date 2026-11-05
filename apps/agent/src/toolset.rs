@@ -1,4 +1,4 @@
-//! Toolset artifact build/push (docs/proposals/toolset-overlay-squashfs.md).
+//! Toolset artifact build/push (docs/archive/proposals/toolset-overlay-squashfs.md).
 //! The agent packages declared home path-sets as a single read-only erofs
 //! blob and pushes it as an OCI artifact to the in-cluster registry by
 //! shelling out to the baked `oras` + `mkfs.erofs` CLIs. Materialize is the
@@ -29,7 +29,7 @@ use crate::command;
 const HOME: &str = "/home/dev";
 const SKEL: &str = "/home/skel";
 /// Overlay upperdir/workdir/blob-store — all on the PVC (mounted at `/data`,
-/// see docs/proposals/toolset-overlay-squashfs.md §3). Blobs living here
+/// see docs/archive/proposals/toolset-overlay-squashfs.md §3). Blobs living here
 /// (not in a per-sandbox tmpfs) is what makes resume registry-independent —
 /// a pause `VolumeSnapshot` of `/data` carries them.
 const DATA_UPPER: &str = "/data/upper";
@@ -42,7 +42,7 @@ const RUN_TOOLSETS: &str = "/run/toolsets";
 /// Written by `materialize` as its last step, once `/home/dev` is fully
 /// assembled. `sandbox-boot.sh` waits for this file before starting sshd —
 /// the race-free handshake that replaces the old base-overlay-then-remount
-/// design (docs/proposals/toolset-overlay-squashfs.md §5): nothing can hold
+/// design (docs/archive/proposals/toolset-overlay-squashfs.md §5): nothing can hold
 /// `/home/dev` busy before this point, because nothing touches it before
 /// this point.
 pub(crate) const HOME_READY_MARKER: &str = "/run/home-ready";
@@ -50,7 +50,7 @@ pub(crate) const HOME_READY_MARKER: &str = "/run/home-ready";
 /// either this or HOME_READY_MARKER, so a genuine failure starts sshd (onto a
 /// degraded home, for diagnosis) immediately instead of burning the full pull
 /// budget waiting for a `/run/home-ready` that will never appear
-/// (toolset-overlay-squashfs.md §5).
+/// (docs/archive/proposals/toolset-overlay-squashfs.md §5).
 const HOME_FAILED_MARKER: &str = "/run/home-failed";
 /// The last successful materialize's toolset selection, persisted on the PVC
 /// (so it rides the pause snapshot). Read by `self_heal_home` to re-assemble
@@ -247,7 +247,7 @@ pub struct MaterializeResult {
 }
 
 /// Capture a live sandbox's declared path-sets into a toolset artifact
-/// (composed-prebuild-volumes.md §2 "captured (result-keyed)"). NOT a
+/// (docs/archive/proposals/composed-prebuild-volumes.md §2 "captured (result-keyed)"). NOT a
 /// baseline diff (there is no prior snapshot to diff against at capture
 /// time) — the mechanism is path-set selection: squash exactly `paths` MINUS
 /// `exclude` globs (compose-declared additions to the built-in secret-file
@@ -760,7 +760,7 @@ async fn pull_blobs_concurrently(
 }
 
 /// Materialize toolset artifacts into the home as a **mount, not a copy**
-/// (docs/proposals/toolset-overlay-squashfs.md §5). Digest-pinned refs are
+/// (docs/archive/proposals/toolset-overlay-squashfs.md §5). Digest-pinned refs are
 /// deduplicated, then pulled to `/data/toolsets/<digest>.<ext>` (`.erofs`,
 /// `.sqfs`, or `.tzst`, whichever format the builder used — the last is a
 /// zstd tarball, extracted into a plain lowerdir instead of loop-mounted, for

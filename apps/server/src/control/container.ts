@@ -1,6 +1,6 @@
 /**
  * Control's composition root. Manual-wiring convention (AGENTS.md "DI: Manual
- * wiring in container.ts"), scoped to exactly what design.md §3.1 assigns to
+ * wiring in container.ts"), scoped to exactly what docs/archive/design.md §3.1 assigns to
  * control/: identity, orgs, secrets, toolboxes, and the enrichment
  * pipeline.
  */

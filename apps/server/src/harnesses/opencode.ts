@@ -4,7 +4,7 @@
  * not in spec composition).
  *
  * "opencode with these MCP servers" → files + the acp process + annotations
- * (design.md §3).
+ * (docs/archive/design.md §3).
  */
 import type { Harness } from "./harness.ts";
 import type { SpecFragment } from "./spec-merge.ts";
@@ -85,8 +85,8 @@ function composeOpencode(opts: ComposeOpencodeOptions = {}): SpecFragment {
       },
       {
         // Named to match the `opencode` port below — the console resolves
-        // "which URL is the harness UI" by that convention (design
-        // ui-evolution.md §3.3). Lazy: normally only `acp` runs; `serve` starts
+        // "which URL is the harness UI" by that convention.
+        // Lazy: normally only `acp` runs; `serve` starts
         // on demand when a user opens the harness's own web UI, so the two
         // processes sharing opencode's session store only coexist when asked.
         name: "opencode",

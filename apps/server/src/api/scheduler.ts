@@ -91,7 +91,7 @@ export function startScheduler(container: ServerContainer): void {
     }),
   );
 
-  // Idle auto-pause (docs/proposals/sandbox-idle-autopause.md): poll every
+  // Idle auto-pause (docs/idle-autopause.md): poll every
   // running sandbox's activity, and pause the idle ones when the operator's
   // `sandbox.idle.mode` is `enforce` (read every tick, like the rest of the
   // rule). Every mode: the mode key decides what a tick does.

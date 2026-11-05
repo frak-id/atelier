@@ -1,6 +1,6 @@
 /**
  * Bounded spec enrichment — the mutations control performs on a spec as it
- * crosses the seam (design.md §3.2), in two steps:
+ * crosses the seam (docs/archive/design.md §3.2), in two steps:
  *   - `enrichSpec`, at create: the harness composition, the owner stamp and
  *     the sandbox domain for dev servers' host checks. Its output is what the
  *     runtime STORES: `$secret` refs stay refs, and no credential is in it.

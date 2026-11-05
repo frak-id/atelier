@@ -1,5 +1,5 @@
 /**
- * Request/response shapes for the runtime API (design.md §2 "Runtime API").
+ * Request/response shapes for the runtime API (docs/archive/design.md §2 "Runtime API").
  * These are the wire contract at the seam — the whole thing.
  */
 import { type Static, Type } from "@sinclair/typebox";
@@ -11,7 +11,7 @@ import { PortAuthSchema, SandboxSpecSchema } from "./sandbox-spec.ts";
 /**
  * Runtime-generated values returned in the create response. The spec stays a
  * pure input; mid-boot values (agent password, pod IP, per-sandbox tokens)
- * come back here (design.md §6 phase 1 "mid-boot values").
+ * come back here (docs/archive/design.md §6 phase 1 "mid-boot values").
  */
 export const GeneratedSchema = Type.Object(
   {
@@ -34,7 +34,7 @@ export const SandboxUrlSchema = Type.Object(
   {
     name: Type.String(),
     url: Type.String(),
-    /** All processes that gate this URL (design ui-evolution.md §4.1). Undefined
+    /** All processes that gate this URL. Undefined
      * when the port has no declared gating process (e.g. `ssh`). */
     processes: Type.Optional(Type.Array(Type.String())),
     /** True iff every process in `processes` is live-ready. Undefined when

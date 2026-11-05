@@ -7,7 +7,7 @@ Things that will break the system if ignored.
 | Component | Runtime | Why |
 |-----------|---------|-----|
 | Server API | **Bun** | Performance, native Elysia |
-| Console | **Vite/Browser** | React SPA, static deploy |
+| Console | **Vite/Browser** | React SPA, static deploy (nginx) |
 | Sandbox Agent | **Rust (Tokio)** | Static musl binary — Bun crashes (SIGILL) inside Kata VMs due to AVX instruction issues |
 
 ```bash
@@ -37,7 +37,7 @@ Prebuilds need a CSI driver with VolumeSnapshot support (e.g. TopoLVM) **and** t
 
 ## OpenCode Config Is Read Once
 
-OpenCode reads `~/.config/opencode/opencode.json` (plugins + the baked CLIProxy API key) at bootstrap and never re-reads it. The spawn ordering `create CLIProxy key → sync configs → start opencode` cannot be reordered — opencode must not start before the config write lands.
+OpenCode reads `~/.config/opencode/opencode.json` (plugins and provider config) at bootstrap and never re-reads it. Spec files, including toolbox `files`, are written before processes start, and that order must not change: opencode must not start before its config lands.
 
 ## Cloudflare
 
@@ -51,15 +51,40 @@ Sandbox destruction deletes everything labeled `atelier.dev/sandbox={id}` (pods,
 
 code-server, opencode, and any org toolbox are built as content-addressed toolset artifacts (`toolsets/{name}@{digest}`), pushed to Zot, and materialized into the overlay home by the in-pod agent before the primary process starts. There is no shared `ReadOnlyMany` PVC or populate Job (the former `shared-binaries` mount, removed) — a missing toolset means materialize fails for that sandbox, not a global outage.
 
-## Mock Mode
+## Local Mode Needs Linux or OrbStack
 
-The server runs without KVM/K8s locally:
+`docker-compose.local.yml` runs the server and console with host networking,
+and the Docker backend dials sandboxes at `127.0.0.1:<published port>`. On
+Docker Desktop the "host" is its VM, so those dials fail. Local mode bypasses
+auth and has no VM isolation: sandboxes are Docker containers, and the SSH
+gateway does not start. There is no mock mode: `ATELIER_SERVER_MODE` is
+`production` or `local`.
 
-```bash
-ATELIER_SERVER_MODE=mock bun run --filter @atelier/server dev
-```
+For development, `bun run --filter @atelier/server dev` runs local mode with
+the Docker backend and needs a running Docker daemon.
 
-All infrastructure services check `isMock()` and return mock responses.
+## The Agent Needs Its Token
+
+The in-pod agent rejects every HTTP route except `GET /health`, and its
+WebSocket listener, without `Authorization: Bearer <AGENT_PASSWORD>` (a
+`?token=` query works for WebSockets). The server and agent image must be
+rolled together: an old agent ignores the token and still serves a dead
+terminal port, and a new server dials terminals on the attach port. Terminal
+traffic uses the attach port (9997); there is no 7681.
+
+## Sandbox Pods Are Default-Deny
+
+`infra/k8s/85-network-policy.yaml` allows ingress to sandbox pods only from the
+Atelier server and from Traefik in `kube-system`. If your ingress controller
+runs elsewhere or is labelled differently, tool URLs time out until you edit
+both selectors in that file. Egress is open.
+
+## Previews Are Public
+
+A prebuild's dev-server ports skip forward-auth, so their URLs work without an
+Atelier login. They carry the `atelier-wake` middleware, which resumes a
+paused sandbox without asking who you are. Do not put anything private behind
+a prebuild dev-server port.
 
 ## TUI Warp Phantom-Instance (Upstream Bug)
 

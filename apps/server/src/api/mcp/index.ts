@@ -45,7 +45,7 @@ const log = createChildLogger("mcp");
 const SESSION_IDLE_MS = 30 * 60 * 1000;
 
 /** Any non-empty placeholder — `resolveToken`/`verifyJwt` ignore its content
- * when auth is bypassed (mock/local). */
+ * when auth is bypassed (local mode). */
 const MOCK_TOKEN = "mock";
 
 interface McpSession {
@@ -89,7 +89,7 @@ async function resolveMcpUser(
   request: Request,
 ): Promise<AuthUser> {
   const token = bearerFrom(request);
-  // Auth-bypassed modes (mock/local) have no real bearer token to send;
+  // Auth-bypassed mode (local) has no real bearer token to send;
   // `resolveToken` throws on a missing token, but `verifyJwt` (which it
   // delegates to for non-`atl_` tokens) ignores its input entirely when auth
   // is bypassed and always returns the fixed mock user — so any non-empty

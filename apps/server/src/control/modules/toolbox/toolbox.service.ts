@@ -1,5 +1,5 @@
 /**
- * Org-owned toolbox config CRUD (entities-toolbox.md §4). The api/ seam
+ * Org-owned toolbox config CRUD. The api/ seam
  * (`container.ts` `resolveSpawnToolboxes`) turns `listAutoInject()` results
  * into built `ToolsetRef`s at spawn time; this service knows nothing about
  * `runtime/` or building — pure control-plane config storage.

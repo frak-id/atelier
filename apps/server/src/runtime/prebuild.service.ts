@@ -469,7 +469,7 @@ export class PrebuildService {
 
   /** Resolve the content key for a prebuild: source resolved to its current
    * image/snapshot, plus each repo's current remote HEAD. `env` is
-   * intentionally excluded (design.md §2): it carries build-time secrets
+   * intentionally excluded (docs/archive/design.md §2): it carries build-time secrets
    * (tokens) that must never enter a persisted content key, and is treated
    * as credential material rather than artifact-identifying input. */
   private async resolveContentKey(
