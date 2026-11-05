@@ -5,7 +5,7 @@ import type {
 } from "@atelier/spec";
 import { useQueries, useQuery } from "@tanstack/react-query";
 import { createFileRoute, Link, useNavigate } from "@tanstack/react-router";
-import { ChevronDown, Loader2, Rocket } from "lucide-react";
+import { ChevronDown, Loader2, Rocket, RotateCw } from "lucide-react";
 import { useEffect, useState } from "react";
 import { toast } from "sonner";
 import { organizationsListQuery } from "@/api/queries/organizations";
@@ -25,11 +25,19 @@ import {
   CardHeader,
   CardTitle,
 } from "@/components/ui/card";
+import { CollapsibleSection } from "@/components/ui/collapsible-section";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Skeleton } from "@/components/ui/skeleton";
-import { formatRelativeTime } from "@/lib/formatters";
+import { Textarea } from "@/components/ui/textarea";
+import { formatRelativeTime, repoBranchLabel } from "@/lib/formatters";
 import { pickDefaultOrgId } from "@/lib/orgs";
+import {
+  loadRecentSpawns,
+  type RecentSpawn,
+  saveRecentSpawns,
+  withRecentSpawn,
+} from "@/lib/recent-spawns";
 import { composeSpec, parseSpecJsonc, validateSandboxSpec } from "@/lib/spec";
 
 interface SpawnSearch {
@@ -60,10 +68,12 @@ function SpawnPage() {
   const [selectedToolboxes, setSelectedToolboxes] = useState<Set<string>>(
     new Set(),
   );
+  const [recents, setRecents] = useState(loadRecentSpawns);
   const { data: orgs } = useQuery(organizationsListQuery());
   const [orgId, setOrgId] = useState("");
-  // Default to the caller's personal org once it's loaded; the picker still
-  // lets them run the spawn in any other org they belong to.
+  // Default to the team org (the server's `auth.defaultOrg`, else the
+  // caller's personal org) once loaded; the picker still lets them run the
+  // spawn in any other org they belong to.
   useEffect(() => {
     if (!orgId && orgs && orgs.length > 0) {
       setOrgId(pickDefaultOrgId(orgs));
@@ -73,9 +83,9 @@ function SpawnPage() {
   /** The spec skeleton every spawn path starts from: the shared resources.
    * The harness and any tool surfaces (vscode, browser, …) come from the
    * toolboxes applied to the spawn, never from hardcoded UI toggles. */
-  function baseSpec(image: string): SandboxSpec {
+  function baseSpec(source: SandboxSpec["source"]): SandboxSpec {
     return composeSpec({
-      image,
+      source,
       vcpus: Math.max(1, Math.round(Number(resources.vcpus) || 1)),
       memoryMb: Math.max(256, Math.round(Number(resources.memoryMb) || 256)),
     });
@@ -101,6 +111,7 @@ function SpawnPage() {
       // `metadata.sandboxId` lets us jump straight to the detail page, which
       // renders the `creating` record and live-updates as the spawn runs.
       onSuccess: (data) => {
+        rememberSpawn(withOrg);
         const sandboxId = data?.metadata?.sandboxId;
         if (sandboxId) {
           toast.success("Spawning sandbox…");
@@ -117,6 +128,35 @@ function SpawnPage() {
     });
   }
 
+  /** Keep a repo spawn in the "Recent" list (the repo card tags its requests
+   * with `metadata.repo` / `metadata.branch`). */
+  function rememberSpawn(request: CreateSandboxRequest) {
+    const repo = request.metadata?.repo;
+    if (!repo) return;
+    const next = withRecentSpawn(recents, {
+      repo,
+      branch: request.metadata?.branch,
+      toolboxes: request.toolboxes ?? [],
+      resources: resources,
+      orgId: request.orgId ?? orgId,
+    });
+    setRecents(next);
+    saveRecentSpawns(next);
+  }
+
+  /** Restore a recent spawn's options and select its repo/branch, so one
+   * click on Spawn repeats it. */
+  function spawnAgain(recent: RecentSpawn) {
+    setResources(recent.resources);
+    setSelectedToolboxes(new Set(recent.toolboxes));
+    if (recent.orgId) setOrgId(recent.orgId);
+    navigate({
+      to: "/spawn",
+      search: { repo: recent.repo, branch: recent.branch },
+      replace: true,
+    });
+  }
+
   function loadIntoEditor(spec: SandboxSpec) {
     setEditorText(JSON.stringify(spec, null, 2));
   }
@@ -124,8 +164,6 @@ function SpawnPage() {
   return (
     <div className="mx-auto max-w-3xl space-y-4">
       <h1 className="text-xl font-semibold">Spawn a sandbox</h1>
-
-      <OrgPickerCard orgId={orgId} onOrgIdChange={setOrgId} />
 
       <RepoSpawnCard
         repo={search.repo}
@@ -144,6 +182,12 @@ function SpawnPage() {
         spawnPending={spawn.isPending}
       />
 
+      <RecentSpawns recents={recents} onSpawnAgain={spawnAgain} />
+
+      {(orgs?.length ?? 0) > 1 ? (
+        <OrgPickerCard orgId={orgId} onOrgIdChange={setOrgId} />
+      ) : null}
+
       <SpawnOptionsCard
         resources={resources}
         onResourcesChange={setResources}
@@ -151,20 +195,70 @@ function SpawnPage() {
         onSelectedToolboxesChange={setSelectedToolboxes}
       />
 
-      <PrebuildSpawnSection
-        baseSpec={baseSpec}
-        onSpawn={spawnWithOptions}
-        spawnPending={spawn.isPending}
-        onOpenInEditor={loadIntoEditor}
-      />
+      <CollapsibleSection title="Advanced" defaultOpen={false}>
+        <div className="space-y-4">
+          <PrebuildSpawnSection
+            baseSpec={baseSpec}
+            onSpawn={spawnWithOptions}
+            spawnPending={spawn.isPending}
+            onOpenInEditor={loadIntoEditor}
+          />
 
-      <EditorSection
-        text={editorText}
-        onTextChange={setEditorText}
-        onSpawn={spawnFromSpec}
-        spawnPending={spawn.isPending}
-      />
+          <EditorSection
+            text={editorText}
+            onTextChange={setEditorText}
+            onSpawn={spawnFromSpec}
+            spawnPending={spawn.isPending}
+          />
+        </div>
+      </CollapsibleSection>
     </div>
+  );
+}
+
+// ── recent spawns ───────────────────────────────────────────────────────
+
+function RecentSpawns({
+  recents,
+  onSpawnAgain,
+}: {
+  recents: RecentSpawn[];
+  onSpawnAgain: (recent: RecentSpawn) => void;
+}) {
+  if (recents.length === 0) return null;
+  return (
+    <Card>
+      <CardHeader>
+        <CardTitle className="text-base">Recent</CardTitle>
+      </CardHeader>
+      <CardContent className="space-y-2">
+        {recents.map((recent) => (
+          <div
+            key={`${recent.repo}#${recent.branch ?? ""}`}
+            className="flex items-center justify-between gap-2 rounded-md border p-2"
+          >
+            <span className="min-w-0 truncate font-mono text-sm">
+              {repoBranchLabel(recent.repo, recent.branch)}
+              {recent.toolboxes.length > 0 ? (
+                <span className="text-xs text-muted-foreground">
+                  {" "}
+                  · {recent.toolboxes.length} toolbox
+                  {recent.toolboxes.length === 1 ? "" : "es"}
+                </span>
+              ) : null}
+            </span>
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() => onSpawnAgain(recent)}
+            >
+              <RotateCw />
+              Spawn again
+            </Button>
+          </div>
+        ))}
+      </CardContent>
+    </Card>
   );
 }
 
@@ -189,7 +283,7 @@ function OrgPickerCard({
           />
         </div>
         <p className="text-xs text-muted-foreground">
-          Uses this organization's secrets, policy and toolboxes.
+          Uses this organization's secrets and toolboxes.
         </p>
       </CardContent>
     </Card>
@@ -299,7 +393,7 @@ function SpawnOptionsCard({
           </div>
         ) : (
           <p className="text-sm text-muted-foreground">
-            No toolboxes yet. Add one under Settings → Toolboxes to layer a
+            No toolboxes yet. Add one under Library → Toolboxes to layer a
             harness or tools onto your sandboxes.
           </p>
         )}
@@ -318,7 +412,7 @@ function PrebuildSpawnSection({
   spawnPending,
   onOpenInEditor,
 }: {
-  baseSpec: (image: string) => SandboxSpec;
+  baseSpec: (source: SandboxSpec["source"]) => SandboxSpec;
   onSpawn: (request: CreateSandboxRequest) => void;
   spawnPending: boolean;
   onOpenInEditor: (spec: SandboxSpec) => void;
@@ -331,7 +425,7 @@ function PrebuildSpawnSection({
   } = useQuery(prebuildsListQuery());
 
   function buildSpec(snapshotRef: string): SandboxSpec {
-    return { ...baseSpec("unused"), source: { snapshot: snapshotRef } };
+    return baseSpec({ snapshot: snapshotRef });
   }
 
   return (
@@ -355,8 +449,8 @@ function PrebuildSpawnSection({
         ) : !prebuilds || prebuilds.length === 0 ? (
           <p className="text-sm text-muted-foreground">
             No prebuilds yet. Pick a repository above, or create one under{" "}
-            <Link to="/settings/prebuilds" className="underline">
-              Settings → Prebuilds
+            <Link to="/library/prebuilds" className="underline">
+              Library → Prebuilds
             </Link>
             .
           </p>
@@ -457,7 +551,7 @@ function EditorSection({
         <CardDescription>Edit the spec directly as JSONC.</CardDescription>
       </CardHeader>
       <CardContent className="space-y-3">
-        <textarea
+        <Textarea
           value={text}
           onChange={(e) => {
             onTextChange(e.target.value);
@@ -465,7 +559,7 @@ function EditorSection({
             setErrors([]);
           }}
           spellCheck={false}
-          className="min-h-64 w-full rounded-md border bg-muted/30 p-3 font-mono text-xs"
+          className="min-h-64 p-3"
           placeholder='{"source": {"image": "dev-base:latest"}, "resources": {"vcpus": 2, "memoryMb": 2048}}'
         />
         {errors.length > 0 ? (

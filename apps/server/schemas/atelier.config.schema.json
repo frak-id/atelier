@@ -1,0 +1,368 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "type": "object",
+  "properties": {
+    "domain": {
+      "default": {},
+      "type": "object",
+      "properties": {
+        "baseDomain": {
+          "default": "localhost",
+          "type": "string"
+        },
+        "dashboard": {
+          "default": "",
+          "type": "string"
+        },
+        "ssh": {
+          "default": {},
+          "type": "object",
+          "properties": {
+            "port": {
+              "default": 2222,
+              "type": "number"
+            },
+            "hostname": {
+              "default": "",
+              "type": "string"
+            },
+            "listenPort": {
+              "default": 2222,
+              "type": "number"
+            },
+            "upstreamUser": {
+              "default": "dev",
+              "type": "string"
+            }
+          }
+        }
+      }
+    },
+    "auth": {
+      "default": {},
+      "type": "object",
+      "properties": {
+        "github": {
+          "default": {},
+          "type": "object",
+          "properties": {
+            "clientId": {
+              "default": "",
+              "type": "string"
+            },
+            "clientSecret": {
+              "default": "",
+              "type": "string"
+            }
+          }
+        },
+        "jwtSecret": {
+          "default": "dev-secret-change-in-production",
+          "type": "string"
+        },
+        "allowedOrg": {
+          "type": "string"
+        },
+        "allowedUsers": {
+          "default": [],
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "defaultOrg": {
+          "type": "string"
+        }
+      }
+    },
+    "server": {
+      "default": {},
+      "type": "object",
+      "properties": {
+        "mode": {
+          "default": "production",
+          "anyOf": [
+            {
+              "const": "production",
+              "type": "string"
+            },
+            {
+              "const": "local",
+              "type": "string"
+            }
+          ]
+        },
+        "port": {
+          "default": 4000,
+          "type": "number"
+        },
+        "host": {
+          "default": "0.0.0.0",
+          "type": "string"
+        }
+      }
+    },
+    "runtime": {
+      "default": {},
+      "type": "object",
+      "properties": {
+        "backend": {
+          "default": "kubernetes",
+          "anyOf": [
+            {
+              "const": "kubernetes",
+              "type": "string"
+            },
+            {
+              "const": "docker",
+              "type": "string"
+            }
+          ]
+        }
+      }
+    },
+    "jobs": {
+      "default": {},
+      "type": "object",
+      "properties": {
+        "concurrency": {
+          "default": 4,
+          "minimum": 1,
+          "type": "number"
+        }
+      }
+    },
+    "prebuild": {
+      "default": {},
+      "type": "object",
+      "properties": {
+        "gitTracking": {
+          "default": true,
+          "type": "boolean"
+        },
+        "pruneKeep": {
+          "default": 3,
+          "minimum": 0,
+          "type": "number"
+        }
+      }
+    },
+    "snapshot": {
+      "default": {},
+      "type": "object",
+      "properties": {
+        "manualKeep": {
+          "default": 5,
+          "minimum": 1,
+          "type": "number"
+        }
+      }
+    },
+    "kubernetes": {
+      "default": {},
+      "type": "object",
+      "properties": {
+        "namespace": {
+          "default": "atelier-sandboxes",
+          "type": "string"
+        },
+        "kubeconfig": {
+          "default": "/etc/rancher/k3s/k3s.yaml",
+          "type": "string"
+        },
+        "runtimeClass": {
+          "default": "kata-atelier-clh-rs",
+          "type": "string"
+        },
+        "ingressClassName": {
+          "default": "",
+          "type": "string"
+        },
+        "toolIngressClusterIssuer": {
+          "default": "",
+          "type": "string"
+        },
+        "registryUrl": {
+          "default": "",
+          "type": "string"
+        },
+        "storageClass": {
+          "default": "",
+          "type": "string"
+        },
+        "volumeSnapshotClass": {
+          "default": "",
+          "type": "string"
+        },
+        "defaultVolumeSize": {
+          "default": "10Gi",
+          "type": "string"
+        },
+        "vsCodeIngressAnnotations": {
+          "default": {},
+          "type": "object",
+          "patternProperties": {
+            "^(.*)$": {
+              "type": "string"
+            }
+          }
+        },
+        "wakeIngressAnnotations": {
+          "default": {},
+          "type": "object",
+          "patternProperties": {
+            "^(.*)$": {
+              "type": "string"
+            }
+          }
+        }
+      }
+    },
+    "sandbox": {
+      "default": {},
+      "type": "object",
+      "properties": {
+        "defaultImage": {
+          "default": "dev-base",
+          "type": "string"
+        },
+        "agentImage": {
+          "default": "ghcr.io/frak-id/sandbox-agent:3.0.2",
+          "type": "string"
+        },
+        "defaultVcpus": {
+          "default": 2,
+          "minimum": 1,
+          "type": "number"
+        },
+        "defaultMemoryMb": {
+          "default": 4096,
+          "minimum": 256,
+          "type": "number"
+        },
+        "idle": {
+          "default": {},
+          "type": "object",
+          "properties": {
+            "mode": {
+              "default": "observe",
+              "anyOf": [
+                {
+                  "const": "off",
+                  "type": "string"
+                },
+                {
+                  "const": "observe",
+                  "type": "string"
+                },
+                {
+                  "const": "enforce",
+                  "type": "string"
+                }
+              ]
+            },
+            "minutes": {
+              "default": 120,
+              "minimum": 1,
+              "type": "number"
+            },
+            "network": {
+              "default": true,
+              "type": "boolean"
+            },
+            "networkMinBytesPerMinute": {
+              "default": 65536,
+              "minimum": 1,
+              "type": "number"
+            },
+            "files": {
+              "default": true,
+              "type": "boolean"
+            },
+            "cpu": {
+              "default": false,
+              "type": "boolean"
+            },
+            "cpuMinMillicores": {
+              "default": 250,
+              "minimum": 1,
+              "type": "number"
+            },
+            "maxKeepAwakeHours": {
+              "default": 24,
+              "minimum": 1,
+              "type": "number"
+            }
+          }
+        }
+      }
+    },
+    "ports": {
+      "default": {},
+      "type": "object",
+      "properties": {
+        "agent": {
+          "default": 9998,
+          "type": "number"
+        }
+      }
+    },
+    "imageBuilder": {
+      "default": {},
+      "type": "object",
+      "properties": {
+        "kind": {
+          "default": "docker",
+          "anyOf": [
+            {
+              "const": "docker",
+              "type": "string"
+            },
+            {
+              "const": "buildkit",
+              "type": "string"
+            }
+          ]
+        },
+        "image": {
+          "default": "",
+          "type": "string"
+        },
+        "endpoint": {
+          "default": "",
+          "type": "string"
+        },
+        "dockerHost": {
+          "default": "",
+          "type": "string"
+        },
+        "platform": {
+          "default": "",
+          "type": "string"
+        },
+        "cacheRepo": {
+          "default": "",
+          "type": "string"
+        },
+        "insecureRegistry": {
+          "default": true,
+          "type": "boolean"
+        },
+        "tls": {
+          "default": {},
+          "type": "object",
+          "properties": {
+            "secretName": {
+              "default": "",
+              "type": "string"
+            },
+            "serverName": {
+              "default": "",
+              "type": "string"
+            }
+          }
+        }
+      }
+    }
+  }
+}

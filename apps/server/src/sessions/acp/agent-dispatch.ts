@@ -1,20 +1,22 @@
 /**
- * Agent-neutral ACP hub (design.md §3.1 "sessions/"). Speaks ACP JSON-RPC to
+ * Agent-neutral ACP hub (docs/archive/design.md §3.1 "sessions/"). Speaks ACP JSON-RPC to
  * a sandbox's harness by **attaching to the already-supervised `acp` process**
  * through the runtime's unified attach bridge (agent attach.rs on :9997) —
  * not by spawning a per-session bridge subprocess. The `acp` process is
  * declared in the spec (`stdio: "bridge"`, `primary: true`, composed
- * client-side by `@atelier/compose`); the runtime boots it once and gates
+ * by `apps/server/src/harnesses`); the runtime boots it once and gates
  * health on it, so by the time a session opens it is already running.
  *
  * The attach bridge is single-writer, so ALL consumers of one sandbox share
  * ONE rw attach connection ({@link SandboxAcpConnection}). AgentDispatch is
  * the single owner of that connection and the single source of truth for a
- * sandbox's live ACP state: pending-permission buffer, per-sandbox event
- * emitter, and (for agents lacking `session/list`) a minimal fallback of
- * server-created session ids. The chat flow (`openSession`) and the
- * dashboard surface (`AcpSessionSurface`) are both just readers/drivers of
- * this hub — neither owns a socket.
+ * sandbox's live ACP state: per-sandbox event emitter, live overlay and (for
+ * agents lacking `session/list`) a minimal fallback of server-created session
+ * ids. Tasks (`openSession`) and the console's `SessionService` are both just
+ * readers/drivers of this hub — neither owns a socket.
+ *
+ * Every `session/request_permission` is answered at once with an allow
+ * option: sandbox agents auto-approve, the micro-VM is the boundary.
  *
  * Session identity/title/cwd come from the agent's own `session/list` (ACP
  * 1.1+, capability-gated) rather than a server-local registry, so sessions
@@ -29,7 +31,6 @@ import {
   type ClientConnection,
   client,
   type ListSessionsResponse,
-  type McpServer,
   methods,
   PROTOCOL_VERSION,
   type PromptResponse,
@@ -38,27 +39,19 @@ import {
   type SessionInfo,
   type SessionNotification,
 } from "@agentclientprotocol/sdk";
-import type {
-  AgentPermissionAnswer,
-  AgentPermissionReply,
-  AgentPermissionRequest,
-  AgentSessionStatus,
-  AgentTodo,
-} from "@frak/atelier-shared";
+import type { AgentSessionStatus, AgentTodo } from "@atelier/spec";
+import type { Harness } from "../../harnesses/harness.ts";
+import { findHarness } from "../../harnesses/index.ts";
 import type { AgentClient } from "../../runtime/index.ts";
-import { ConflictError, ValidationError } from "../../shared/errors.ts";
+import { ConflictError } from "../../shared/errors.ts";
 import { safeNanoid } from "../../shared/lib/id.ts";
 import { createChildLogger } from "../../shared/lib/logger.ts";
-import type { PermissionNotifier } from "../permission-notifier.ts";
-import type { InterventionResult } from "../session-surface.ts";
 import { type AcpTransport, connectAcpWebSocket } from "./acp-stream.ts";
-import {
-  type AgentModelSelection,
-  type HarnessDispatchAdapter,
-  resolveHarnessDispatch,
-} from "./harness-registry.ts";
 
 const log = createChildLogger("agent-dispatch");
+
+/** The part of a harness the dispatch needs; unknown harnesses have none. */
+type HarnessNotices = Pick<Harness, "startupNotice" | "isNotice">;
 
 /**
  * Bounds ACP handshake calls only, never `session/prompt` (a prompt runs for
@@ -80,15 +73,15 @@ const MAX_LIST_PAGES = 10;
  * minutes and block the idle-close). */
 const ACP_LIST_TOTAL_BUDGET_MS = 20_000;
 
-/** How long a connection may sit with no holds, no busy sessions, and no
- * pending permissions before it's closed. Keeps dashboard polling from
- * re-dialing on every request while still releasing the socket eventually.
+/** How long a connection may sit with no holds and no busy sessions before
+ * it's closed. Keeps dashboard polling from re-dialing on every request
+ * while still releasing the socket eventually.
  * Overridable via env for tests; production always gets the 60s default. */
 const ACP_IDLE_TTL_MS = Number(process.env.ACP_IDLE_TTL_MS) || 60_000;
 
 /**
  * The supervised process that carries the ACP bridge. Convention from the
- * harness composers (`@atelier/compose`): the harness emits a `stdio: "bridge"`
+ * harness composers (`harnesses/`): the harness emits a `stdio: "bridge"`
  * primary process named `acp`. sessions/ attaches to it by name.
  */
 const ACP_PROCESS_NAME = "acp";
@@ -149,24 +142,13 @@ interface CreatedSessionEntry {
 /** A coarse cache-invalidation signal for the facade SSE stream (the
  * dashboard re-queries the affected resource; it never reads payloads). */
 export interface SurfaceEvent {
-  resource: "sessions" | "sessionStatuses" | "permissions" | "todos";
+  resource: "sessions" | "sessionStatuses" | "todos";
   sessionId?: string;
 }
 export type SurfaceListener = (event: SurfaceEvent) => void;
 
-/** A buffered ACP permission request awaiting a decision (chat auto-approve,
- * dashboard reply or the notifier — first answer wins). `abort` tells the
- * notifier it was settled without it. */
-interface PendingPermission {
-  id: string;
-  sessionId: string;
-  request: RequestPermissionRequest;
-  resolve: (response: RequestPermissionResponse) => void;
-  abort: AbortController;
-}
-
 export interface AgentSessionCallbacks {
-  /** Chat streaming: raw ACP `session/update` notifications for this session. */
+  /** Raw ACP `session/update` notifications for this session. */
   onUpdate?: (notification: SessionNotification) => void;
 }
 
@@ -176,7 +158,6 @@ export interface OpenAgentSessionInput {
   cwd: string;
   /** Harness dispatch id, from the spec's `atelier.dev/harness` annotation. */
   harnessId?: string;
-  mcpServers?: McpServer[];
   callbacks?: AgentSessionCallbacks;
   /** Reopen this existing agent session (`session/load`, its history and
    * context intact) instead of creating one. Needs the agent's
@@ -194,10 +175,7 @@ export interface AgentSession {
    * the session was opened on still runs: a restart the connection didn't
    * see (see {@link AcpRun}) drops the connection and gives false. */
   stillLive(): Promise<boolean>;
-  prompt(
-    text: string,
-    selection?: AgentModelSelection,
-  ): Promise<PromptResponse>;
+  prompt(text: string): Promise<PromptResponse>;
   cancel(): Promise<void>;
   close(): Promise<void>;
 }
@@ -234,22 +212,25 @@ function planEntryStatusToTodo(status: string): AgentTodo["status"] {
   }
 }
 
-/** Pick the ACP option to answer a dashboard decision with. ACP requires an
- * offered `optionId`; `always` falls back to a once-allow when the agent
- * offers no persistent option. Returns undefined → answer "cancelled". */
-function selectPermissionOption(
+/** The auto-approve answer to a permission request: a persistent allow when
+ * offered (so the agent stops asking), else a once-allow, else any option
+ * that isn't a reject. Never a reject; "cancelled" only when the agent
+ * offers nothing else. */
+function autoApprove(
   request: RequestPermissionRequest,
-  decision: AgentPermissionReply,
-): string | undefined {
-  const byKind = (kind: string) =>
-    request.options.find((o) => o.kind === kind)?.optionId;
-  if (decision === "reject") {
-    return byKind("reject_once") ?? byKind("reject_always");
+): RequestPermissionResponse {
+  const option =
+    request.options.find((o) => o.kind === "allow_always") ??
+    request.options.find((o) => o.kind === "allow_once") ??
+    request.options.find((o) => !o.kind.startsWith("reject"));
+  if (!option) {
+    log.warn(
+      { sessionId: request.sessionId, options: request.options },
+      "permission request offers no allow option; answering cancelled",
+    );
+    return { outcome: { outcome: "cancelled" } };
   }
-  if (decision === "always") {
-    return byKind("allow_always") ?? byKind("allow_once");
-  }
-  return byKind("allow_once") ?? byKind("allow_always");
+  return { outcome: { outcome: "selected", optionId: option.optionId } };
 }
 
 type AgentProxy = ClientConnection["agent"];
@@ -257,19 +238,16 @@ type AgentProxy = ClientConnection["agent"];
 /**
  * One shared ACP connection to a sandbox's `acp` process. Owns the single rw
  * attach WebSocket + ACP client connection and, for its lifetime, the
- * pending-permission buffer, chat update handlers, and the ephemeral live
- * overlay (busy/todos/title). Forwards coarse invalidation signals out via
+ * session update handlers and the ephemeral live overlay (busy/todos/title). Forwards coarse invalidation signals out via
  * `emit` (owned by AgentDispatch, so it survives connection churn).
  *
  * The socket is governed by a hold-count + idle TTL (see `acquire`/`release`),
- * not by registry occupancy: a hold, a pending permission, or a busy session
- * all keep it open; once none of those apply it closes after
+ * not by registry occupancy: a hold or a busy session keeps it open; once none of those apply it closes after
  * {@link ACP_IDLE_TTL_MS} of inactivity. SSE subscribers never hold it open —
  * watching is free.
  */
 class SandboxAcpConnection {
   private readonly liveState = new Map<string, LiveSessionState>();
-  private readonly pendingPermissions = new Map<string, PendingPermission>();
   private readonly updateHandlers = new Map<
     string,
     (notification: SessionNotification) => void
@@ -305,12 +283,10 @@ class SandboxAcpConnection {
      * (idle-TTL reconnects must not lose track of server-created sessions on
      * agents without `session/list`). */
     private readonly createdSessions: Map<string, CreatedSessionEntry>,
-    private readonly notifier: PermissionNotifier | undefined,
     /** The `agent` idle signal: a prompt starting or ending, a permission
-     * request. Not `session/update`: the attach bridge replays its output
-     * buffer to every new connection, so a reconnect (any read after the
-     * idle-TTL close) would re-deliver an old turn's updates. A live turn is
-     * covered anyway: it blocks the pause until `markBusy` ends it. */
+     * request. Not `session/update`: a notification says nothing about
+     * whether the sandbox is in use. A live turn is covered anyway: it blocks
+     * the pause until `markBusy` ends it. */
     private readonly touch: () => void,
     /** The acp run this socket attached to; `undefined` if unknown. */
     private readonly run: AcpRun | undefined,
@@ -324,7 +300,6 @@ class SandboxAcpConnection {
     onGone: (self: SandboxAcpConnection) => void,
     emit: (event: SurfaceEvent) => void,
     createdSessions: Map<string, CreatedSessionEntry>,
-    notifier: PermissionNotifier | undefined,
     touch: () => void,
     run: { at: AcpRun | undefined; read: AcpRunReader; watchMs: number },
   ): Promise<SandboxAcpConnection> {
@@ -336,9 +311,10 @@ class SandboxAcpConnection {
       .onNotification(methods.client.session.update, (ctx) => {
         conn.handleUpdate(ctx.params);
       })
-      .onRequest(methods.client.session.requestPermission, (ctx) =>
-        conn.handlePermission(ctx.params),
-      )
+      .onRequest(methods.client.session.requestPermission, (ctx) => {
+        conn.touch();
+        return autoApprove(ctx.params);
+      })
       .connect(transport.stream);
     conn = new SandboxAcpConnection(
       sandboxId,
@@ -348,7 +324,6 @@ class SandboxAcpConnection {
       onGone,
       emit,
       createdSessions,
-      notifier,
       touch,
       run.at,
       run.read,
@@ -393,15 +368,14 @@ class SandboxAcpConnection {
   }
 
   /** Release a hold acquired via `acquire()`. Arms the idle-close timer once
-   * nothing else (holds, busy sessions, pending permissions) needs the
-   * socket. */
+   * nothing else (holds, busy sessions) needs the socket. */
   release(): void {
     this.holdCount = Math.max(0, this.holdCount - 1);
     this.maybeScheduleIdleClose();
   }
 
   private isIdleBlocked(): boolean {
-    if (this.holdCount > 0 || this.pendingPermissions.size > 0) return true;
+    if (this.holdCount > 0) return true;
     for (const state of this.liveState.values()) {
       if (state.busyCount > 0) return true;
     }
@@ -410,8 +384,8 @@ class SandboxAcpConnection {
 
   private maybeScheduleIdleClose(): void {
     if (this.closed || this.idleTimer || this.isIdleBlocked()) return;
-    // Recheck at fire time, not just at arm time: a permission/prompt may
-    // start after the timer is armed and must still keep the socket open.
+    // Recheck at fire time, not just at arm time: a prompt may start after
+    // the timer is armed and must still keep the socket open.
     this.idleTimer = setTimeout(() => {
       this.idleTimer = undefined;
       if (!this.isIdleBlocked()) this.close();
@@ -430,7 +404,7 @@ class SandboxAcpConnection {
   }
 
   private handleUpdate(notification: SessionNotification): void {
-    // Chat streaming first (raw passthrough), regardless of live state.
+    // Session handler first (raw passthrough), regardless of live state.
     this.updateHandlers.get(notification.sessionId)?.(notification);
 
     const update = notification.update;
@@ -455,68 +429,7 @@ class SandboxAcpConnection {
       return;
     }
     // Other update kinds (message chunks, tool calls, ...) carry nothing this
-    // hub tracks — the chat passthrough above already forwarded them.
-  }
-
-  private handlePermission(
-    request: RequestPermissionRequest,
-  ): Promise<RequestPermissionResponse> {
-    this.touch();
-    const id = safeNanoid();
-    return new Promise<RequestPermissionResponse>((resolve) => {
-      const pending: PendingPermission = {
-        id,
-        sessionId: request.sessionId,
-        request,
-        resolve,
-        abort: new AbortController(),
-      };
-      this.pendingPermissions.set(id, pending);
-      this.emit({ resource: "permissions" });
-      this.notifier?.notify(
-        {
-          sandboxId: this.sandboxId,
-          sessionId: request.sessionId,
-          requestId: id,
-          title:
-            request.toolCall.title ?? request.toolCall.kind ?? "permission",
-          kind: request.toolCall.kind ?? undefined,
-          options: request.options.map((o) => ({
-            optionId: o.optionId,
-            name: o.name,
-            kind: o.kind,
-          })),
-        },
-        (optionId) => {
-          // Only a still-pending prompt, and only an option it offered.
-          if (
-            this.pendingPermissions.get(id) === pending &&
-            request.options.some((o) => o.optionId === optionId)
-          ) {
-            this.settlePermission(pending, optionId, false);
-          }
-        },
-        pending.abort.signal,
-      );
-    });
-  }
-
-  /** Answer a pending prompt (`undefined` = cancelled) and tell the notifier
-   * when it was settled elsewhere. */
-  private settlePermission(
-    pending: PendingPermission,
-    optionId: string | undefined,
-    elsewhere = true,
-  ): void {
-    this.pendingPermissions.delete(pending.id);
-    if (elsewhere) pending.abort.abort();
-    pending.resolve(
-      optionId
-        ? { outcome: { outcome: "selected", optionId } }
-        : { outcome: { outcome: "cancelled" } },
-    );
-    this.emit({ resource: "permissions" });
-    this.maybeScheduleIdleClose();
+    // hub tracks — the passthrough above already forwarded them.
   }
 
   // ── sessions ───────────────────────────────────────────────────────────────
@@ -524,11 +437,10 @@ class SandboxAcpConnection {
   /** Create a session; `meta` is the response's `_meta` (harness extras). */
   async newSession(
     cwd: string,
-    mcpServers: McpServer[],
     title: string,
   ): Promise<{ sessionId: string; meta: Record<string, unknown> | undefined }> {
     const created = await withTimeout(
-      this.acp.request(methods.agent.session.new, { cwd, mcpServers }),
+      this.acp.request(methods.agent.session.new, { cwd, mcpServers: [] }),
       ACP_HANDSHAKE_TIMEOUT_MS,
       "session/new",
     );
@@ -550,16 +462,12 @@ class SandboxAcpConnection {
   /** Reopen an existing agent session. The agent replays its history as
    * `session/update`s before answering; register the session's update
    * handler after this resolves so the replay isn't taken for new output. */
-  async loadSession(
-    sessionId: string,
-    cwd: string,
-    mcpServers: McpServer[],
-  ): Promise<void> {
+  async loadSession(sessionId: string, cwd: string): Promise<void> {
     await withTimeout(
       this.acp.request(methods.agent.session.load, {
         sessionId,
         cwd,
-        mcpServers,
+        mcpServers: [],
       }),
       ACP_LOAD_TIMEOUT_MS,
       "session/load",
@@ -762,56 +670,14 @@ class SandboxAcpConnection {
     return this.liveState.get(sessionId)?.todos ?? [];
   }
 
-  /** Turns in flight and permission requests awaiting a person. */
-  work(): { turns: number; permissions: number } {
+  /** Turns in flight. */
+  work(): { turns: number } {
     let turns = 0;
     for (const state of this.liveState.values()) turns += state.busyCount;
-    return { turns, permissions: this.pendingPermissions.size };
+    return { turns };
   }
 
-  listPermissions(): AgentPermissionRequest[] {
-    return [...this.pendingPermissions.values()].map((p) => ({
-      id: p.id,
-      sessionId: p.sessionId,
-      permission:
-        p.request.toolCall.title ?? p.request.toolCall.kind ?? "permission",
-      toolKind: p.request.toolCall.kind ?? undefined,
-      options: p.request.options.map((o) => ({
-        optionId: o.optionId,
-        name: o.name,
-        kind: o.kind,
-      })),
-    }));
-  }
-
-  replyPermission(
-    requestId: string,
-    decision: AgentPermissionAnswer,
-  ): InterventionResult {
-    const pending = this.pendingPermissions.get(requestId);
-    if (!pending) return { ok: false, status: 404 };
-    if (typeof decision === "object") {
-      const offered = pending.request.options.some(
-        (o) => o.optionId === decision.optionId,
-      );
-      if (!offered) {
-        throw new ValidationError(
-          `Option '${decision.optionId}' was not offered for this request`,
-        );
-      }
-      this.settlePermission(pending, decision.optionId);
-      return { ok: true };
-    }
-    this.settlePermission(
-      pending,
-      selectPermissionOption(pending.request, decision),
-    );
-    return { ok: true };
-  }
-
-  /** Tear down the socket + ACP connection (idempotent). Flushes pending
-   * permissions as cancelled; emits the invalidation so watchers reflect it.
-   * Does NOT touch `createdSessions` — that fallback registry is owned by
+  /** Tear down the socket + ACP connection (idempotent). Does NOT touch `createdSessions` — that fallback registry is owned by
    * `AgentDispatch` and must survive an idle-TTL reconnect. Requests in
    * flight fail with `reason`. */
   close(reason?: Error): void {
@@ -825,15 +691,8 @@ class SandboxAcpConnection {
       clearInterval(this.runWatch);
       this.runWatch = undefined;
     }
-    const hadPermissions = this.pendingPermissions.size > 0;
-    for (const pending of this.pendingPermissions.values()) {
-      pending.abort.abort();
-      pending.resolve({ outcome: { outcome: "cancelled" } });
-    }
-    this.pendingPermissions.clear();
     this.liveState.clear();
     this.updateHandlers.clear();
-    if (hadPermissions) this.emit({ resource: "permissions" });
     // The connection first, so in-flight requests get `reason` rather than
     // whatever the closing socket would give them.
     this.connection.close(reason);
@@ -869,8 +728,6 @@ export class AgentDispatch {
   constructor(
     private readonly deps: {
       agentClient: AgentClient;
-      /** Also asks permission prompts elsewhere (a person's phone). */
-      notifier?: PermissionNotifier;
       /** ACP traffic seen for a sandbox (the `agent` idle signal). */
       onActivity?: (sandboxId: string) => void;
       /** Overrides {@link ACP_RUN_WATCH_MS} (tests). */
@@ -953,6 +810,7 @@ export class AgentDispatch {
         sandboxId,
         ACP_PROCESS_NAME,
         "rw",
+        { replay: false },
       );
       const conn = await SandboxAcpConnection.open(
         sandboxId,
@@ -971,7 +829,6 @@ export class AgentDispatch {
         },
         (event) => this.emit(sandboxId, event),
         createdSessions,
-        this.deps.notifier,
         () => this.deps.onActivity?.(sandboxId),
         {
           at: run,
@@ -1044,43 +901,13 @@ export class AgentDispatch {
 
   // ── surface reads (lazy: no live connection → empty, never dial) ───────────
 
-  permissionsFor(sandboxId: string): AgentPermissionRequest[] {
-    return this.live.get(sandboxId)?.listPermissions() ?? [];
+  /** Server-driven ACP turns in flight on a sandbox right now; any blocks
+   * an idle pause. Lazy read: no live connection means none. */
+  workFor(sandboxId: string): { turns: number } {
+    return this.live.get(sandboxId)?.work() ?? { turns: 0 };
   }
 
-  /** Server-driven ACP work on a sandbox right now: turns in flight and
-   * permission requests waiting on a person. Either one blocks an idle
-   * pause. Lazy read: no live connection means none. */
-  workFor(sandboxId: string): { turns: number; permissions: number } {
-    return this.live.get(sandboxId)?.work() ?? { turns: 0, permissions: 0 };
-  }
-
-  replyPermission(
-    sandboxId: string,
-    requestId: string,
-    decision: AgentPermissionAnswer,
-  ): InterventionResult {
-    const conn = this.live.get(sandboxId);
-    if (!conn) return { ok: false, status: 404 };
-    return conn.replyPermission(requestId, decision);
-  }
-
-  // ── surface drivers (dial when needed) ─────────────────────────────────────
-
-  /** Dashboard-initiated session. Dials the sandbox. */
-  async createSession(
-    sandboxId: string,
-    directory: string,
-  ): Promise<{ sessionId: string; directory: string }> {
-    return this.withHold(sandboxId, async (conn) => {
-      const { sessionId } = await conn.newSession(
-        directory,
-        [],
-        titleFor(directory),
-      );
-      return { sessionId, directory };
-    });
-  }
+  // ── surface drivers ─────────────────────────────────────────────────────────
 
   async closeSession(sandboxId: string, sessionId: string): Promise<boolean> {
     const conn = this.live.get(sandboxId);
@@ -1107,16 +934,14 @@ export class AgentDispatch {
     }
   }
 
-  // ── chat flow ──────────────────────────────────────────────────────────────
+  // ── task sessions ──────────────────────────────────────────────────────────────
 
   async openSession(input: OpenAgentSessionInput): Promise<AgentSession> {
-    const harness: HarnessDispatchAdapter = resolveHarnessDispatch(
-      input.harnessId,
-    );
+    const harness: HarnessNotices = findHarness(input.harnessId) ?? {};
     const conn = await this.freshConnection(input.sandboxId);
     const acp = conn.acp;
     // Hold for the SESSION'S LIFETIME (released in `close()`), not just for
-    // newSession: an open chat session is active use, so the socket must not
+    // newSession: an open task session is active use, so the socket must not
     // idle-close under it (faithful to the pre-`session/list` behavior where a
     // non-empty registry kept the socket open). A caller that never calls
     // close() keeps one hold, same failure mode as any explicit-close resource.
@@ -1138,21 +963,13 @@ export class AgentDispatch {
       if (input.resumeSessionId) {
         if (!conn.canLoadSession) {
           throw new ConflictError(
-            `The ${harness.id} agent can't reopen a session (no ACP loadSession capability); start a new one`,
+            `The ${input.harnessId ?? "unknown"} agent can't reopen a session (no ACP loadSession capability); start a new one`,
           );
         }
-        await conn.loadSession(
-          input.resumeSessionId,
-          input.cwd,
-          input.mcpServers ?? [],
-        );
+        await conn.loadSession(input.resumeSessionId, input.cwd);
         sessionId = input.resumeSessionId;
       } else {
-        const created = await conn.newSession(
-          input.cwd,
-          input.mcpServers ?? [],
-          titleFor(input.cwd),
-        );
+        const created = await conn.newSession(input.cwd, titleFor(input.cwd));
         sessionId = created.sessionId;
         startupNotice = harness.startupNotice?.(created.meta);
       }
@@ -1174,7 +991,7 @@ export class AgentDispatch {
         return !conn.isClosed;
       },
       stillLive: () => conn.verifyRun(),
-      prompt: async (text, selection) => {
+      prompt: async (text) => {
         // Re-resolve the owning connection each prompt. If it dropped (acp
         // restart / idle-close race) and was replaced, the agent-side session
         // no longer exists on the new connection (we don't session/load), so
@@ -1184,20 +1001,6 @@ export class AgentDispatch {
         if (active !== conn || conn.isClosed) {
           throw new Error(
             `ACP session ${sessionId} is no longer live (connection was replaced); reopen the session`,
-          );
-        }
-        const assignments = selection
-          ? (harness.sessionConfig?.(selection) ?? [])
-          : [];
-        for (const { configId, value } of assignments) {
-          await withTimeout(
-            acp.request(methods.agent.session.setConfigOption, {
-              sessionId,
-              configId,
-              value,
-            }),
-            ACP_HANDSHAKE_TIMEOUT_MS,
-            "session/set_config_option",
           );
         }
         conn.markBusy(sessionId, 1);
@@ -1224,7 +1027,7 @@ export class AgentDispatch {
       {
         sandboxId: input.sandboxId,
         sessionId,
-        harness: harness.id,
+        harness: input.harnessId,
         resumed: input.resumeSessionId !== undefined,
       },
       "ACP session opened",
@@ -1249,7 +1052,7 @@ export class AgentDispatch {
  * itself (its startup banner, once; status notices), which a reader of the
  * agent's answer (a task reply) must not get. */
 function withoutNotices(
-  harness: HarnessDispatchAdapter,
+  harness: HarnessNotices,
   startupNotice: string | undefined,
   onUpdate: (notification: SessionNotification) => void,
 ): (notification: SessionNotification) => void {

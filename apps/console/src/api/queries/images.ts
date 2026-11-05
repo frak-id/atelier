@@ -5,7 +5,7 @@ import {
 } from "@tanstack/react-query";
 import { toast } from "sonner";
 import { api } from "@/api/client";
-import { errorMessage } from "./error";
+import { unwrap } from "./error";
 import { queryKeys } from "./keys";
 
 /** List registered/built base images (GET /v1/images) — the read side, for
@@ -14,9 +14,7 @@ export function imagesListQuery() {
   return queryOptions({
     queryKey: queryKeys.images.list(),
     queryFn: async () => {
-      const { data, error } = await api.v1.images.get();
-      if (error) throw new Error(errorMessage(error, "Failed to load images"));
-      return data;
+      return unwrap(await api.v1.images.get(), "Failed to load images");
     },
     staleTime: 30_000,
   });
@@ -28,10 +26,10 @@ export function imageTemplatesQuery() {
   return queryOptions({
     queryKey: queryKeys.images.templates(),
     queryFn: async () => {
-      const { data, error } = await api.v1.images.templates.get();
-      if (error)
-        throw new Error(errorMessage(error, "Failed to load templates"));
-      return data;
+      return unwrap(
+        await api.v1.images.templates.get(),
+        "Failed to load templates",
+      );
     },
     staleTime: 60_000,
   });
@@ -43,9 +41,10 @@ export function imageLogsQuery(name: string) {
   return queryOptions({
     queryKey: queryKeys.images.logs(name),
     queryFn: async () => {
-      const { data, error } = await api.v1.images({ name }).logs.get();
-      if (error) throw new Error(errorMessage(error, "Failed to load logs"));
-      return data;
+      return unwrap(
+        await api.v1.images({ name }).logs.get(),
+        "Failed to load logs",
+      );
     },
     refetchInterval: (query) =>
       query.state.data?.status === "building" ? 2000 : false,
@@ -62,59 +61,7 @@ export function useBuildSeed() {
   const queryClient = useQueryClient();
   return useMutation({
     mutationFn: async ({ seed, force }: { seed: string; force?: boolean }) => {
-      const { data, error } = await api.v1.images.post({ seed, force });
-      if (error) throw new Error(errorMessage(error, "Build failed"));
-      return data;
-    },
-    onSuccess: (data) => {
-      queryClient.invalidateQueries({ queryKey: queryKeys.images.all });
-      toast.success(`Building ${data?.name ?? "image"}…`);
-    },
-    onError: (error) => toast.error(error.message),
-  });
-}
-
-/**
- * Build a user-supplied Dockerfile (POST /v1/images { name, dockerfile }) —
- * BYO content, or the "rebuild" action replaying a stored
- * `dockerfile`-provenance image's saved source.
- */
-export function useBuildDockerfile() {
-  const queryClient = useQueryClient();
-  return useMutation({
-    mutationFn: async ({
-      name,
-      dockerfile,
-    }: {
-      name: string;
-      dockerfile: string;
-    }) => {
-      const { data, error } = await api.v1.images.post({ name, dockerfile });
-      if (error) throw new Error(errorMessage(error, "Build failed"));
-      return data;
-    },
-    onSuccess: (data) => {
-      queryClient.invalidateQueries({ queryKey: queryKeys.images.all });
-      toast.success(`Building ${data?.name ?? "image"}…`);
-    },
-    onError: (error) => toast.error(error.message),
-  });
-}
-
-/**
- * Build from an uploaded zip build context (POST /v1/images/upload,
- * multipart). The zip must contain a `Dockerfile` at its root; the server
- * unpacks it (size-capped, traversal-guarded) and builds it. Returns
- * immediately with the `building` record — same async poll as the other
- * builds.
- */
-export function useUploadImage() {
-  const queryClient = useQueryClient();
-  return useMutation({
-    mutationFn: async ({ name, file }: { name: string; file: File }) => {
-      const { data, error } = await api.v1.images.upload.post({ name, file });
-      if (error) throw new Error(errorMessage(error, "Upload failed"));
-      return data;
+      return unwrap(await api.v1.images.post({ seed, force }), "Build failed");
     },
     onSuccess: (data) => {
       queryClient.invalidateQueries({ queryKey: queryKeys.images.all });
@@ -130,13 +77,13 @@ export function useRegisterImage() {
   const queryClient = useQueryClient();
   return useMutation({
     mutationFn: async ({ name, ref }: { name: string; ref: string }) => {
-      const { data, error } = await api.v1.images.register.post({
-        name,
-        ref,
-      });
-      if (error)
-        throw new Error(errorMessage(error, "Failed to register image"));
-      return data;
+      return unwrap(
+        await api.v1.images.register.post({
+          name,
+          ref,
+        }),
+        "Failed to register image",
+      );
     },
     onSuccess: (data) => {
       queryClient.invalidateQueries({ queryKey: queryKeys.images.all });
@@ -155,8 +102,7 @@ export function useDeleteImage() {
   const queryClient = useQueryClient();
   return useMutation({
     mutationFn: async (name: string) => {
-      const { error } = await api.v1.images({ name }).delete();
-      if (error) throw new Error(errorMessage(error, "Failed to delete image"));
+      unwrap(await api.v1.images({ name }).delete(), "Failed to delete image");
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: queryKeys.images.all });

@@ -1,5 +1,5 @@
 /**
- * Sandbox activity recorder (docs/proposals/sandbox-idle-autopause.md §3,
+ * Sandbox activity recorder (docs/idle-autopause.md §3,
  * §5). MECHANISM: it remembers when each signal was last seen per sandbox and
  * folds in the in-pod agent's `GET /activity` report. It never decides
  * anything: the thresholds a minute must reach come in as arguments, and the

@@ -3,10 +3,10 @@
 #
 # The workspace PVC is attached as a RAW BLOCK device and this script formats
 # (first boot) + mounts it at /data — not at /home/dev (see
-# docs/proposals/toolset-overlay-squashfs.md §3 and
-# docs/plans/toolset-inplace-update-fix-options.md §3). /home/dev itself is a bare,
+# docs/archive/proposals/toolset-overlay-squashfs.md §3 and
+# docs/archive/plans/toolset-inplace-update-fix-options.md §3). /home/dev itself is a bare,
 # empty mountpoint until the agent's `materialize` (crate::toolset) assembles
-# it as a SINGLE overlay (skel + any toolset squashfs lowers, upper/work on
+# it as a SINGLE overlay (skel + any toolset erofs/squashfs lowers, upper/work on
 # `/data`) — this script does NOT mount a base overlay. That single-assembly
 # design (no base-overlay-then-remount) is deliberate: it removes the
 # umount/remount race a two-step mount would have against an early SSH
@@ -122,8 +122,8 @@ mkdir -p /data/upper /data/work /data/toolsets
 # covers the window before the agent's first materialize.
 chown 1000:1000 /data/upper
 
-# ── Loop devices for squashfs toolset mounts ──────────────────────────
-# The agent loop-mounts each toolset squashfs blob (crate::toolset). `mount -o
+# ── Loop devices for toolset blob mounts ──────────────────────────
+# The agent loop-mounts each toolset blob (crate::toolset). `mount -o
 # loop` needs /dev/loop-control to allocate a device plus /dev/loopN nodes; a
 # Kata container's /dev may not have them. Create them up front (idempotent,
 # needs only CAP_MKNOD from the default set) so the first materialize's mount
@@ -141,15 +141,15 @@ done
 # halves inside the public image. Generate fresh, per-boot keys here —
 # BEFORE starting the agent below — so `GET /ssh/host-keys` (apps/agent/
 # src/ssh.rs) can report the real key as soon as the agent is reachable; the
-# server pins whatever it gets back into the sshpiper Pipe / in-server proxy
-# right after boot. `-A` only (re)generates keys that are missing, so this is
+# server pins whatever it gets back into the in-server SSH proxy right after
+# boot. `-A` only (re)generates keys that are missing, so this is
 # a no-op on a resumed disk... except /etc/ssh lives on the container's
 # EPHEMERAL rootfs (not /data), so every restart regenerates — intentional:
 # per-boot keys, nothing persisted to leak.
 ssh-keygen -A >/dev/null 2>&1
 
 # ── SSH key staging ───────────────────────────────────────────────────
-# The sshpiper public key is mounted by K8s from the atelier-ssh-pipe-key
+# The SSH gateway's public key is mounted by K8s from the atelier-ssh-pipe-key
 # Secret. Write it into the overlay upperdir now — /home/dev isn't mounted
 # yet, but /data/upper IS what /home/dev/.ssh resolves to once the agent's
 # overlay goes live, so this is available immediately without waiting.
@@ -176,17 +176,18 @@ AGENT_PID=$!
 # EITHER: on success sshd serves the real home; on failure start sshd anyway
 # (onto the degraded home) so the pod is reachable for diagnosis. The agent
 # bounds its WHOLE pull/mount/assembly loop (any toolset count) to a single
-# global ~600s deadline (toolset::BUILD_TIMEOUT_MS) and fails fast past it —
-# see toolset.rs materialize_inner — so this cap only needs a small margin
-# above that, not a per-toolset multiple. 1260 * 0.5s = 630s, matching
-# agent.client.ts's MATERIALIZE_TOOLSETS_TIMEOUT_MS (both downstream of the
-# same agent ceiling). A slow first cold pull must not be cut off and served
-# the wrong (bare, un-assembled) home mid-assembly, which would strand any
-# early writes on the rootfs.
-i=0
-while [ ! -e /run/home-ready ] && [ ! -e /run/home-failed ] && [ "$i" -lt 1260 ]; do
+# global deadline (toolset.rs BUILD_TIMEOUT_MS, 600s) and fails fast past it,
+# so this deadline only needs a margin above that: it is the same contract
+# the server client uses (agent.contract.ts, MATERIALIZE_TIMEOUT_MS). A slow
+# first cold pull must not be cut off and served the wrong (bare,
+# un-assembled) home mid-assembly, which would strand any early writes on the
+# rootfs. Stop waiting early if the agent itself died: nothing will write
+# either marker then.
+HOME_WAIT_DEADLINE=$(($(date +%s) + 630))
+while [ ! -e /run/home-ready ] && [ ! -e /run/home-failed ] &&
+    kill -0 "$AGENT_PID" 2>/dev/null &&
+    [ "$(date +%s)" -lt "$HOME_WAIT_DEADLINE" ]; do
     sleep 0.5
-    i=$((i + 1))
 done
 
 if [ -f "$SSH_KEY_MOUNT" ]; then

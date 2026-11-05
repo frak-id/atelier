@@ -27,7 +27,7 @@ function harness(config: Record<string, unknown> = {}) {
   const sandboxes = new Map<string, FakeSandbox>();
   const calls: string[] = [];
   const state = {
-    work: { turns: 0, permissions: 0 },
+    work: { turns: 0 },
     jobActive: false,
     opPending: false,
     /** The agent's report, or null for an agent without `/activity`. */
@@ -178,13 +178,10 @@ describe("IdleReaper.tick", () => {
     expect(h.sandboxes.get("s")?.status).toBe("running");
   });
 
-  test("a pending permission, a turn, a job, an op or keep-awake holds it", async () => {
+  test("a turn, a job, an op or keep-awake holds it", async () => {
     const holds: ((h: ReturnType<typeof harness>) => void)[] = [
       (h) => {
-        h.state.work = { turns: 0, permissions: 1 };
-      },
-      (h) => {
-        h.state.work = { turns: 1, permissions: 0 };
+        h.state.work = { turns: 1 };
       },
       (h) => {
         h.state.jobActive = true;

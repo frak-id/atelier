@@ -1,5 +1,5 @@
 /**
- * The toolset tier (composed-prebuild-volumes.md). A toolset is a
+ * The toolset tier (docs/archive/proposals/composed-prebuild-volumes.md). A toolset is a
  * content-addressed `tar.gz` published as an OCI artifact in the in-cluster
  * registry and materialized by the guest agent into native home paths at
  * boot, BEFORE the files/env phase. It is the second prebuild axis beside the
@@ -193,7 +193,7 @@ export const ToolsetEntrySchema = Type.Object(
     provenance: ToolsetProvenanceSchema,
     /**
      * The harness this toolset's owning toolbox provides, if any (e.g.
-     * "opencode", "pi"). Derived at list time from the `tb/<owner>/<slug>`
+     * "opencode", "pi"). Derived at list time from the `tb/<toolboxId>`
      * toolbox behind this artifact; absent for standalone toolsets. Lets the
      * compose surface tag a toolset with the harness it brings, independent
      * of who is viewing.

@@ -1,5 +1,5 @@
 /**
- * The control module's public interface. BOUNDARY RULE (design.md §3.1):
+ * The control module's public interface. BOUNDARY RULE (docs/archive/design.md §3.1):
  * control/ imports runtime/'s interface (index), never its internals; other
  * modules import control/'s interface (this barrel), never its internals.
  */
@@ -21,7 +21,10 @@ export {
   IdlePolicyService,
   type IdleRule,
 } from "./modules/idle-policy/index.ts";
-export { SecretService } from "./modules/secret/index.ts";
+export {
+  assertSecretsKeyConfigured,
+  SecretService,
+} from "./modules/secret/index.ts";
 export { ServerConfigService } from "./modules/server-config/index.ts";
 export { recipeFingerprint } from "./modules/toolbox-version/index.ts";
 export type * from "./types.ts";

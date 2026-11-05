@@ -4,7 +4,7 @@
  * Pure (no React, no API client) so it is unit-tested directly.
  *
  * Identity comes from `@atelier/spec`'s shared `repoKey`, so a prebuild made
- * from the CLI with an scp URL still matches the https repo GitHub lists.
+ * with an scp URL still matches the https repo GitHub lists.
  */
 import {
   findRepoBranchPrebuild,
@@ -12,6 +12,7 @@ import {
   normalizeBranch,
   type PrebuildRecord,
   parsePrebuildJobTarget,
+  prebuildRepoFor,
   repoKey,
 } from "@atelier/spec";
 
@@ -116,6 +117,21 @@ export function buildRepoCatalog<R extends CatalogRepo, J extends CatalogJob>(
       failedJob,
     };
   });
+}
+
+/** The branch the repo is cloned at in `latest` (which may be a multi-repo
+ * prebuild where it isn't the first repo), in the spec spelling: `undefined`
+ * for the default branch, or when nothing is prebuilt. */
+export function latestBranch(
+  entry: Pick<CatalogEntry<CatalogRepo, CatalogJob>, "repo" | "latest">,
+): string | undefined {
+  const { repo, latest } = entry;
+  return latest
+    ? normalizeBranch(
+        prebuildRepoFor(latest, repo.cloneUrl)?.branch,
+        repo.defaultBranch,
+      )
+    : undefined;
 }
 
 /** The in-flight prebuild job baking `branch` of the entry's repo, if any.

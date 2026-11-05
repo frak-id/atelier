@@ -5,7 +5,7 @@ import {
 } from "@tanstack/react-query";
 import { toast } from "sonner";
 import { api } from "@/api/client";
-import { errorMessage } from "./error";
+import { unwrap } from "./error";
 import { queryKeys } from "./keys";
 
 type ReposResponse = NonNullable<
@@ -16,12 +16,12 @@ export type GitHubRepo = ReposResponse["repos"][number];
 type GitHubRepoList = ReposResponse;
 
 async function fetchRepos(refresh: boolean): Promise<GitHubRepoList> {
-  const { data, error } = await api.api.github.repos.get({
-    query: { refresh },
-  });
-  if (error)
-    throw new Error(errorMessage(error, "Failed to load GitHub repositories"));
-  return data;
+  return unwrap(
+    await api.api.github.repos.get({
+      query: { refresh },
+    }),
+    "Failed to load GitHub repositories",
+  );
 }
 
 /**
@@ -40,12 +40,12 @@ export function githubReposQuery() {
 }
 
 async function fetchInspection(owner: string, name: string, ref?: string) {
-  const { data, error } = await api.api.github
-    .repos({ owner })({ name })
-    .get({ query: ref ? { ref } : {} });
-  if (error)
-    throw new Error(errorMessage(error, "Failed to inspect the repository"));
-  return data;
+  return unwrap(
+    await api.api.github
+      .repos({ owner })({ name })
+      .get({ query: ref ? { ref } : {} }),
+    "Failed to inspect the repository",
+  );
 }
 
 /**

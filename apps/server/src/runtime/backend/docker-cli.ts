@@ -22,7 +22,7 @@ export async function docker(
 ): Promise<DockerResult> {
   try {
     const child = Bun.spawn([bin, ...args], {
-      env: env ? { ...process.env, ...env } : undefined,
+      env: { ...process.env, ...env },
       stdout: "pipe",
       stderr: "pipe",
     });
@@ -58,7 +58,7 @@ export async function dockerStream(
   const { bin = "docker", env, signal } = options;
   try {
     const child = Bun.spawn([bin, ...args], {
-      env: env ? { ...process.env, ...env } : undefined,
+      env: { ...process.env, ...env },
       stdout: "pipe",
       stderr: "pipe",
       signal,

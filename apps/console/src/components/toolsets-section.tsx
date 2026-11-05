@@ -22,6 +22,8 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog";
 import { Skeleton } from "@/components/ui/skeleton";
+import { Textarea } from "@/components/ui/textarea";
+import { useIsAdmin } from "@/hooks/use-is-admin";
 import { formatRelativeTime } from "@/lib/formatters";
 
 const BUILD_PLACEHOLDER = `{
@@ -82,6 +84,8 @@ export function ToolsetsSection({
 function ToolsetRow({ toolset }: { toolset: ToolsetEntry }) {
   const publish = usePublishToolset();
   const remove = useRemoveToolset();
+  // Publishing and removing raw toolsets are server-admin actions.
+  const isAdmin = useIsAdmin();
   return (
     <Card>
       <CardContent className="flex flex-col gap-2 p-3">
@@ -100,7 +104,7 @@ function ToolsetRow({ toolset }: { toolset: ToolsetEntry }) {
             {formatRelativeTime(toolset.createdAt)}
           </span>
           <div className="ml-auto flex gap-1">
-            {toolset.private ? (
+            {isAdmin && toolset.private ? (
               <Button
                 size="sm"
                 variant="outline"
@@ -110,14 +114,16 @@ function ToolsetRow({ toolset }: { toolset: ToolsetEntry }) {
                 Publish
               </Button>
             ) : null}
-            <Button
-              size="sm"
-              variant="ghost"
-              disabled={remove.isPending}
-              onClick={() => remove.mutate(toolset.ref)}
-            >
-              Remove
-            </Button>
+            {isAdmin ? (
+              <Button
+                size="sm"
+                variant="ghost"
+                disabled={remove.isPending}
+                onClick={() => remove.mutate(toolset.ref)}
+              >
+                Remove
+              </Button>
+            ) : null}
           </div>
         </div>
         <span className="truncate font-mono text-xs text-muted-foreground">
@@ -184,13 +190,13 @@ function BuildToolsetDialog({
             <DialogTitle>Build a toolset</DialogTitle>
           </DialogHeader>
           <div className="space-y-2 py-2">
-            <textarea
+            <Textarea
               value={text}
               onChange={(e) => setText(e.target.value)}
               spellCheck={false}
               required
               placeholder={BUILD_PLACEHOLDER}
-              className="min-h-56 w-full rounded-md border bg-muted/30 p-2 font-mono text-xs"
+              className="min-h-56 p-2"
             />
             {parseError ? (
               <p className="text-sm text-destructive">{parseError}</p>

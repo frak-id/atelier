@@ -1,18 +1,17 @@
 /**
- * Entity-scoped toolbox config CRUD (entities-toolbox.md §4). The api/ seam
- * (`container.ts` `resolveToolboxRefs`) turns `listEnabled()` results into
- * built `ToolsetRef`s at spawn time; this service knows nothing about
+ * Org-owned toolbox config CRUD. The api/ seam
+ * (`container.ts` `resolveSpawnToolboxes`) turns `listAutoInject()` results
+ * into built `ToolsetRef`s at spawn time; this service knows nothing about
  * `runtime/` or building — pure control-plane config storage.
  *
- * A toolbox is owned by an `org` (place-scoped, mandated baseline) or a `user`
- * (identity-scoped, personal overlay). No server-side seeding: toolboxes are
- * created explicitly (console/CLI); the console offers starter templates.
+ * A user's "personal" toolboxes live in their personal org. No server-side
+ * seeding: toolboxes are created explicitly (console); the console offers
+ * starter templates.
  */
 import type {
   ToolboxConfig,
   ToolboxConfigInput,
   ToolboxConfigPatch,
-  ToolboxOwner,
   ToolboxRefreshStatus,
 } from "@atelier/spec";
 import { NotFoundError, ValidationError } from "../../../shared/errors.ts";
@@ -41,13 +40,13 @@ function scheduledNext(
 export class ToolboxService {
   constructor(private readonly repository: ToolboxRepository) {}
 
-  list(owner: ToolboxOwner): ToolboxConfig[] {
-    return this.repository.list(owner);
+  list(orgId: string): ToolboxConfig[] {
+    return this.repository.list(orgId);
   }
 
   /** Auto-inject toolboxes, oldest-first — the spawn-injection order (R6). */
-  listAutoInject(owner: ToolboxOwner): ToolboxConfig[] {
-    return this.repository.listAutoInject(owner);
+  listAutoInject(orgId: string): ToolboxConfig[] {
+    return this.repository.listAutoInject(orgId);
   }
 
   /** Non-throwing lookup by id. */
@@ -61,19 +60,10 @@ export class ToolboxService {
     return config;
   }
 
-  /** Lookup by owner+slug (undefined if absent) — used by the api/ seam to
-   * map a `tb/…` toolset ref back to its declaring toolbox config. */
-  getByOwnerAndSlug(
-    owner: ToolboxOwner,
-    slug: string,
-  ): ToolboxConfig | undefined {
-    return this.repository.getByOwnerAndSlug(owner, slug);
-  }
-
-  create(owner: ToolboxOwner, input: ToolboxConfigInput): ToolboxConfig {
-    if (this.repository.getByOwnerAndSlug(owner, input.slug)) {
+  create(orgId: string, input: ToolboxConfigInput): ToolboxConfig {
+    if (this.repository.getByOrgAndSlug(orgId, input.slug)) {
       throw new ValidationError(
-        `A toolbox with slug '${input.slug}' already exists for this ${owner.type}`,
+        `A toolbox with slug '${input.slug}' already exists in this organization`,
       );
     }
     if (input.refreshSchedule) validateRefreshSchedule(input.refreshSchedule);
@@ -82,8 +72,7 @@ export class ToolboxService {
     const now = new Date().toISOString();
     const record: ToolboxConfig = {
       id: safeNanoid(12),
-      ownerType: owner.type,
-      ownerId: owner.id,
+      orgId,
       slug: input.slug,
       description: input.description,
       source: input.source,
@@ -92,6 +81,7 @@ export class ToolboxService {
       harness: input.harness,
       processes: input.processes,
       ports: input.ports,
+      files: input.files,
       autoInject: input.autoInject ?? true,
       refresh,
       ...(input.refreshSchedule
@@ -101,17 +91,14 @@ export class ToolboxService {
       createdAt: now,
       updatedAt: now,
     };
-    log.info(
-      { ownerType: owner.type, ownerId: owner.id, slug: input.slug },
-      "Toolbox config created",
-    );
+    log.info({ orgId, slug: input.slug }, "Toolbox config created");
     try {
       return this.repository.create(record);
     } catch (err) {
       // Convert a slug race (the pre-check above is TOCTOU) into a clean 400.
       if (isUniqueConstraintError(err)) {
         throw new ValidationError(
-          `A toolbox with slug '${input.slug}' already exists for this ${owner.type}`,
+          `A toolbox with slug '${input.slug}' already exists in this organization`,
         );
       }
       throw err;

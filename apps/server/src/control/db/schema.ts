@@ -1,11 +1,12 @@
 /**
- * Control's tables. Per design.md §3.1: "everything identity-shaped lives
+ * Control's tables. Per docs/archive/design.md §3.1: "everything identity-shaped lives
  * here and ONLY here". No FK to runtime's `sandboxes`/`snapshots` tables —
  * control treats the runtime as an authenticated principal talks to, not a
  * database it joins against.
  */
 
 import type {
+  FileEntry,
   PortEntry,
   ProcessEntry,
   Source,
@@ -25,7 +26,7 @@ export const organizations = sqliteTable("organizations", {
   name: text("name").notNull(),
   slug: text("slug").notNull().unique(),
   avatarUrl: text("avatar_url"),
-  personal: text("personal").notNull().default("false"),
+  personal: integer("personal", { mode: "boolean" }).notNull().default(false),
   createdAt: text("created_at").notNull(),
   updatedAt: text("updated_at").notNull(),
 });
@@ -41,7 +42,7 @@ export const users = sqliteTable("users", {
   lastLoginAt: text("last_login_at").notNull(),
 });
 
-const orgMemberRoleValues = ["owner", "admin", "member", "viewer"] as const;
+const orgMemberRoleValues = ["owner", "member"] as const;
 export type OrgMemberRole = (typeof orgMemberRoleValues)[number];
 
 export const orgMembers = sqliteTable(
@@ -59,23 +60,6 @@ export const orgMembers = sqliteTable(
     uniqueIndex("idx_org_members_org_user").on(t.orgId, t.userId),
   ],
 );
-
-/**
- * Operator-mandated spec fragment appended at every seam crossing for an org
- * (an audit process, a compliance file — §3.2 "org-policy injection"). A
- * dev hand-crafting a spec against the raw API still gets these, because
- * enrichment happens server-side on every crossing.
- */
-export const orgPolicySpecs = sqliteTable("org_policy_specs", {
-  id: text("id").primaryKey(),
-  orgId: text("org_id").notNull().unique(),
-  /** A `Partial<SandboxSpec>` fragment, merged via @atelier/compose rules. */
-  fragment: text("fragment", { mode: "json" })
-    .notNull()
-    .$type<Record<string, unknown>>(),
-  createdAt: text("created_at").notNull(),
-  updatedAt: text("updated_at").notNull(),
-});
 
 /**
  * The control secrets store. Values, not references — specs at rest hold
@@ -137,22 +121,18 @@ export const apiKeys = sqliteTable(
   ],
 );
 
-const toolboxOwnerTypeValues = ["org", "user"] as const;
-export type ToolboxOwnerTypeCol = (typeof toolboxOwnerTypeValues)[number];
-
 /**
- * Entity-scoped toolbox configs (entities-toolbox.md). Owned by an `org`
- * (place-scoped, mandated baseline) or a `user` (identity-scoped, personal
- * overlay) via polymorphic (`owner_type`, `owner_id`). `source`/`build`/
- * `paths` mirror `ToolboxConfigInput`; `enabled` toolboxes are built into refs
- * and prepended to `SandboxSpec.toolsets` at the api/ seam, never here.
+ * Org-owned toolbox configs. "Personal" means "in the
+ * user's personal org". `source`/`build`/`paths` mirror `ToolboxConfigInput`;
+ * `files` are written into every sandbox the toolbox applies to (secret refs
+ * resolved by enrichment). Auto-inject toolboxes are built into refs and
+ * prepended to `SandboxSpec.toolsets` at the api/ seam, never here.
  */
-export const entityToolboxes = sqliteTable(
-  "entity_toolboxes",
+export const toolboxes = sqliteTable(
+  "toolboxes",
   {
     id: text("id").primaryKey(),
-    ownerType: text("owner_type", { enum: toolboxOwnerTypeValues }).notNull(),
-    ownerId: text("owner_id").notNull(),
+    orgId: text("org_id").notNull(),
     slug: text("slug").notNull(),
     description: text("description").notNull(),
     source: text("source", { mode: "json" }).$type<Source>(),
@@ -161,6 +141,7 @@ export const entityToolboxes = sqliteTable(
     harness: text("harness"),
     processes: text("processes", { mode: "json" }).$type<ProcessEntry[]>(),
     ports: text("ports", { mode: "json" }).$type<PortEntry[]>(),
+    files: text("files", { mode: "json" }).$type<FileEntry[]>(),
     autoInject: integer("auto_inject").notNull().default(1),
     /** Pinned toolbox version (nullable — null means "resolve the recipe
      * build every spawn", the default). Owned/updated by
@@ -186,12 +167,8 @@ export const entityToolboxes = sqliteTable(
     updatedAt: text("updated_at").notNull(),
   },
   (t) => [
-    index("idx_entity_toolboxes_owner").on(t.ownerType, t.ownerId),
-    uniqueIndex("idx_entity_toolboxes_owner_slug").on(
-      t.ownerType,
-      t.ownerId,
-      t.slug,
-    ),
+    index("idx_toolboxes_org").on(t.orgId),
+    uniqueIndex("idx_toolboxes_org_slug").on(t.orgId, t.slug),
   ],
 );
 
@@ -202,8 +179,8 @@ export const entityToolboxes = sqliteTable(
  * join by `ref`. `label` is a per-toolbox monotonic counter (v1, v2, …),
  * assigned by `ToolboxVersionRepository.nextLabel`.
  */
-export const entityToolboxVersions = sqliteTable(
-  "entity_toolbox_versions",
+export const toolboxVersions = sqliteTable(
+  "toolbox_versions",
   {
     id: text("id").primaryKey(),
     toolboxId: text("toolbox_id").notNull(),
@@ -216,41 +193,11 @@ export const entityToolboxVersions = sqliteTable(
     recipeFingerprint: text("recipe_fingerprint").notNull(),
     createdAt: text("created_at").notNull(),
   },
-  (t) => [index("idx_entity_toolbox_versions_toolbox").on(t.toolboxId)],
+  (t) => [index("idx_toolbox_versions_toolbox").on(t.toolboxId)],
 );
 
-export const settings = sqliteTable("settings", {
+export const serverConfig = sqliteTable("server_config", {
   key: text("key").primaryKey(),
   value: text("value", { mode: "json" }).notNull(),
   updatedAt: text("updated_at").notNull(),
 });
-
-const minRiskValues = ["low", "medium", "high"] as const;
-
-/**
- * One person's connection to one compiled-in integration (see
- * `integrations/integration.ts`). The credential is the person's key at the
- * integration's service, encrypted, never returned.
- */
-export const integrationConnections = sqliteTable(
-  "integration_connections",
-  {
-    id: text("id").primaryKey(),
-    userId: text("user_id").notNull(),
-    integrationId: text("integration_id").notNull(),
-    credential: text("credential"),
-    enabled: integer("enabled", { mode: "boolean" }).notNull().default(true),
-    minRisk: text("min_risk", { enum: minRiskValues })
-      .notNull()
-      .default("high"),
-    delaySeconds: integer("delay_seconds").notNull().default(0),
-    createdAt: text("created_at").notNull(),
-    updatedAt: text("updated_at").notNull(),
-  },
-  (t) => [
-    uniqueIndex("idx_integration_connections_user_integration").on(
-      t.userId,
-      t.integrationId,
-    ),
-  ],
-);

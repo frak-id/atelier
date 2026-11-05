@@ -1,5 +1,5 @@
 /**
- * Runtime's tables. Per design.md §3.1: `sandboxes(id, spec, status,
+ * Runtime's tables. Per docs/archive/design.md §3.1: `sandboxes(id, spec, status,
  * generated, metadata)` and `snapshots(hash, parent, ref)` — deliberately NO
  * FK to any identity table. `control/` treats the runtime as an
  * authenticated principal it talks to, not a database it joins against, and
@@ -26,8 +26,11 @@ export const sandboxes = sqliteTable("sandboxes", {
   generated: text("generated").notNull(),
   /** JSON: opaque pass-through, threaded for observability, never read. */
   metadata: text("metadata").notNull(),
-  podName: text("pod_name"),
-  pvcName: text("pvc_name"),
+  /** The resolved boot image (digest-pinned where possible) at create. Pause,
+   * resume and image lookups use it instead of re-resolving `spec.source`,
+   * which breaks once a source snapshot is gone or the registry is down.
+   * Null on rows that predate the column: they resolve the source. */
+  image: text("image"),
   /** VolumeSnapshot ref the last `pause()` produced — the resume boot source. */
   pauseSnapshotRef: text("pause_snapshot_ref"),
   createdAt: text("created_at").notNull(),
@@ -45,6 +48,11 @@ export const snapshots = sqliteTable(
     image: text("image").notNull(),
     /** Parent snapshot ref in the chain, if this snapshot was derived. */
     parent: text("parent"),
+    /** What produced the row: `prebuild` (shared, content-keyed), `pause`
+     * (a sandbox's resume source), `manual` (an explicit snapshot) or `fork`
+     * (the copy's boot source). The default only serves the migration that
+     * added the column (existing rows are backfilled); every write sets it. */
+    kind: text("kind").notNull().default("manual"),
     /** Owning sandbox for sandbox-scoped snapshots (pause/manual) — their
      * VolumeSnapshots carry the sandbox label and are swept on destroy, so
      * the rows must go with them. Null for shared prebuild snapshots. */
@@ -53,6 +61,9 @@ export const snapshots = sqliteTable(
     metadata: text("metadata"),
     /** JSON: the original PrebuildSpec, so a prebuild can be replayed/refreshed. */
     spec: text("spec"),
+    /** JSON: each repo's remote HEAD (by `clonePath`) the prebuild was keyed
+     * on — what the snapshot contains. Null for non-prebuild rows. */
+    repoHeads: text("repo_heads"),
     /** Opaque id of the user who baked the prebuild: the staleness refresh
      * uses that user's own GitHub token to reach private repos. */
     createdBy: text("created_by"),
@@ -63,15 +74,12 @@ export const snapshots = sqliteTable(
 
 /**
  * A registered/built base image (docs review: "base images as first-class
- * server content"). Three `provenance` values:
+ * server content"). Two `provenance` values:
  *   - `seed`: built from an embedded seed context (`registry/seeds/`),
  *     `seedId` names it.
- *   - `dockerfile`: built from a user-supplied Dockerfile (pasted or from an
- *     uploaded zip's context) — `dockerfile` holds the content so a rebuild
- *     can replay it.
  *   - `external`: a pure reference (e.g. a GHCR image) registered without a
  *     build — `ref` is the verbatim user-given ref, `status` is `ready`
- *     immediately, `digest`/`dockerfile`/`seedId` stay null.
+ *     immediately, `digest`/`seedId` stay null.
  * `name` is the destination repo name (`${registryUrl}/<name>`) and the sole
  * identity — builds are dedup'd/looked-up by it, mirroring how `snapshots`
  * dedupe by content hash. No FK (runtime's tables carry none, see header).
@@ -85,12 +93,9 @@ export const images = sqliteTable("images", {
   ref: text("ref"),
   /** Which embedded seed this was built from, when `provenance=seed`. */
   seedId: text("seed_id"),
-  /** The Dockerfile content built, when `provenance=dockerfile` — kept so a
-   * "rebuild" action can replay it without the caller re-submitting it. */
-  dockerfile: text("dockerfile"),
   /** The `sha256:...` digest resolved after a successful build/push. */
   digest: text("digest"),
-  /** Last-N lines of build output, for the images page/CLI to show without
+  /** Last-N lines of build output, for the images page to show without
    * requiring the build's live `/logs` stream to still be open. */
   buildLog: text("build_log"),
   error: text("error"),
@@ -149,8 +154,6 @@ export const toolsets = sqliteTable(
     ref: text("ref").notNull(),
     /** JSON: home path-sets the artifact materializes into. */
     paths: text("paths").notNull(),
-    /** JSON: env fragment merged at compose time (nullable). */
-    env: text("env"),
     /** JSON: `ToolsetProvenance` (built | captured). */
     provenance: text("provenance").notNull(),
     /** 1 = private-to-capturer (captures default), 0 = published. */
@@ -165,7 +168,7 @@ export const toolsets = sqliteTable(
 );
 
 /**
- * Which toolset refs each sandbox has mounted (toolset-overlay-squashfs.md
+ * Which toolset refs each sandbox has mounted (docs/archive/proposals/toolset-overlay-squashfs.md
  * §6-7) — a many-to-many join, deliberately not a column on `sandboxes` (one
  * toolset can be referenced by many sandboxes) and not a column on
  * `toolsets` (one sandbox mounts many toolsets). Sole job: GC guard —

@@ -1,9 +1,12 @@
 import { describe, expect, test } from "bun:test";
 import {
   decideForwardAuth,
+  decideWake,
   type ForwardedRequest,
   forwardedUrl,
   isReturnUrl,
+  sandboxIdFromHost,
+  wakePage,
 } from "./forward-auth.ts";
 
 const BASE = "hetzner-staging.frak.id";
@@ -90,5 +93,66 @@ describe("forwardedUrl", () => {
       "https://a.b//evil.example",
     );
     expect(forwardedUrl({})).toBeUndefined();
+  });
+});
+
+describe("sandboxIdFromHost", () => {
+  test("reads the id off a tool host", () => {
+    expect(sandboxIdFromHost(`pi-web-abc123def456.${BASE}`, BASE)).toBe(
+      "abc123def456",
+    );
+    expect(sandboxIdFromHost(`web-abc123def456.${BASE}:8443`, BASE)).toBe(
+      "abc123def456",
+    );
+    expect(sandboxIdFromHost(`WEB-ABC123.${BASE.toUpperCase()}`, BASE)).toBe(
+      "abc123",
+    );
+  });
+
+  test("anything else is not a tool host", () => {
+    expect(sandboxIdFromHost(undefined, BASE)).toBeUndefined();
+    expect(sandboxIdFromHost(`atelier.${BASE}`, BASE)).toBeUndefined();
+    expect(sandboxIdFromHost(`a-b.c.${BASE}`, BASE)).toBeUndefined();
+    expect(sandboxIdFromHost("web-abc123.example.com", BASE)).toBeUndefined();
+    expect(sandboxIdFromHost(BASE, BASE)).toBeUndefined();
+    expect(sandboxIdFromHost(`web-.${BASE}`, BASE)).toBeUndefined();
+  });
+});
+
+describe("decideWake", () => {
+  test("only a paused sandbox wakes", () => {
+    for (const status of [
+      "running",
+      "creating",
+      "error",
+      "stopped",
+      undefined,
+    ]) {
+      expect(decideWake(status, page)).toEqual({ status: 200 });
+    }
+    expect(decideWake("paused", page).status).toBe(503);
+  });
+
+  test("a browser page load gets the refreshing page", () => {
+    expect(decideWake("paused", page)).toEqual({ status: 503, page: true });
+  });
+
+  test("API calls, assets and non-GET requests get a bare 503", () => {
+    expect(
+      decideWake("paused", { ...page, accept: "application/json" }),
+    ).toEqual({ status: 503, page: false });
+    expect(decideWake("paused", { ...page, method: "POST" })).toEqual({
+      status: 503,
+      page: false,
+    });
+    expect(decideWake("paused", { host: page.host })).toEqual({
+      status: 503,
+      page: false,
+    });
+  });
+
+  test("the page reloads itself", () => {
+    expect(wakePage()).toContain('http-equiv="refresh"');
+    expect(wakePage()).toContain("Waking up sandbox");
   });
 });

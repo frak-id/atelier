@@ -12,7 +12,7 @@ import { join } from "node:path";
 import {
   hasConfigPath,
   loadProvidedConfig,
-} from "@frak/atelier-shared/config-loader";
+} from "../../../config/config.loader.ts";
 
 function writeConfig(contents: unknown): string {
   const dir = mkdtempSync(join(tmpdir(), "atelier-config-"));

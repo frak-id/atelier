@@ -17,7 +17,9 @@
 # demand via the in-cluster BuildKit (imageBuilder.kind=buildkit), so these are
 # NOT part of "all". Build them explicitly only to bootstrap a fresh registry
 # or force a base-image rebuild outside the app pipeline. Note: dev-base COPYs
-# the agent from Zot, so build agent before dev-base.
+# the agent from Zot (AGENT_IMAGE build arg), so build agent before dev-base.
+# The server's own seed builds use `sandbox.agentImage`; on this cluster it is
+# set (console > Settings > Config) to the same Zot image.
 #
 set -euo pipefail
 
@@ -32,6 +34,10 @@ BUILDER_POD="v2-builder"
 
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 cd "$ROOT"
+
+# Immutable tag (git short sha) pushed next to the floating :v2; the
+# Deployment is pinned to it after a build so pods never drift on a re-pull.
+TAG="$(git rev-parse --short HEAD)"
 
 K() { kubectl --context "$CTX" "$@"; }
 say() { printf '\n\033[1;36m==> %s\033[0m\n' "$*"; }
@@ -129,6 +135,7 @@ set -e
 cd /devbase && tar xzf /tmp/devbase.tgz && printf '\n' > .dockerignore
 $BUILDCTL build --frontend dockerfile.v0 --local context=/devbase --local dockerfile=/devbase \
   --opt platform=linux/amd64 --no-cache \
+  --opt build-arg:AGENT_IMAGE=$REGISTRY/sandbox-agent:latest \
   --output type=image,name=$REGISTRY/dev-base:latest,$OUT_OPTS
 "
 }
@@ -147,14 +154,14 @@ cd /ctx && tar xzf /tmp/v2-ctx.tgz && printf 'node_modules\n.git\n*.tar.gz\n' > 
   REPO_CTX_SENT=true
 }
 
-build_target() { # $1 = server|console, $2 = image name
-  say "Build $2 (Dockerfile target=$1)"
+build_target() { # $1 = server|console, $2 = image repo (no tag)
+  say "Build $2:v2 + $2:$TAG (Dockerfile target=$1)"
   send_repo_ctx
   K exec -n "$NS_BUILD" "$BUILDER_POD" -- sh -c "
 set -e
 $BUILDCTL build --frontend dockerfile.v0 --local context=/ctx --local dockerfile=/ctx \
   --opt filename=Dockerfile --opt target=$1 --opt platform=linux/amd64 \
-  --output type=image,name=$REGISTRY/$2,$OUT_OPTS
+  --output 'type=image,\"name=$REGISTRY/$2:v2,$REGISTRY/$2:$TAG\",$OUT_OPTS'
 "
 }
 
@@ -162,8 +169,8 @@ $BUILDCTL build --frontend dockerfile.v0 --local context=/ctx --local dockerfile
 if $NEED_BUILDER; then start_builder; fi
 $BUILD_AGENT   && build_agent
 $BUILD_DEVBASE && build_devbase
-$BUILD_SERVER  && build_target server  atelier-server:v2
-$BUILD_CONSOLE && build_target console atelier-console:v2
+$BUILD_SERVER  && build_target server  atelier-server
+$BUILD_CONSOLE && build_target console atelier-console
 if $NEED_BUILDER; then cleanup; trap - EXIT; fi
 
 sync_build_tls
@@ -179,11 +186,25 @@ if $DO_ROLLOUT; then
   say "Applying 60-service.yaml + 80-forward-auth.yaml"
   K apply -f "$ROOT/infra/k8s/60-service.yaml"
   K apply -f "$ROOT/infra/k8s/80-forward-auth.yaml"
+  # Sandbox isolation: only the server and Traefik reach sandbox pods (the
+  # in-pod agent runs root commands). Idempotent.
+  say "Applying 85-network-policy.yaml"
+  K apply -f "$ROOT/infra/k8s/85-network-policy.yaml"
   say "Applying 30-config.yaml"
   K apply -f "$ROOT/infra/k8s/30-config.yaml"
 
   say "Rolling deploy/$DEPLOY"
-  K rollout restart "deploy/$DEPLOY" -n "$NS_SYS"
+  # Pin the rebuilt containers to the immutable tag (IfNotPresent), so a
+  # node restart can't pull a different :v2. This also rolls the pods.
+  pin() { # $1 = container, $2 = image repo
+    K -n "$NS_SYS" patch "deploy/$DEPLOY" -p "{\"spec\":{\"template\":{\"spec\":{\"containers\":[{\"name\":\"$1\",\"image\":\"$REGISTRY/$2:$TAG\",\"imagePullPolicy\":\"IfNotPresent\"}]}}}}"
+  }
+  if $BUILD_SERVER || $BUILD_CONSOLE; then
+    $BUILD_SERVER  && pin server  atelier-server
+    $BUILD_CONSOLE && pin console atelier-console
+  else
+    K rollout restart "deploy/$DEPLOY" -n "$NS_SYS"
+  fi
   K rollout status  "deploy/$DEPLOY" -n "$NS_SYS" --timeout=180s
 fi
 

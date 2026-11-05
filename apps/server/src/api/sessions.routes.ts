@@ -1,14 +1,22 @@
 /**
- * `/sessions/*` — the agent app-tier HTTP surface (design.md §3.1 api/
+ * `/sessions/*` — the agent app-tier HTTP surface (docs/archive/design.md §3.1 api/
  * table: "/sessions/* → sessions"). Thin Elysia binding over
  * `SessionService`/`TerminalService`; all mechanism lives in `sessions/`.
+ * Agent sessions are read-only here (plus abort/delete): sandbox agents
+ * auto-approve, so there is nothing to answer.
  */
-import { AgentPermissionReplyBodySchema } from "@frak/atelier-shared";
+
+import { repoCloneName, SANDBOX_NAME_ANNOTATION } from "@atelier/spec";
 import { Elysia, sse, t } from "elysia";
+import { VM } from "../config/constants.ts";
 import { createChildLogger } from "../shared/lib/logger.ts";
 import { createAuthPlugin } from "./auth.plugin.ts";
 import type { ServerContainer } from "./container.ts";
-import { requireSandboxAccess, sandboxAccessGuard } from "./sandbox-guard.ts";
+import {
+  accessibleSandboxes,
+  requireSandboxAccess,
+  sandboxAccessGuard,
+} from "./sandbox-guard.ts";
 import {
   closeUpstream,
   isUserInput,
@@ -29,11 +37,6 @@ export function createSessionsRoutes(container: ServerContainer) {
     .use(authPlugin)
     .onBeforeHandle(accessGuard)
     .get("/sessions", ({ params }) => sessions.listSessions(params.id))
-    .post(
-      "/sessions",
-      ({ params, body }) => sessions.createSession(params.id, body.directory),
-      { body: t.Object({ directory: t.Optional(t.String()) }) },
-    )
     .get("/sessions/:sessionId", ({ params }) =>
       sessions.getSession(params.id, params.sessionId),
     )
@@ -48,27 +51,6 @@ export function createSessionsRoutes(container: ServerContainer) {
     )
     .get("/session-statuses", ({ params }) =>
       sessions.sessionStatuses(params.id),
-    )
-    .get("/permissions", ({ params }) => sessions.listPermissions(params.id))
-    .post(
-      "/permissions/:requestId/reply",
-      ({ params, body }) =>
-        sessions.replyPermission(
-          params.id,
-          params.requestId,
-          "reply" in body ? body.reply : { optionId: body.optionId },
-        ),
-      { body: AgentPermissionReplyBodySchema },
-    )
-    .get("/questions", ({ params }) => sessions.listQuestions(params.id))
-    .post(
-      "/questions/:requestId/reply",
-      ({ params, body }) =>
-        sessions.replyQuestion(params.id, params.requestId, body.answers),
-      { body: t.Object({ answers: t.Array(t.Array(t.String())) }) },
-    )
-    .post("/questions/:requestId/reject", ({ params }) =>
-      sessions.rejectQuestion(params.id, params.requestId),
     )
     .get("/events", async function* ({ params, request }) {
       const controller = new AbortController();
@@ -191,7 +173,113 @@ export function createSessionsRoutes(container: ServerContainer) {
       },
     });
 
+  function taskDetail(taskId: string) {
+    const task = container.tasks.describe(taskId);
+    const name = container.runtime.getLabels(task.sandboxId)?.annotations[
+      SANDBOX_NAME_ANNOTATION
+    ];
+    return { ...task, sandboxName: name };
+  }
+
+  function requireTaskAccess(taskId: string, userId: string): void {
+    requireSandboxAccess(
+      container,
+      userId,
+      container.tasks.describe(taskId).sandboxId,
+    );
+  }
+
+  /** The first repo the sandbox booted with, cloned under the dev home by
+   * its default clone name; the home itself for a sandbox with no repo. */
+  function defaultTaskCwd(sandboxId: string): string {
+    const repo = container.runtime.list().find((s) => s.id === sandboxId)
+      ?.repos?.[0];
+    return repo ? `${VM.HOME}/${repoCloneName(repo.url)}` : VM.HOME;
+  }
+
+  // Not under `/sandboxes/:id`, so no access guard: each handler applies the
+  // sandbox access rule itself.
+  const taskRoutes = new Elysia({ prefix: "/tasks" })
+    .use(authPlugin)
+    .get(
+      "/",
+      ({ user, query }) => {
+        const names = new Map(
+          accessibleSandboxes(container, user.id, container.runtime.list()).map(
+            (s) => [s.id, s.annotations?.[SANDBOX_NAME_ANNOTATION]],
+          ),
+        );
+        return container.tasks
+          .listForSandboxes([...names.keys()], {
+            status: query.status,
+            limit: query.limit,
+          })
+          .map((task) => ({ ...task, sandboxName: names.get(task.sandboxId) }));
+      },
+      {
+        query: t.Object({
+          status: t.Optional(
+            t.Union([
+              t.Literal("running"),
+              t.Literal("idle"),
+              t.Literal("failed"),
+              t.Literal("cancelled"),
+            ]),
+          ),
+          limit: t.Optional(t.Numeric({ minimum: 1, maximum: 500 })),
+        }),
+      },
+    )
+    .post(
+      "/",
+      async ({ user, body }) => {
+        requireSandboxAccess(container, user.id, body.sandboxId);
+        const started = await container.tasks.dispatchTask(user.id, {
+          sandboxId: body.sandboxId,
+          prompt: body.prompt,
+          cwd: body.cwd ?? defaultTaskCwd(body.sandboxId),
+          source: "console",
+        });
+        return taskDetail(started.taskId);
+      },
+      {
+        body: t.Object({
+          sandboxId: t.String(),
+          prompt: t.String(),
+          cwd: t.Optional(t.String()),
+        }),
+      },
+    )
+    .get("/:taskId", ({ params, user }) => {
+      const task = container.tasks.describe(params.taskId);
+      // Same NotFound for "unknown" and "not yours".
+      requireSandboxAccess(container, user.id, task.sandboxId);
+      return taskDetail(params.taskId);
+    })
+    // Actions: sandbox access first (404 for strangers), then the service's
+    // own ownership check (only the dispatching user drives a task).
+    .post(
+      "/:taskId/prompt",
+      async ({ params, user, body }) => {
+        requireTaskAccess(params.taskId, user.id);
+        await container.tasks.sendPrompt(user.id, params.taskId, body.text);
+        return taskDetail(params.taskId);
+      },
+      { body: t.Object({ text: t.String() }) },
+    )
+    .post("/:taskId/cancel", async ({ params, user }) => {
+      requireTaskAccess(params.taskId, user.id);
+      await container.tasks.cancel(user.id, params.taskId);
+      return taskDetail(params.taskId);
+    })
+    .delete("/:taskId", async ({ params, user, set }) => {
+      requireTaskAccess(params.taskId, user.id);
+      await container.tasks.close(user.id, params.taskId);
+      set.status = 204;
+    });
+
   return new Elysia({ prefix: "/sessions" })
+    .use(taskRoutes)
     .use(agentRoutes)
     .use(terminalRoutes);
 }

@@ -1,8 +1,9 @@
 /**
  * Ingress construction from a spec's `ports[]`. Mechanism only: a port entry
  * becomes an Ingress routed at `{name}-{sandboxId}.{baseDomain}`. `auth:
- * "forward"` attaches the operator's forward-auth annotations. No service
- * types, no protocols, no LB config (design.md §2 "ports stay thin").
+ * "forward"` attaches the operator's forward-auth annotations, any other
+ * public port the wake-only ones. No service
+ * types, no protocols, no LB config (docs/archive/design.md §2 "ports stay thin").
  */
 import type { PortEntry } from "@atelier/spec";
 import { config } from "../shared/lib/config.ts";
@@ -21,6 +22,12 @@ function sandboxDomain(): string {
  * predates the generic ports model). */
 function forwardAuthAnnotations(): Record<string, string> {
   return config.kubernetes.vsCodeIngressAnnotations ?? {};
+}
+
+/** Annotations for a public port without forward-auth (a preview): the
+ * wake-only middleware, so a paused sandbox resumes on access. */
+function wakeAnnotations(): Record<string, string> {
+  return config.kubernetes.wakeIngressAnnotations ?? {};
 }
 
 /**
@@ -46,7 +53,9 @@ export function buildPortIngresses(
     .map((p) => {
       const annotations = {
         ...tlsAnnotations,
-        ...(p.auth === "forward" ? forwardAuthAnnotations() : {}),
+        ...(p.auth === "forward"
+          ? forwardAuthAnnotations()
+          : wakeAnnotations()),
       };
       return buildToolIngress({
         sandboxId,
@@ -61,6 +70,18 @@ export function buildPortIngresses(
           : undefined,
       });
     });
+}
+
+/** The hosts of a sandbox's preview ports: public ones without
+ * forward-auth, i.e. the ones `buildPortIngresses` gives the wake-only
+ * middleware (the only hosts that wake a sandbox without a login). */
+export function buildPreviewHosts(
+  sandboxId: string,
+  ports: PortEntry[] = [],
+): string[] {
+  return ports
+    .filter((p) => p.public && p.auth !== "forward")
+    .map((p) => toolHost(p.name, sandboxId, sandboxDomain()));
 }
 
 /** Public URLs for a spec's declared ports. */

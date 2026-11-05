@@ -1,5 +1,5 @@
 /**
- * The HTTP shell (design.md §3.1): `/v1/* → runtime` (through control's
+ * The HTTP shell (docs/archive/design.md §3.1): `/v1/* → runtime` (through control's
  * authn + enrichment), `/api/* → control CRUD`, `/sessions/* → sessions`,
  * `/mcp → same three`.
  */
@@ -13,7 +13,6 @@ import { createAuthRoutes } from "./auth.routes.ts";
 import type { ServerContainer } from "./container.ts";
 import { createControlRoutes } from "./control.routes.ts";
 import { healthRoutes } from "./health.routes.ts";
-import { createIntegrationsRoutes } from "./integrations.routes.ts";
 import { createMcpRoutes } from "./mcp/index.ts";
 import { createSessionsRoutes } from "./sessions.routes.ts";
 import { createV1Routes } from "./v1.routes.ts";
@@ -86,7 +85,6 @@ export function createApp(container: ServerContainer) {
     .use(createAuthRoutes(container))
     .use(createV1Routes(container))
     .use(createControlRoutes(container))
-    .use(createIntegrationsRoutes(container))
     .use(createSessionsRoutes(container))
     .use(createMcpRoutes(container))
     .get("/", () => ({

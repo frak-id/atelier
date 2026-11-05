@@ -2,6 +2,7 @@ import { beforeAll, describe, expect, test } from "bun:test";
 import { mkdtemp } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import { NotFoundError } from "../../../shared/errors.ts";
 import type { ToolboxRepository as ToolboxRepositoryType } from "../toolbox/toolbox.repository.ts";
 import type { ToolboxService as ToolboxServiceType } from "../toolbox/toolbox.service.ts";
 import { recipeFingerprint } from "./fingerprint.ts";
@@ -38,15 +39,12 @@ beforeAll(async () => {
 
 function makeToolbox() {
   const toolboxService = new ToolboxService(new ToolboxRepository());
-  return toolboxService.create(
-    { type: "org", id: `org-${Math.random().toString(36).slice(2)}` },
-    {
-      slug: "my-tools",
-      description: "d",
-      build: ["echo hi"],
-      paths: ["~/x"],
-    },
-  );
+  return toolboxService.create(`org-${Math.random().toString(36).slice(2)}`, {
+    slug: "my-tools",
+    description: "d",
+    build: ["echo hi"],
+    paths: ["~/x"],
+  });
 }
 
 describe("ToolboxVersionService", () => {
@@ -54,13 +52,13 @@ describe("ToolboxVersionService", () => {
     const service = new ToolboxVersionService(new ToolboxVersionRepository());
     const tb = makeToolbox();
     const v1 = service.create(tb.id, {
-      ref: "toolsets/tb/org/x/my-tools@sha256:aaa",
+      ref: "toolsets/tb/x@sha256:aaa",
       description: "first",
       provenance: { kind: "captured", capturedFrom: "sbx-1", capturedBy: "u1" },
       recipeFingerprint: "fp1",
     });
     const v2 = service.create(tb.id, {
-      ref: "toolsets/tb/org/x/my-tools@sha256:bbb",
+      ref: "toolsets/tb/x@sha256:bbb",
       description: "second",
       provenance: { kind: "captured", capturedFrom: "sbx-2", capturedBy: "u1" },
       recipeFingerprint: "fp1",
@@ -89,6 +87,20 @@ describe("ToolboxVersionService", () => {
     expect(listed.map((v) => v.ref)).toEqual(["ref-1", "ref-2"]);
   });
 
+  test("delete is scoped to the toolbox the version belongs to", () => {
+    const service = new ToolboxVersionService(new ToolboxVersionRepository());
+    const tb = makeToolbox();
+    const other = makeToolbox();
+    const v = service.create(tb.id, {
+      ref: "ref-scoped",
+      description: "d",
+      provenance: { kind: "built", recipeHash: "h1" },
+      recipeFingerprint: "fp",
+    });
+    expect(() => service.delete(other.id, v.id)).toThrow(NotFoundError);
+    expect(service.listByToolbox(tb.id)).toHaveLength(1);
+  });
+
   test("delete removes a version", () => {
     const service = new ToolboxVersionService(new ToolboxVersionRepository());
     const tb = makeToolbox();
@@ -98,7 +110,7 @@ describe("ToolboxVersionService", () => {
       provenance: { kind: "built", recipeHash: "h1" },
       recipeFingerprint: "fp",
     });
-    service.delete(v.id);
+    service.delete(tb.id, v.id);
     expect(service.listByToolbox(tb.id)).toHaveLength(0);
   });
 

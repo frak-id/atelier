@@ -1,37 +1,28 @@
 /**
- * The image builder's backend port — mirrors the split documented in
- * `../../backend/backend.types.ts` for `SandboxBackend`/`VolumeBackend`:
- * this interface is the ONLY thing a concrete builder (docker daemon,
- * buildkit) implements, and it is deliberately narrow. Every policy
- * decision lives one layer up, in `ImageBuilderService` (not yet built — see
- * the seed loader's header comment):
+ * The image builder's backend port: the ONLY thing a concrete builder
+ * (docker daemon for local mode, buildkit for the cluster) implements, and
+ * it is deliberately narrow. Every policy decision lives one layer up, in
+ * `ImageBuilderService` (`../image-builder.service.ts`):
  *
  *   - Dockerfile `FROM`/`COPY --from` rewriting (seed `substitutions`,
  *     resolved via `ImageRegistryService.resolveImageReference` so a base
  *     image's digest stays consistent with how prebuilds key their content
  *     hash) — the backend receives already-rewritten Dockerfile CONTENT, it
  *     never reads a seed's raw Dockerfile off disk itself.
- *   - Seed build-DAG ordering (`dependsOn`), content/name dedupe (mirrors
- *     `RuntimeService`'s `inflightPrebuilds` map), digest pinning after
- *     push, and the `images` table bookkeeping (status/log/error).
- *   - Build-context materialization: a seed's `contextDir` used as-is, a zip
- *     upload unpacked to a temp dir, or a single pasted Dockerfile wrapped in
- *     a synthetic one-file context — the backend only ever sees a ready
- *     `contextDir` on disk, never an upload/seed-id.
+ *   - Seed build-DAG ordering (`dependsOn`), name dedupe, digest pinning
+ *     after push, and the `images` table bookkeeping (status/log/error).
  *
  * A concrete backend's ONLY job: build `dockerfile` against `contextDir`,
  * push to `tag`, and return the pushed manifest's digest. Backends differ
- * wildly in how a build context reaches them (docker streams it to a local
- * daemon; the in-cluster buildkit Job needs it staged into the cluster as a
- * ConfigMap mounted into the Job pod) — that
- * difference is fully absorbed inside each backend's `build()`, never
- * surfaced in this port.
+ * in how a build context reaches them (docker streams it to a local daemon;
+ * the in-cluster buildkit Job needs it staged into the cluster as a
+ * ConfigMap mounted into the Job pod) — that difference is fully absorbed
+ * inside each backend's `build()`, never surfaced in this port.
  */
 
 export interface ImageBuildRequest {
-  /** Absolute path to a build context directory already prepared by
-   * `ImageBuilderService` (seed copy, unpacked zip, or a synthetic
-   * single-Dockerfile context). Handed to the backend verbatim. */
+  /** Absolute path to the seed's build context directory. Handed to the
+   * backend verbatim. */
   contextDir: string;
   /** Full Dockerfile CONTENT to build — already rewritten (seed
    * substitutions resolved) by the service. Backends must write this to
@@ -94,7 +85,7 @@ export function shQuote(arg: string): string {
   return `'${arg.replace(/'/g, "'\\''")}'`;
 }
 
-/** Shared `req.buildArgs` → argv-flag formatting loop, used by all three
+/** Shared `req.buildArgs` → argv-flag formatting loop, used by both
  * backends (H2): each backend differs only in the flag SHAPE it wants per
  * key/value pair (`--build-arg k=v`, `--build-arg=k=v`, `--opt
  * build-arg:k=v`), supplied via `formatFlag`. Centralizing the loop means a

@@ -9,72 +9,66 @@ export interface OrgSummaryLike {
   /** The caller's OWN personal org (someone else's personal org they were
    * invited to is `personal` but not `mine`). */
   mine?: boolean;
+  /** The team org named by the server's `auth.defaultOrg`. */
+  default?: boolean;
 }
 
 /**
- * The caller's personal org id (the server's spawn default too), else the
- * first org they belong to, or "" if they belong to none.
+ * The server's spawn default: the team org (`auth.defaultOrg`), else the
+ * caller's personal org, else the first org they belong to, or "" if they
+ * belong to none.
  */
 export function pickDefaultOrgId(
   orgs: readonly OrgSummaryLike[] | undefined,
 ): string {
-  return (orgs?.find((org) => org.mine) ?? orgs?.[0])?.id ?? "";
+  return (
+    (
+      orgs?.find((org) => org.default) ??
+      orgs?.find((org) => org.mine) ??
+      orgs?.[0]
+    )?.id ?? ""
+  );
 }
 
-type OrgRole = "owner" | "admin" | "member" | "viewer";
+type OrgRole = "owner" | "member";
 
 interface OrgWithRoleLike extends OrgSummaryLike {
   name: string;
   role: OrgRole;
 }
 
-/** One owner a settings page lists records for: the caller (`user`) or one
- * of their orgs. */
+/** One org a settings page lists records for. */
 export interface OwnerScope {
-  /** The `?owner=` string the API takes: `user` or `org:<id>`. */
+  /** The `?owner=` string the API takes: `org:<id>`. */
   owner: string;
-  /** The org's id; undefined for the caller's own `user` scope. */
-  orgId?: string;
+  orgId: string;
   label: string;
   /** The caller's personal org (see `OrgSummaryLike.mine`). */
   mine: boolean;
-  /** The caller's role in the org; undefined for the `user` scope. */
-  role?: OrgRole;
-  /** Owner/admin of the org, always true for `user` — mirrors the server's
-   * owner-scoped write check (`requireToolboxOwnerAccess`). */
-  canManage: boolean;
+  /** The team org (see `OrgSummaryLike.default`). */
+  isDefault: boolean;
+  role: OrgRole;
+  /** Owner of the org. Members can use and edit its toolboxes but not write
+   * its secrets — pages pick the rule that matches their record type. */
+  isOwner: boolean;
 }
 
 /**
- * Every scope a settings page shows as its own section: the caller's own
- * `user` scope first (when the record type has one), then their personal
- * org, then every other org in the server's order.
+ * Every org a settings page shows as its own section: the caller's personal
+ * org first, then every other org in the server's order.
  */
-export function ownerScopes(
-  orgs: readonly OrgWithRoleLike[],
-  options: { includeUser: boolean },
-): OwnerScope[] {
+export function ownerScopes(orgs: readonly OrgWithRoleLike[]): OwnerScope[] {
   const sorted = [
     ...orgs.filter((org) => org.mine),
     ...orgs.filter((org) => !org.mine),
   ];
-  const scopes: OwnerScope[] = sorted.map((org) => ({
+  return sorted.map((org) => ({
     owner: `org:${org.id}`,
     orgId: org.id,
     label: org.name,
     mine: org.mine === true,
+    isDefault: org.default === true,
     role: org.role,
-    canManage: org.role === "owner" || org.role === "admin",
+    isOwner: org.role === "owner",
   }));
-  return options.includeUser
-    ? [
-        {
-          owner: "user",
-          label: "Personal",
-          mine: true,
-          canManage: true,
-        },
-        ...scopes,
-      ]
-    : scopes;
 }

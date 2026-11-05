@@ -6,13 +6,11 @@ export {
   buildPvc,
   buildSandboxPod,
   buildSandboxService,
-  buildSshPipe,
   buildToolIngress,
   buildVolumeSnapshot,
   toolHost,
   toolIngressName,
 } from "./kube.resources.ts";
-export { buildKnownHostsData } from "./ssh-known-hosts.ts";
 export {
   ensureSharedSshPipeKey,
   getSharedSshPipeKeyOpenSSH,

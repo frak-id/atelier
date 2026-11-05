@@ -1,9 +1,9 @@
 /**
- * Repo-prebuild conventions shared by every client (console, CLI) and the
+ * Repo-prebuild conventions shared by every client (console) and the
  * server: how a prebuild is recognized as "the prebuild for repo X", how its
  * job queue row is labelled, and how a quick one-repo prebuild spec is
  * assembled. Pure functions over the spec types, with no Node or DOM APIs,
- * so the browser console, the Node CLI and the Bun server can all import them.
+ * so the browser console and the Bun server can all import them.
  *
  * These live next to the schemas because they are contract, not UI: two
  * surfaces that disagree on repo identity would each think the other's
@@ -173,9 +173,9 @@ export function parsePrebuildJobTarget(
 /**
  * Best-effort setup-command suggestion from a repo's top-level file names:
  * lockfiles and manifests only, with no network or execution. `has` answers
- * "does this root-level file exist". The CLI backs it with the local
- * checkout and the server backs it with the GitHub contents listing. Returns
- * at most one install step per ecosystem, unscoped (see `inRepoDir`).
+ * "does this root-level file exist". The server backs it with the GitHub
+ * contents listing. Returns at most one install step per ecosystem, unscoped
+ * (see `inRepoDir`).
  */
 export function detectSetupSteps(has: (file: string) => boolean): string[] {
   const steps: string[] = [];

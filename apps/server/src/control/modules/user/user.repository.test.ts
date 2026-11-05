@@ -22,6 +22,46 @@ afterAll(async () => {
 });
 
 describe("UserService.listDirectory", () => {
+  test("stores the GitHub token encrypted and reads legacy plaintext", async () => {
+    const { getDatabase } = await import("../../db/client.ts");
+    const { users } = await import("../../db/schema.ts");
+    const { eq } = await import("drizzle-orm");
+    control.userService.upsertFromLogin(
+      "tok-1",
+      "carol",
+      "carol@example.test",
+      "",
+      "gho_plain_token",
+    );
+    const stored = () =>
+      getDatabase()
+        .select({ token: users.githubAccessToken })
+        .from(users)
+        .where(eq(users.id, "tok-1"))
+        .get()?.token;
+    expect(stored()).toStartWith("enc:");
+    expect(stored()).not.toContain("gho_plain_token");
+    expect(control.userService.getById("tok-1")?.githubAccessToken).toBe(
+      "gho_plain_token",
+    );
+
+    // A row written before encryption still reads, and the next login
+    // (upsert without a new token) re-encrypts it.
+    getDatabase()
+      .update(users)
+      .set({ githubAccessToken: "gho_legacy" })
+      .where(eq(users.id, "tok-1"))
+      .run();
+    expect(control.userService.getById("tok-1")?.githubAccessToken).toBe(
+      "gho_legacy",
+    );
+    control.userService.upsertFromLogin("tok-1", "carol", "c@x.test", "");
+    expect(stored()).toStartWith("enc:");
+    expect(control.userService.getById("tok-1")?.githubAccessToken).toBe(
+      "gho_legacy",
+    );
+  });
+
   test("lists every user with memberships, never the token", () => {
     const alice = control.userService.upsertFromLogin(
       "dir-1",
@@ -37,7 +77,7 @@ describe("UserService.listDirectory", () => {
       "dir-alice",
       true,
     );
-    control.orgMemberService.addMember(team.id, alice.id, "admin");
+    control.orgMemberService.addMember(team.id, alice.id, "member");
     control.orgMemberService.addMember(personal.id, alice.id, "owner");
 
     const directory = control.userService.listDirectory();
@@ -49,7 +89,7 @@ describe("UserService.listDirectory", () => {
         .get("alice")
         ?.organizations.map((o) => [o.slug, o.role, o.personal]),
     ).toEqual([
-      ["dir-team", "admin", false],
+      ["dir-team", "member", false],
       ["dir-alice", "owner", true],
     ]);
     // A user with no membership still appears.

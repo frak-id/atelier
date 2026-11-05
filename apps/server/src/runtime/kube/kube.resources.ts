@@ -1,9 +1,10 @@
-import { VM } from "@frak/atelier-shared/constants";
+import { VM } from "../../config/constants.ts";
 import { config } from "../../shared/lib/config.ts";
 import {
   storageClass,
   volumeSnapshotClass,
 } from "../../shared/lib/runtime-config.ts";
+import { resourceName } from "../resource-name.ts";
 
 export type KubeResource = {
   apiVersion: string;
@@ -127,7 +128,7 @@ export function buildSandboxPod(options: SandboxPodOptions): KubeResource {
     apiVersion: "v1",
     kind: "Pod",
     metadata: {
-      name: `sandbox-${options.sandboxId}`,
+      name: resourceName(options.sandboxId),
       namespace,
       labels,
     },
@@ -145,7 +146,7 @@ export function buildSandboxPod(options: SandboxPodOptions): KubeResource {
           command: ["/etc/sandbox/sandbox-boot.sh"],
           // runAsUser 0 + CAP_SYS_ADMIN: the agent loop-mounts squashfs
           // toolset blobs and assembles the /home/dev overlay from INSIDE the
-          // container (toolset-overlay-squashfs.md §3). uid 0 alone gets the
+          // container (docs/archive/proposals/toolset-overlay-squashfs.md §3). uid 0 alone gets the
           // default OCI capability set, which excludes CAP_SYS_ADMIN, so
           // mount(2) would EPERM. Cheap under Kata: the VM (not the container
           // capset) is the isolation boundary. Pre-cutover, verify in a booted
@@ -162,8 +163,8 @@ export function buildSandboxPod(options: SandboxPodOptions): KubeResource {
           env: [
             { name: "SANDBOX_ID", value: options.sandboxId },
             {
-              // Pod-level agent Basic-auth password. NOTE: if the pod image's
-              // boot script still reads $OPENCODE_PASSWORD, update it there too.
+              // Bearer token the agent requires on every route but
+              // GET /health (apps/agent auth.rs).
               name: "AGENT_PASSWORD",
               value: options.agentPassword,
             },
@@ -217,7 +218,7 @@ export function buildSandboxService(
     apiVersion: "v1",
     kind: "Service",
     metadata: {
-      name: `sandbox-${sandboxId}`,
+      name: resourceName(sandboxId),
       namespace,
       labels: sandboxLabels(sandboxId),
     },
@@ -287,7 +288,7 @@ export function buildToolIngress(options: ToolIngressOptions): KubeResource {
                 pathType: "Prefix",
                 backend: {
                   service: {
-                    name: `sandbox-${options.sandboxId}`,
+                    name: resourceName(options.sandboxId),
                     port: { number: options.port },
                   },
                 },
@@ -391,78 +392,5 @@ export function buildVolumeSnapshot(
       annotations: options.annotations,
     },
     spec,
-  };
-}
-
-export type SshPipeOptions = {
-  sandboxId: string;
-  targetHost: string;
-  authorizedKeysData?: string;
-  privateKeySecretName?: string;
-  namespace?: string;
-  workspaceId?: string;
-  /** base64 `known_hosts` content pinning the sandbox's real sshd host
-   * key(s) (build with `buildKnownHostsData` — ssh-known-hosts.ts).
-   * Undefined at initial Pipe creation (the sandbox's sshd hasn't reported a
-   * key to the agent yet) — boot patches it in once the agent does (see
-   * ssh-gateway.ts's `pinHostKey`) before the boot returns; a boot that
-   * can't pin fails. */
-  knownHostsData?: string;
-};
-
-export function buildSshPipe(options: SshPipeOptions): KubeResource {
-  const namespace = options.namespace ?? config.kubernetes.namespace;
-  const labels: Record<string, string> = {
-    "atelier.dev/component": "ssh-pipe",
-    "atelier.dev/sandbox": options.sandboxId,
-  };
-  if (options.workspaceId) {
-    labels["atelier.dev/workspace"] = sanitizeLabelValue(options.workspaceId);
-  }
-
-  return {
-    apiVersion: "sshpiper.com/v1beta1",
-    kind: "Pipe",
-    metadata: {
-      name: `ssh-${options.sandboxId}`,
-      namespace,
-      labels,
-      annotations: {
-        "sshpiper.com/no_ca_publickey": "true",
-      },
-    },
-    spec: {
-      from: [
-        {
-          username: options.sandboxId,
-          ...(options.authorizedKeysData && {
-            authorized_keys_data: options.authorizedKeysData,
-          }),
-        },
-      ],
-      to: {
-        host: `${options.targetHost}:22`,
-        username: "dev",
-        ...(options.knownHostsData
-          ? {
-              // Pinned: sshpiper verifies the upstream sshd against this
-              // known_hosts content (see ssh-known-hosts.ts for the exact
-              // host-pattern format it must match).
-              known_hosts_data: options.knownHostsData,
-              ignore_hostkey: false,
-            }
-          : {
-              // Not pinned yet: a fresh Pipe, created before the pod and
-              // pinned by boot once the agent reports the host key (a boot
-              // that can't pin fails). sshpiper >= 1.6 treats empty
-              // `known_hosts_data` as "skip verification" regardless of this
-              // flag; kept true so an older sshpiperd behaves the same.
-              ignore_hostkey: true,
-            }),
-        ...(options.privateKeySecretName && {
-          private_key_secret: { name: options.privateKeySecretName },
-        }),
-      },
-    },
   };
 }

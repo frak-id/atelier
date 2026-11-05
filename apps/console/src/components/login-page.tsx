@@ -45,7 +45,7 @@ export function LoginPage() {
 
     // Auth-bypassed servers (local/mock) have no real GitHub login: hitting
     // /auth/github just mints the local session and redirects home. Do that
-    // transparently so `atelier local up` never asks the user for GitHub.
+    // transparently so the local docker compose launcher never asks the user for GitHub.
     let cancelled = false;
     fetch(httpUrl("/auth/mode"), { credentials: "include" })
       .then((r) => (r.ok ? r.json() : { bypassed: false }))

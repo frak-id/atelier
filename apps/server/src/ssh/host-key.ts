@@ -4,7 +4,7 @@
  * Secret (absent on Docker/local) and NOT a disk file (ephemeral without a
  * mounted volume). The DB is backend-agnostic and multi-replica safe: every
  * replica reads the same row → the same host key → no client MITM warnings
- * behind a load balancer (docs/proposals/portable-runtime-backends.md §5).
+ * behind a load balancer (docs/archive/proposals/portable-runtime-backends.md §5).
  *
  * The value is stored AES-256-GCM at rest by `SecretService` (keyed by
  * `SANDBOX_SECRETS_KEY`); rotating that key regenerates the host key, a

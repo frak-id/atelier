@@ -1,8 +1,4 @@
-import type {
-  AgentSessionStatus,
-  AgentTodo,
-  PermissionRisk,
-} from "@frak/atelier-shared";
+import type { AgentSessionStatus, AgentTodo } from "@atelier/spec";
 import type { VariantProps } from "class-variance-authority";
 import type { BadgeVariant } from "@/components/ui/badge";
 import type { statusDotVariants } from "@/components/ui/status-dot";
@@ -80,17 +76,4 @@ export function summarizeTodos(todos: AgentTodo[]): string | null {
   const current = todos.find((t) => t.status === "in_progress");
   const progress = `${completed}/${todos.length}`;
   return current ? `${progress} · "${current.content}"` : progress;
-}
-
-export function riskBadgeVariant(risk: PermissionRisk): BadgeVariant {
-  switch (risk) {
-    case "high":
-      return "danger";
-    case "medium":
-      return "warning";
-    case "low":
-      return "neutral";
-    default:
-      return risk; // exhaustive: `risk` is `never` here
-  }
 }

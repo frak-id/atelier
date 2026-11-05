@@ -1,12 +1,6 @@
-import type { ToolboxOwner } from "@atelier/spec";
 import { and, asc, eq, inArray } from "drizzle-orm";
 import { getDatabase } from "../../db/client.ts";
-import {
-  entityToolboxes,
-  entityToolboxVersions,
-  orgPolicySpecs,
-  secrets,
-} from "../../db/schema.ts";
+import { secrets, toolboxes, toolboxVersions } from "../../db/schema.ts";
 
 export interface TransferToolboxRow {
   id: string;
@@ -19,24 +13,16 @@ export interface TransferToolboxRow {
 
 /** Everything one transfer writes, applied atomically by `apply`. */
 export interface TransferWrite {
-  from: ToolboxOwner;
+  fromOrgId: string;
   toOrgId: string;
   secretIds: string[];
-  policyIds: string[];
   toolboxIds: string[];
-}
-
-function toolboxOwnerFilter(owner: ToolboxOwner) {
-  return and(
-    eq(entityToolboxes.ownerType, owner.type),
-    eq(entityToolboxes.ownerId, owner.id),
-  );
 }
 
 /**
  * Reads + the one atomic write behind an ownership transfer. Spans several
- * modules' tables on purpose: a transfer is a unit of work across secrets,
- * org policy and toolboxes, and must land all-or-nothing.
+ * modules' tables on purpose: a transfer is a unit of work across secrets
+ * and toolboxes, and must land all-or-nothing.
  */
 export class OwnershipTransferRepository {
   listSecrets(orgId: string): { id: string; name: string }[] {
@@ -48,30 +34,22 @@ export class OwnershipTransferRepository {
       .all();
   }
 
-  getPolicyId(orgId: string): string | undefined {
-    return getDatabase()
-      .select({ id: orgPolicySpecs.id })
-      .from(orgPolicySpecs)
-      .where(eq(orgPolicySpecs.orgId, orgId))
-      .get()?.id;
-  }
-
-  listToolboxes(owner: ToolboxOwner): TransferToolboxRow[] {
+  listToolboxes(orgId: string): TransferToolboxRow[] {
     return getDatabase()
       .select({
-        id: entityToolboxes.id,
-        slug: entityToolboxes.slug,
-        autoInject: entityToolboxes.autoInject,
-        activeVersionRef: entityToolboxVersions.ref,
-        activeVersionLabel: entityToolboxVersions.label,
+        id: toolboxes.id,
+        slug: toolboxes.slug,
+        autoInject: toolboxes.autoInject,
+        activeVersionRef: toolboxVersions.ref,
+        activeVersionLabel: toolboxVersions.label,
       })
-      .from(entityToolboxes)
+      .from(toolboxes)
       .leftJoin(
-        entityToolboxVersions,
-        eq(entityToolboxVersions.id, entityToolboxes.activeVersionId),
+        toolboxVersions,
+        eq(toolboxVersions.id, toolboxes.activeVersionId),
       )
-      .where(toolboxOwnerFilter(owner))
-      .orderBy(asc(entityToolboxes.createdAt))
+      .where(eq(toolboxes.orgId, orgId))
+      .orderBy(asc(toolboxes.createdAt))
       .all()
       .map((row) => ({ ...row, autoInject: row.autoInject === 1 }));
   }
@@ -80,39 +58,28 @@ export class OwnershipTransferRepository {
    * every row back, so a transfer never lands half-done. */
   apply(write: TransferWrite): void {
     const now = new Date().toISOString();
-    const { from } = write;
-    // Every move re-checks the source owner in SQL too (not only in the
+    const { fromOrgId } = write;
+    // Every move re-checks the source org in SQL too (not only in the
     // service's plan), so this write can never move someone else's rows.
     getDatabase().transaction((tx) => {
-      if (write.secretIds.length > 0 && from.type === "org") {
+      if (write.secretIds.length > 0) {
         tx.update(secrets)
           .set({ orgId: write.toOrgId, updatedAt: now })
           .where(
             and(
-              eq(secrets.orgId, from.id),
+              eq(secrets.orgId, fromOrgId),
               inArray(secrets.id, write.secretIds),
             ),
           )
           .run();
       }
-      if (write.policyIds.length > 0 && from.type === "org") {
-        tx.update(orgPolicySpecs)
+      if (write.toolboxIds.length > 0) {
+        tx.update(toolboxes)
           .set({ orgId: write.toOrgId, updatedAt: now })
           .where(
             and(
-              eq(orgPolicySpecs.orgId, from.id),
-              inArray(orgPolicySpecs.id, write.policyIds),
-            ),
-          )
-          .run();
-      }
-      if (write.toolboxIds.length > 0) {
-        tx.update(entityToolboxes)
-          .set({ ownerType: "org", ownerId: write.toOrgId, updatedAt: now })
-          .where(
-            and(
-              toolboxOwnerFilter(from),
-              inArray(entityToolboxes.id, write.toolboxIds),
+              eq(toolboxes.orgId, fromOrgId),
+              inArray(toolboxes.id, write.toolboxIds),
             ),
           )
           .run();

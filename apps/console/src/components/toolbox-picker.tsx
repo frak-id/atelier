@@ -1,13 +1,8 @@
-import type { ToolboxConfig } from "@atelier/spec";
+import { type ToolboxConfig, toolboxArtifactName } from "@atelier/spec";
 import { Badge } from "@/components/ui/badge";
 import { Card, CardContent } from "@/components/ui/card";
 import { Checkbox } from "@/components/ui/checkbox";
 import { cn } from "@/lib/utils";
-
-/** `tb/<ownerType>/<ownerId>/<slug>` — the selector the seam resolves. */
-function toolboxSelector(toolbox: ToolboxConfig): string {
-  return `tb/${toolbox.ownerType}/${toolbox.ownerId}/${toolbox.slug}`;
-}
 
 /**
  * Select toolboxes (the user-facing unit) for a spawn. Unlike the toolset
@@ -28,7 +23,8 @@ export function ToolboxPicker({
   return (
     <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
       {toolboxes.map((toolbox) => {
-        const selector = toolboxSelector(toolbox);
+        // `tb/<toolboxId>`: the selector the spawn seam resolves.
+        const selector = toolboxArtifactName(toolbox);
         const isSelected = toolbox.autoInject || selected.has(selector);
         const locked = toolbox.autoInject;
         return (

@@ -1,6 +1,6 @@
 import { describe, expect, test } from "bun:test";
 import type { AnyMessage, Stream } from "@agentclientprotocol/sdk";
-import { scopeToConnection } from "./acp-stream.ts";
+import { connectAcpWebSocket, scopeToConnection } from "./acp-stream.ts";
 
 /** An in-memory inner stream: what the scoped side writes lands in `sent`,
  * and `deliver` plays agent output into it. */
@@ -80,33 +80,23 @@ describe("scopeToConnection", () => {
     ]);
   });
 
-  test("drops agent requests and notifications replayed ahead of our first response", async () => {
+  test("passes agent requests and notifications through before any response", async () => {
     const h = harness();
-    const staleUpdate: AnyMessage = {
+    const update: AnyMessage = {
       jsonrpc: "2.0",
       method: "session/update",
-      params: { sessionId: "old" },
+      params: { sessionId: "s" },
     };
-    const stalePermission: AnyMessage = {
+    const permission: AnyMessage = {
       jsonrpc: "2.0",
       id: 7,
       method: "session/request_permission",
-      params: { sessionId: "old" },
-    };
-    h.deliver(staleUpdate);
-    h.deliver(stalePermission);
-    await h.send(request(0, "initialize"));
-    h.deliver({ jsonrpc: "2.0", id: "c1:0", result: {} });
-    const liveUpdate: AnyMessage = {
-      ...staleUpdate,
       params: { sessionId: "s" },
     };
-    h.deliver(liveUpdate);
+    h.deliver(update);
+    h.deliver(permission);
     h.end();
-    expect(await h.received()).toEqual([
-      { jsonrpc: "2.0", id: 0, result: {} },
-      liveUpdate,
-    ]);
+    expect(await h.received()).toEqual([update, permission]);
   });
 
   test("leaves our responses to agent requests untouched", async () => {
@@ -129,5 +119,21 @@ describe("scopeToConnection", () => {
       method: "$/cancel_request",
       params: { requestId: "c1:0" },
     });
+  });
+});
+
+describe("connectAcpWebSocket", () => {
+  test("a failed connect never puts the URL or its agent token in the error", async () => {
+    const transport = connectAcpWebSocket(
+      "ws://127.0.0.1:1/attach/acp?mode=rw&token=s3cret-token",
+    );
+    const error = await transport.ready.then(
+      () => undefined,
+      (err: unknown) => err as Error,
+    );
+    expect(error).toBeInstanceOf(Error);
+    expect(error?.message).toBe("ACP WebSocket failed to connect");
+    expect(error?.message).not.toContain("s3cret-token");
+    transport.close();
   });
 });

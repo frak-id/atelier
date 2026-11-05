@@ -1,0 +1,132 @@
+/**
+ * The opencode harness composer. Self-contained: no `@opencode-ai/sdk`
+ * (session-surface / ACP-client concerns live in `apps/server/src/sessions`,
+ * not in spec composition).
+ *
+ * "opencode with these MCP servers" → files + the acp process + annotations
+ * (docs/archive/design.md §3).
+ */
+import type { Harness } from "./harness.ts";
+import type { SpecFragment } from "./spec-merge.ts";
+
+const HOME = "/home/dev";
+const OPENCODE_CONFIG_PATH = `${HOME}/.config/opencode/opencode.json`;
+
+/**
+ * Merge cliproxy-style provider configs into opencode's config schema
+ * (`{ provider: {...} }`). Throws on malformed existing JSON so the caller
+ * can leave the file untouched and warn, rather than clobbering a corrupt
+ * config with a fresh document.
+ */
+function opencodeMergeProxyProviders(
+  providers: Record<string, unknown>,
+  existing: string | undefined,
+): string {
+  const parsed: Record<string, unknown> = existing
+    ? (JSON.parse(existing) as Record<string, unknown>)
+    : {};
+  const existingProvider = (parsed.provider as Record<string, unknown>) ?? {};
+  parsed.provider = { ...existingProvider, ...providers };
+  return JSON.stringify(parsed);
+}
+
+interface ComposeOpencodeOptions {
+  /** MCP server names to record in the `atelier.dev/mcp` annotation. */
+  mcp?: string[];
+  /** Provider config merged into `opencode.json`'s `{ provider: {...} }`. */
+  providers?: Record<string, unknown>;
+  /** Extra opencode config merged alongside `provider`. */
+  config?: Record<string, unknown>;
+  /**
+   * Origin allowed to call the lazy `serve` web UI's API (its `--cors` flag).
+   * Compose has no access to server config, so the caller (the control seam,
+   * which knows the console's own origin) passes it. When omitted, the
+   * `--cors` flag is left off entirely (opencode's default, same-origin) —
+   * never a wildcard, which would needlessly widen who can call the API.
+   */
+  webUiCorsOrigin?: string;
+}
+
+const OPENCODE_SERVE_PORT = 4096;
+
+/**
+ * Compose opencode's spec fragment: the `acp` process (stdio-bridged,
+ * primary — the sandbox's health gate) plus its config file and display
+ * annotations.
+ */
+function composeOpencode(opts: ComposeOpencodeOptions = {}): SpecFragment {
+  // Sandbox agents auto-approve: the micro-VM is the boundary, so opencode
+  // never asks (the server answers any ACP permission request with an allow
+  // anyway). An explicit `permission` in `opts.config` still wins.
+  const configContent = opencodeMergeProxyProviders(
+    opts.providers ?? {},
+    JSON.stringify({ permission: "allow", ...opts.config }),
+  );
+
+  const corsFlag = opts.webUiCorsOrigin
+    ? ` --cors ${opts.webUiCorsOrigin}`
+    : "";
+
+  return {
+    processes: [
+      {
+        name: "acp",
+        // Bare command: the org toolbox toolset (packages/compose/src/toolbox.ts)
+        // materializes opencode onto PATH via the dev-base `~/.local/bin` shim.
+        command: "opencode acp",
+        cwd: HOME,
+        // Run as `dev`, not root: opencode writes its data/cache/log under
+        // ${HOME} (~/.local/share, ~/.cache, ~/.config). As root those become
+        // root-owned, so the dev-user terminal's own `opencode` then fails with
+        // PermissionDenied.
+        user: "dev",
+        stdio: "bridge",
+        primary: true,
+      },
+      {
+        // Named to match the `opencode` port below — the console resolves
+        // "which URL is the harness UI" by that convention.
+        // Lazy: normally only `acp` runs; `serve` starts
+        // on demand when a user opens the harness's own web UI, so the two
+        // processes sharing opencode's session store only coexist when asked.
+        name: "opencode",
+        command: `opencode serve --hostname 0.0.0.0 --port ${OPENCODE_SERVE_PORT}${corsFlag}`,
+        cwd: HOME,
+        user: "dev",
+        lazy: true,
+        readiness: { port: OPENCODE_SERVE_PORT },
+        // Auth-less by design: no `OPENCODE_SERVER_PASSWORD`. The browser UI
+        // is served behind the operator's forward-auth ingress instead — an
+        // iframe can't inject an `Authorization` header, so a served-side
+        // password doesn't translate to this UI; the ingress cookie session
+        // is relied on instead.
+      },
+    ],
+    files: [
+      {
+        path: OPENCODE_CONFIG_PATH,
+        content: configContent,
+        owner: "dev",
+      },
+    ],
+    ports: [
+      {
+        name: "opencode",
+        port: OPENCODE_SERVE_PORT,
+        public: true,
+        auth: "forward",
+      },
+    ],
+    annotations: {
+      "atelier.dev/harness": "opencode",
+      ...(opts.mcp && opts.mcp.length > 0
+        ? { "atelier.dev/mcp": opts.mcp.join(",") }
+        : {}),
+    },
+  };
+}
+
+export const opencodeHarness: Harness = {
+  compose: (opts) =>
+    composeOpencode(opts as ComposeOpencodeOptions | undefined),
+};

@@ -47,7 +47,7 @@ The other runtime-dependent paths, still at pod level:
 | Toolset build + capture | `mkfs.erofs` + `oras push` from inside the guest (`POST /toolsets/build`, `/toolsets/capture`) |
 | Built artifact in a new VM | The pushed toolset materializes and runs in a fresh sandbox |
 | Pause/resume shape | Guest `sync`, VolumeSnapshot of the live PVC, clone, boot the clone: no reformat, data intact, home assembled |
-| SSH | `ssh dev@<pod IP>` with the Secret-mounted key (the sshpiper / in-server proxy path) |
+| SSH | `ssh dev@<pod IP>` with the Secret-mounted key (the in-server proxy path) |
 
 It pushes two tiny probes to `toolsets/kata-eval/probe` in Zot and deletes
 them at the end.

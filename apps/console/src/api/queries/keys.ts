@@ -10,8 +10,6 @@ export const queryKeys = {
     all: ["sandboxes"] as const,
     list: () => [...queryKeys.sandboxes.all, "list"] as const,
     detail: (id: string) => [...queryKeys.sandboxes.all, "detail", id] as const,
-    processLogs: (id: string, name: string) =>
-      [...queryKeys.sandboxes.all, "detail", id, "logs", name] as const,
     activity: (id: string) =>
       [...queryKeys.sandboxes.all, "detail", id, "activity"] as const,
   },
@@ -23,10 +21,10 @@ export const queryKeys = {
       [...queryKeys.sessions.all(sandboxId), "statuses"] as const,
     todos: (sandboxId: string, sessionId: string) =>
       [...queryKeys.sessions.all(sandboxId), "todos", sessionId] as const,
-    permissions: (sandboxId: string) =>
-      [...queryKeys.sessions.all(sandboxId), "permissions"] as const,
-    questions: (sandboxId: string) =>
-      [...queryKeys.sessions.all(sandboxId), "questions"] as const,
+  },
+  tasks: {
+    all: ["tasks"] as const,
+    list: () => [...queryKeys.tasks.all, "list"] as const,
   },
   terminal: {
     all: (sandboxId: string) => ["terminal", sandboxId] as const,
@@ -36,10 +34,6 @@ export const queryKeys = {
   apiKeys: {
     all: ["api-keys"] as const,
     list: () => [...queryKeys.apiKeys.all, "list"] as const,
-  },
-  integrations: {
-    all: ["integrations"] as const,
-    list: () => [...queryKeys.integrations.all, "list"] as const,
   },
   sshKeys: {
     all: ["ssh-keys"] as const,
@@ -64,10 +58,6 @@ export const queryKeys = {
     all: ["transfers"] as const,
     preview: (from: string, to: string) =>
       [...queryKeys.transfers.all, "preview", from, to] as const,
-  },
-  orgPolicy: {
-    all: ["org-policy"] as const,
-    detail: (orgId: string) => [...queryKeys.orgPolicy.all, orgId] as const,
   },
   toolsets: {
     all: ["toolsets"] as const,
@@ -98,7 +88,7 @@ export const queryKeys = {
   toolboxes: {
     all: ["toolboxes"] as const,
     list: (owner?: string) =>
-      [...queryKeys.toolboxes.all, "list", owner ?? "user"] as const,
+      [...queryKeys.toolboxes.all, "list", owner ?? "me"] as const,
   },
   toolboxVersions: {
     all: ["toolbox-versions"] as const,

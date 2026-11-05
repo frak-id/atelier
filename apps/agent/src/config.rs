@@ -126,7 +126,8 @@ pub struct Hooks {
     pub post_start: Vec<String>,
     /// Fires on every resume — the credential-rotation primitive.
     pub on_resume: Vec<String>,
-    /// Fired by `PATCH /env`; the user wires it to reload their processes.
+    /// Fired after an env update (config re-pushed via `PUT /config`, then
+    /// `POST /hooks/envChanged`); the user wires it to reload their processes.
     pub env_changed: Vec<String>,
 }
 
@@ -210,9 +211,6 @@ impl AgentConfig {
     }
 }
 
-/// Resolve an http-readiness value to an absolute probe URL. An absolute
-/// `http(s)://…` value is used verbatim; a bare path is probed against the
-/// loopback port of the ports[] entry that shares the process's name.
 impl AgentConfig {
     /// Detect a cycle in the `after` graph via DFS three-colouring, so an
     /// A→B→A chain fails loudly at push time instead of stalling every
@@ -262,6 +260,9 @@ impl AgentConfig {
     }
 }
 
+/// Resolve an http-readiness value to an absolute probe URL. An absolute
+/// `http(s)://…` value is used verbatim; a bare path is probed against the
+/// loopback port of the ports[] entry that shares the process's name.
 pub fn http_probe_url(http: &str, process_name: &str, ports: &[PortEntry]) -> Option<String> {
     if http.starts_with("http://") || http.starts_with("https://") {
         return Some(http.to_string());

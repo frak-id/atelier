@@ -18,6 +18,8 @@ jobs:
           - atelier-server
           - atelier-console
           - sandbox-agent
+          - atelier-dev-base
+          - atelier-dev-browser
     steps:
       - name: Prune old nightly versions
         env:

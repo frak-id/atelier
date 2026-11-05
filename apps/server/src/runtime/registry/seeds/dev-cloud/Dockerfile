@@ -7,6 +7,8 @@
 FROM atelier/dev-base:latest
 
 USER root
+# Build-time curl retries, set up in dev-base.
+ARG CURL_HOME=/etc/curl-build
 
 # AWS CLI v2
 RUN curl -fsSL "https://awscli.amazonaws.com/awscli-exe-linux-x86_64.zip" -o /tmp/awscli.zip \

@@ -1,32 +1,26 @@
 /**
  * Control's composition root. Manual-wiring convention (AGENTS.md "DI: Manual
- * wiring in container.ts"), scoped to exactly what design.md §3.1 assigns to
- * control/: identity, orgs, quotas, secrets, org policy, and the
- * enrichment pipeline.
+ * wiring in container.ts"), scoped to exactly what docs/archive/design.md §3.1 assigns to
+ * control/: identity, orgs, secrets, toolboxes, and the enrichment
+ * pipeline.
  */
 
 import { isAuthBypassed } from "../shared/lib/config.ts";
 import { AuthService } from "./auth.ts";
+import { createDefaultOrg } from "./default-org.ts";
 import {
   type EnrichmentOptions,
   enrichSpec,
   reattributeSpec,
+  resolveBootSpec,
 } from "./enrichment.ts";
 import { GitHubRepoService } from "./github-repos.ts";
 import { ApiKeyRepository, ApiKeyService } from "./modules/api-key/index.ts";
 import { IdlePolicyService } from "./modules/idle-policy/index.ts";
 import {
-  IntegrationConnectionRepository,
-  IntegrationConnectionService,
-} from "./modules/integration-connection/index.ts";
-import {
   OrgMemberRepository,
   OrgMemberService,
 } from "./modules/org-member/index.ts";
-import {
-  OrgPolicyRepository,
-  OrgPolicyService,
-} from "./modules/org-policy/index.ts";
 import {
   OrganizationRepository,
   OrganizationService,
@@ -61,7 +55,6 @@ export function createControlContainer() {
   const apiKeyRepository = new ApiKeyRepository();
   const sshKeyRepository = new SshKeyRepository();
   const secretRepository = new SecretRepository();
-  const orgPolicyRepository = new OrgPolicyRepository();
   const serverConfigRepository = new ServerConfigRepository();
   const toolboxRepository = new ToolboxRepository();
   const toolboxVersionRepository = new ToolboxVersionRepository();
@@ -75,7 +68,6 @@ export function createControlContainer() {
   const apiKeyService = new ApiKeyService(apiKeyRepository);
   const sshKeyService = new SshKeyService(sshKeyRepository);
   const secretService = new SecretService(secretRepository);
-  const orgPolicyService = new OrgPolicyService(orgPolicyRepository);
   const serverConfigService = new ServerConfigService(serverConfigRepository);
   const idlePolicyService = new IdlePolicyService(serverConfigService);
   const toolboxService = new ToolboxService(toolboxRepository);
@@ -85,11 +77,13 @@ export function createControlContainer() {
   const ownershipTransferService = new OwnershipTransferService(
     new OwnershipTransferRepository(),
   );
-  const integrationConnectionService = new IntegrationConnectionService(
-    new IntegrationConnectionRepository(),
-  );
   const authService = new AuthService({ apiKeyService, userService });
   const gitHubRepoService = new GitHubRepoService({ userService });
+
+  const defaultOrg = createDefaultOrg({
+    organizationService,
+    orgMemberService,
+  });
 
   const accessDeps: SandboxAccessDeps = {
     isAuthBypassed,
@@ -104,7 +98,6 @@ export function createControlContainer() {
     apiKeyService,
     sshKeyService,
     secretService,
-    orgPolicyService,
     serverConfigService,
     idlePolicyService,
     toolboxService,
@@ -112,23 +105,18 @@ export function createControlContainer() {
     authService,
     gitHubRepoService,
     ownershipTransferService,
-    integrationConnectionService,
-    /** Bound seam-crossing enrichment \u2014 the only function `api/` calls
-     * before handing a spec to `runtime.create()`. */
+    /** `auth.defaultOrg`: default spawn org, auto-join, server admins. */
+    defaultOrg,
+    /** Create-time enrichment: what `api/` hands to `runtime.create()` and
+     * the runtime stores (`$secret` refs and no credentials in it). */
     enrichSpec: (
       spec: Parameters<typeof enrichSpec>[0],
-      orgId?: string,
       opts?: EnrichmentOptions,
-    ) =>
-      enrichSpec(
-        spec,
-        orgId,
-        {
-          secrets: secretService,
-          orgPolicy: orgPolicyService,
-        },
-        opts,
-      ),
+    ) => enrichSpec(spec, opts),
+    /** Boot-time resolution, injected into the runtime: a stored spec in,
+     * the spec a boot runs with (secrets and fresh git files) out. */
+    resolveBootSpec: (spec: Parameters<typeof resolveBootSpec>[0]) =>
+      resolveBootSpec(spec, { secrets: secretService, users: userService }),
     /** Re-attribute a stored spec to a new owner (fork); pure, no deps. */
     reattributeSpec,
     /** The SSH public keys allowed into one sandbox (see sandbox-access.ts). */

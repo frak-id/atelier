@@ -1,0 +1,85 @@
+{
+  "domain": {
+    "baseDomain": "localhost",
+    "dashboard": "",
+    "ssh": {
+      "port": 2222,
+      "hostname": "",
+      "listenPort": 2222,
+      "upstreamUser": "dev"
+    }
+  },
+  "auth": {
+    "github": {
+      "clientId": "",
+      "clientSecret": ""
+    },
+    "jwtSecret": "dev-secret-change-in-production",
+    "allowedOrg": "",
+    "allowedUsers": [],
+    "defaultOrg": ""
+  },
+  "server": {
+    "mode": "production",
+    "port": 4000,
+    "host": "0.0.0.0"
+  },
+  "runtime": {
+    "backend": "kubernetes"
+  },
+  "jobs": {
+    "concurrency": 4
+  },
+  "prebuild": {
+    "gitTracking": true,
+    "pruneKeep": 3
+  },
+  "snapshot": {
+    "manualKeep": 5
+  },
+  "kubernetes": {
+    "namespace": "atelier-sandboxes",
+    "kubeconfig": "/etc/rancher/k3s/k3s.yaml",
+    "runtimeClass": "kata-atelier-clh-rs",
+    "ingressClassName": "",
+    "toolIngressClusterIssuer": "",
+    "registryUrl": "",
+    "storageClass": "",
+    "volumeSnapshotClass": "",
+    "defaultVolumeSize": "10Gi",
+    "vsCodeIngressAnnotations": {},
+    "wakeIngressAnnotations": {}
+  },
+  "sandbox": {
+    "defaultImage": "dev-base",
+    "agentImage": "ghcr.io/frak-id/sandbox-agent:3.0.2",
+    "defaultVcpus": 2,
+    "defaultMemoryMb": 4096,
+    "idle": {
+      "mode": "off",
+      "minutes": 120,
+      "network": true,
+      "networkMinBytesPerMinute": 65536,
+      "files": true,
+      "cpu": false,
+      "cpuMinMillicores": 250,
+      "maxKeepAwakeHours": 24
+    }
+  },
+  "ports": {
+    "agent": 9998
+  },
+  "imageBuilder": {
+    "kind": "docker",
+    "image": "",
+    "endpoint": "",
+    "dockerHost": "",
+    "platform": "",
+    "cacheRepo": "",
+    "insecureRegistry": true,
+    "tls": {
+      "secretName": "",
+      "serverName": ""
+    }
+  }
+}

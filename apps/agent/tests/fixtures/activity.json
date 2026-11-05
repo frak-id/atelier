@@ -1,0 +1,17 @@
+{
+  "nowMs": 1793872800000,
+  "bootedAtMs": 1793872000000,
+  "bucketSeconds": 60,
+  "network": "netdev",
+  "files": "fanotify",
+  "cpu": "cgroup2",
+  "buckets": [
+    {
+      "startMs": 1793872740000,
+      "receivedBytes": 1024,
+      "sentBytes": 512,
+      "fileWrites": 3,
+      "cpuMs": 250
+    }
+  ]
+}

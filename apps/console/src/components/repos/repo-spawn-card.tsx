@@ -34,7 +34,7 @@ import {
   otherReposNote,
   repoBranchLabel,
 } from "@/lib/formatters";
-import { activeJobForBranch } from "@/lib/repo-catalog";
+import { activeJobForBranch, latestBranch } from "@/lib/repo-catalog";
 import { cn } from "@/lib/utils";
 import { RepoIdentity } from "./repo-identity";
 
@@ -62,7 +62,7 @@ export function RepoSpawnCard({
   branch?: string;
   onSelectionChange: (next: { repo?: string; branch?: string }) => void;
   /** Resources etc. from the page's shared spawn options. */
-  baseSpec: (image: string) => SandboxSpec;
+  baseSpec: (source: SandboxSpec["source"]) => SandboxSpec;
   onSpawn: (request: CreateSandboxRequest) => void;
   spawnPending: boolean;
 }) {
@@ -120,7 +120,14 @@ export function RepoSpawnCard({
             ) : null}
             <RepoPicker
               entries={catalog.entries}
-              onSelect={(e) => onSelectionChange({ repo: e.repo.fullName })}
+              // Preselect the prebuilt branch, so a repo prebuilt only on a
+              // feature branch still boots instantly by default.
+              onSelect={(e) =>
+                onSelectionChange({
+                  repo: e.repo.fullName,
+                  branch: latestBranch(e),
+                })
+              }
             />
           </>
         )}
@@ -275,7 +282,7 @@ function SelectedRepo({
   branch?: string;
   onBranchChange: (branch: string | undefined) => void;
   onClear: () => void;
-  baseSpec: (image: string) => SandboxSpec;
+  baseSpec: (source: SandboxSpec["source"]) => SandboxSpec;
   onSpawn: (request: CreateSandboxRequest) => void;
   spawnPending: boolean;
 }) {
@@ -319,12 +326,15 @@ function SelectedRepo({
   function spawn() {
     if (matched) {
       onSpawn({
-        ...baseSpec(defaultImage),
-        source: { snapshot: matched.ref },
+        ...baseSpec({ snapshot: matched.ref }),
         metadata,
       });
     } else {
-      onSpawn({ ...baseSpec(defaultImage), prebuild: recipe(), metadata });
+      onSpawn({
+        ...baseSpec({ image: defaultImage }),
+        prebuild: recipe(),
+        metadata,
+      });
     }
   }
 

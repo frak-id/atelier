@@ -14,11 +14,13 @@
  */
 
 import type { PortEntry, SandboxSpec } from "@atelier/spec";
-import { customAlphabet } from "nanoid";
+import { ValidationError } from "../../shared/errors.ts";
+import { config } from "../../shared/lib/config.ts";
 import { createChildLogger } from "../../shared/lib/logger.ts";
-import type { AgentClient } from "../agent/index.ts";
+import { AGENT_ATTACH_PORT, type AgentClient } from "../agent/index.ts";
 import type { BootInput, BootOutput } from "../boot.ts";
-import { provisionAgent } from "../boot-agent.ts";
+import { generateAgentPassword, provisionAgent } from "../boot-agent.ts";
+import { resourceName } from "../resource-name.ts";
 import type {
   AgentEndpoint,
   SandboxBackend,
@@ -30,16 +32,8 @@ import { DockerVolumeBackend } from "./docker-volume.backend.ts";
 
 const log = createChildLogger("runtime-backend-docker");
 
-const generatePassword = customAlphabet(
-  "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789",
-);
-
 /** Container port the guest agent's HTTP control plane listens on. */
-const AGENT_PORT = 9998;
-/** Container port the WS attach bridge listens on. */
-const ATTACH_PORT = 9997;
-/** Container port the WS terminal multiplexer listens on. */
-const TERMINAL_PORT = 7681;
+const AGENT_PORT = config.ports.agent;
 /** Container SSH port. */
 const SSH_PORT = 22;
 
@@ -71,7 +65,7 @@ export class DockerBackend implements SandboxBackend {
   }
 
   private containerName(id: string): string {
-    return `sandbox-${id}`;
+    return resourceName(id);
   }
 
   /** Container ports to publish: infra (agent/attach/terminal/ssh) + every
@@ -79,12 +73,7 @@ export class DockerBackend implements SandboxBackend {
    * port (`-p 127.0.0.1::<cport>`) so many sandboxes coexist without clashing
    * and nothing is exposed off-host. */
   private publishedPorts(spec: SandboxSpec): number[] {
-    const ports = new Set<number>([
-      AGENT_PORT,
-      ATTACH_PORT,
-      TERMINAL_PORT,
-      SSH_PORT,
-    ]);
+    const ports = new Set<number>([AGENT_PORT, AGENT_ATTACH_PORT, SSH_PORT]);
     for (const p of spec.ports ?? []) ports.add(p.port);
     return [...ports];
   }
@@ -97,7 +86,10 @@ export class DockerBackend implements SandboxBackend {
   ): Promise<BootOutput> {
     const containerName = this.containerName(id);
     const pvcName = containerName;
-    const agentPassword = generatePassword(32);
+    const agentPassword = generateAgentPassword();
+    // The agent refuses calls without this token and the record doesn't exist
+    // yet, so hand it to the client before the first agent call.
+    agent.setToken(id, agentPassword);
 
     try {
       // Reuse (resume) keeps the existing dir; a snapshot boot clones it; a
@@ -131,10 +123,8 @@ export class DockerBackend implements SandboxBackend {
       }
 
       // Backend-neutral tail (wait for agent -> materialize -> config -> files),
-      // shared verbatim with the k8s boot. No Pipe to pin here — the Docker
-      // backend has no sshpiper; `sshHostKeys` is still returned so the
-      // record carries it (a future in-server-over-Docker gateway could pin
-      // from it the same way the k8s in-server strategy does).
+      // shared verbatim with the k8s boot. Local mode runs no SSH gateway;
+      // `sshHostKeys` is still returned so the record carries it.
       const { podIp, sshHostKeys } = await provisionAgent(
         id,
         spec,
@@ -143,8 +133,6 @@ export class DockerBackend implements SandboxBackend {
       );
 
       return {
-        podName: containerName,
-        pvcName,
         agentPassword,
         podIp,
         sshHostKeys,
@@ -165,18 +153,39 @@ export class DockerBackend implements SandboxBackend {
 
   async deleteRestartable(id: string): Promise<void> {
     // Remove the container, keep the volume dir (pause / resume-rollback).
-    await this.docker(["rm", "-f", this.containerName(id)]);
+    await this.removeContainer(id);
   }
 
-  async cleanup(id: string): Promise<boolean> {
-    try {
-      await this.docker(["rm", "-f", this.containerName(id)]);
-      await this.local.deleteVolume(this.containerName(id));
-      return true;
-    } catch (error) {
-      log.warn({ id, error }, "Docker cleanup incomplete");
-      return false;
+  /** `docker rm -f` the sandbox's container; one that is already gone is
+   * fine, any other failure throws. */
+  private async removeContainer(id: string): Promise<void> {
+    const res = await this.docker(["rm", "-f", this.containerName(id)]);
+    if (res.code !== 0 && !res.stderr.includes("No such container")) {
+      throw new Error(
+        `docker rm ${this.containerName(id)} failed: ${res.stderr}`,
+      );
     }
+  }
+
+  /** Remove the container, the live volume and every snapshot volume the
+   * sandbox owns. Keeps going past a failed step so one leak doesn't hide
+   * the others; false when any step failed (destroy then keeps the record). */
+  async cleanup(id: string): Promise<boolean> {
+    const steps = [
+      () => this.removeContainer(id),
+      () => this.local.deleteVolume(this.containerName(id)),
+      () => this.local.deleteSnapshotsOwnedBy(id),
+    ];
+    let clean = true;
+    for (const step of steps) {
+      try {
+        await step();
+      } catch (error) {
+        clean = false;
+        log.warn({ id, error }, "Docker cleanup incomplete");
+      }
+    }
+    return clean;
   }
 
   async computeExists(id: string): Promise<boolean> {
@@ -191,13 +200,14 @@ export class DockerBackend implements SandboxBackend {
 
   async exposePort(id: string, port: PortEntry): Promise<void> {
     // Docker cannot publish a new host port on an already-running container.
-    // Ports declared in the spec are published at boot; a truly live-added
-    // public port needs a container recreate. Surface it rather than failing
-    // silently (see the implementation log's step-5 limitations).
-    log.warn(
-      { id, port: port.name },
-      "exposePort is a no-op on the Docker backend; declare the port in the " +
-        "spec at boot (live port publish needs a container recreate)",
+    // Every port the spec declared (public or not) is published at boot, so
+    // exposing one of those is already done; any other needs a container
+    // recreate, so say no instead of recording a port that has no route.
+    if ((await this.hostPort(id, port.port)) != null) return;
+    throw new ValidationError(
+      `Cannot expose port ${port.port} (${port.name}) on the running Docker ` +
+        `sandbox ${id}: declare it in the spec at create time (live port ` +
+        "publishing needs a container recreate).",
     );
   }
 
@@ -217,15 +227,14 @@ export class DockerBackend implements SandboxBackend {
   }
 
   async resolveAgentEndpoint(id: string): Promise<AgentEndpoint | null> {
-    const [agentPort, attachPort, terminalPort] = await Promise.all([
+    const [agentPort, attachPort] = await Promise.all([
       this.hostPort(id, AGENT_PORT),
-      this.hostPort(id, ATTACH_PORT),
-      this.hostPort(id, TERMINAL_PORT),
+      this.hostPort(id, AGENT_ATTACH_PORT),
     ]);
-    if (agentPort == null || attachPort == null || terminalPort == null) {
+    if (agentPort == null || attachPort == null) {
       return null;
     }
-    return { host: "127.0.0.1", agentPort, attachPort, terminalPort };
+    return { host: "127.0.0.1", agentPort, attachPort };
   }
 
   /** Resolve the dynamic host port a container port is published on, or `null`

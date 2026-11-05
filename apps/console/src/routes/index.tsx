@@ -1,12 +1,20 @@
+import type { AgentSession, AgentSessionStatus } from "@atelier/spec";
 import {
   repoShortName,
   SANDBOX_IDLE_PAUSED_ANNOTATION,
   type SandboxSummary,
 } from "@atelier/spec";
-import type { AgentSession, AgentSessionStatus } from "@frak/atelier-shared";
 import { useQueries, useQuery } from "@tanstack/react-query";
 import { createFileRoute, Link } from "@tanstack/react-router";
-import { Loader2, Pause, Pencil, Play, Rocket, Trash2 } from "lucide-react";
+import {
+  AlertTriangle,
+  Loader2,
+  Pause,
+  Pencil,
+  Play,
+  Rocket,
+  Trash2,
+} from "lucide-react";
 import { useState } from "react";
 import { organizationsListQuery } from "@/api/queries/organizations";
 import {
@@ -22,12 +30,16 @@ import {
   useAbortSession,
   useDeleteSession,
 } from "@/api/queries/sessions";
+import { ConfirmDialog } from "@/components/confirm-dialog";
+import { ForkButton } from "@/components/fork-button";
 import { ImmersiveView } from "@/components/immersive-view";
+import { KeepAwakeButton } from "@/components/keep-awake-button";
 import { RenameSandboxDialog } from "@/components/rename-sandbox-dialog";
 import {
   SessionsByRepo,
   SessionsByRepoSkeleton,
 } from "@/components/sessions-by-repo";
+import { TaskInboxSection } from "@/components/task-inbox/task-inbox-section";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import {
@@ -37,14 +49,6 @@ import {
   CardHeader,
   CardTitle,
 } from "@/components/ui/card";
-import {
-  Dialog,
-  DialogContent,
-  DialogDescription,
-  DialogFooter,
-  DialogHeader,
-  DialogTitle,
-} from "@/components/ui/dialog";
 import { EmptyState } from "@/components/ui/empty-state";
 import { GithubIcon } from "@/components/ui/github-icon";
 import { Skeleton } from "@/components/ui/skeleton";
@@ -77,6 +81,7 @@ function MissionControlPage() {
 
   return (
     <div className="mx-auto max-w-5xl space-y-6">
+      <TaskInboxSection />
       {isPending ? (
         <div className="space-y-2">
           <Skeleton className="h-16 w-full" />
@@ -101,12 +106,22 @@ function MissionControlPage() {
           }
         />
       ) : (
-        <>
-          <SandboxesSection sandboxes={sandboxes} />
-          <FleetSessionsSection sandboxes={sandboxes} />
-        </>
+        <Fleet sandboxes={sandboxes} />
       )}
     </div>
+  );
+}
+
+function Fleet({ sandboxes }: { sandboxes: SandboxSummary[] }) {
+  const runningIds = sandboxes
+    .filter((s) => s.status === "running")
+    .map((s) => s.id);
+  const fleet = useFleetSessions(runningIds);
+  return (
+    <>
+      <SandboxesSection sandboxes={sandboxes} failedIds={fleet.failedIds} />
+      <FleetSessionsSection runningIds={runningIds} fleet={fleet} />
+    </>
   );
 }
 
@@ -123,14 +138,18 @@ function useFleetSessions(sandboxIds: string[]) {
   });
 
   const isPending = sessionQueries.some((q) => q.isPending);
-  // TODO(review): per-sandbox query errors are swallowed here (`q.data ?? []`),
-  // so a sandbox whose sessions endpoint fails silently appears session-less.
-  // Surface a per-sandbox error indicator once the server aggregate lands.
+  // A sandbox whose sessions/statuses endpoint fails would look session-less:
+  // report it so its row can show a warning.
+  const failedIds = new Set<string>();
+  sandboxIds.forEach((id, i) => {
+    if (sessionQueries[i]?.isError || statusQueries[i]?.isError)
+      failedIds.add(id);
+  });
   const sessions: AgentSession[] = sessionQueries.flatMap((q) => q.data ?? []);
   const statuses: Record<string, AgentSessionStatus> = {};
   for (const q of statusQueries) Object.assign(statuses, q.data ?? {});
 
-  return { sessions, statuses, isPending };
+  return { sessions, statuses, isPending, failedIds };
 }
 
 /** An invisible per-sandbox SSE subscriber (hooks can't be called in a
@@ -146,11 +165,13 @@ function FleetLiveSubscription({ sandboxId }: { sandboxId: string }) {
   return null;
 }
 
-function FleetSessionsSection({ sandboxes }: { sandboxes: SandboxSummary[] }) {
-  const runningIds = sandboxes
-    .filter((s) => s.status === "running")
-    .map((s) => s.id);
-  const { sessions, statuses, isPending } = useFleetSessions(runningIds);
+function FleetSessionsSection({
+  runningIds,
+  fleet: { sessions, statuses, isPending },
+}: {
+  runningIds: string[];
+  fleet: ReturnType<typeof useFleetSessions>;
+}) {
   const [openSandboxId, setOpenSandboxId] = useState<string | null>(null);
   const { data: openSandbox } = useQuery({
     // biome-ignore lint/style/noNonNullAssertion: non-null when `enabled` below.
@@ -218,7 +239,13 @@ function useOrgNameById(): Map<string, string> {
   return new Map((orgs ?? []).map((org) => [org.id, org.name] as const));
 }
 
-function SandboxesSection({ sandboxes }: { sandboxes: SandboxSummary[] }) {
+function SandboxesSection({
+  sandboxes,
+  failedIds,
+}: {
+  sandboxes: SandboxSummary[];
+  failedIds: ReadonlySet<string>;
+}) {
   const orgNameById = useOrgNameById();
   return (
     <section className="space-y-2">
@@ -235,6 +262,7 @@ function SandboxesSection({ sandboxes }: { sandboxes: SandboxSummary[] }) {
               key={sandbox.id}
               sandbox={sandbox}
               orgNameById={orgNameById}
+              sessionsFailed={failedIds.has(sandbox.id)}
             />
           ))}
       </div>
@@ -294,9 +322,11 @@ function IdleHint({ sandbox }: { sandbox: SandboxSummary }) {
 function SandboxRow({
   sandbox,
   orgNameById,
+  sessionsFailed,
 }: {
   sandbox: SandboxSummary;
   orgNameById: Map<string, string>;
+  sessionsFailed: boolean;
 }) {
   const [confirmOpen, setConfirmOpen] = useState(false);
   const [renameOpen, setRenameOpen] = useState(false);
@@ -334,6 +364,15 @@ function SandboxRow({
               {formatRelativeTime(sandbox.createdAt)}
             </span>
             <IdleHint sandbox={sandbox} />
+            {sessionsFailed ? (
+              <span
+                role="img"
+                aria-label="Could not load this sandbox's sessions"
+                title="Could not load this sandbox's sessions"
+              >
+                <AlertTriangle className="size-3.5 text-warning" />
+              </span>
+            ) : null}
           </span>
           {sandbox.repos && sandbox.repos.length > 0 ? (
             <SandboxRepos repos={sandbox.repos} />
@@ -348,6 +387,12 @@ function SandboxRow({
           >
             <Pencil />
           </Button>
+          {sandbox.status === "running" ? (
+            <KeepAwakeButton sandboxId={sandbox.id} size="icon" iconOnly />
+          ) : null}
+          {sandbox.status === "running" || sandbox.status === "paused" ? (
+            <ForkButton sandboxId={sandbox.id} size="icon" iconOnly />
+          ) : null}
           {sandbox.status === "running" ? (
             <Button
               variant="outline"
@@ -393,33 +438,20 @@ function SandboxRow({
           </Button>
         </div>
       </CardContent>
-      <Dialog open={confirmOpen} onOpenChange={setConfirmOpen}>
-        <DialogContent>
-          <DialogHeader>
-            <DialogTitle>Destroy sandbox?</DialogTitle>
-            <DialogDescription>
-              This permanently deletes{" "}
-              <span className="font-mono">{sandbox.id}</span>
-              {name ? ` (${name})` : ""}. This cannot be undone.
-            </DialogDescription>
-          </DialogHeader>
-          <DialogFooter>
-            <Button variant="outline" onClick={() => setConfirmOpen(false)}>
-              Cancel
-            </Button>
-            <Button
-              variant="destructive"
-              disabled={destroy.isPending}
-              onClick={() => {
-                destroy.mutate(sandbox.id);
-                setConfirmOpen(false);
-              }}
-            >
-              Destroy
-            </Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
+      <ConfirmDialog
+        open={confirmOpen}
+        onOpenChange={setConfirmOpen}
+        title="Destroy sandbox?"
+        description={
+          <>
+            This permanently deletes{" "}
+            <span className="font-mono">{sandbox.id}</span>
+            {name ? ` (${name})` : ""}. This cannot be undone.
+          </>
+        }
+        confirmLabel="Destroy"
+        onConfirm={() => destroy.mutateAsync(sandbox.id)}
+      />
       <RenameSandboxDialog
         sandboxId={sandbox.id}
         currentName={name}

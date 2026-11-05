@@ -1,17 +1,17 @@
 /**
- * Request/response shapes for the runtime API (design.md §2 "Runtime API").
+ * Request/response shapes for the runtime API (docs/archive/design.md §2 "Runtime API").
  * These are the wire contract at the seam — the whole thing.
  */
 import { type Static, Type } from "@sinclair/typebox";
 import { SandboxIdleSummarySchema } from "./sandbox-activity.ts";
-import { ProcessSchema, SandboxSpecSchema } from "./sandbox-spec.ts";
+import { PortAuthSchema, SandboxSpecSchema } from "./sandbox-spec.ts";
 
 // ── generated values ─────────────────────────────────────────────────────────
 
 /**
  * Runtime-generated values returned in the create response. The spec stays a
  * pure input; mid-boot values (agent password, pod IP, per-sandbox tokens)
- * come back here (design.md §6 phase 1 "mid-boot values").
+ * come back here (docs/archive/design.md §6 phase 1 "mid-boot values").
  */
 export const GeneratedSchema = Type.Object(
   {
@@ -20,7 +20,7 @@ export const GeneratedSchema = Type.Object(
     tokens: Type.Optional(Type.Record(Type.String(), Type.String())),
     /** The sandbox's sshd host public key line(s) (OpenSSH format), as last
      * reported by the agent's `GET /ssh/host-keys` at boot/resume — the
-     * runtime's SSH host-key pinning (see ssh-gateway.ts / ssh/proxy.ts).
+     * runtime's SSH host-key pinning (see runtime/boot.ts / ssh/proxy.ts).
      * Undefined when unknown (not booted since pinning shipped). */
     sshHostKeys: Type.Optional(Type.Array(Type.String())),
   },
@@ -34,7 +34,7 @@ export const SandboxUrlSchema = Type.Object(
   {
     name: Type.String(),
     url: Type.String(),
-    /** All processes that gate this URL (design ui-evolution.md §4.1). Undefined
+    /** All processes that gate this URL. Undefined
      * when the port has no declared gating process (e.g. `ssh`). */
     processes: Type.Optional(Type.Array(Type.String())),
     /** True iff every process in `processes` is live-ready. Undefined when
@@ -75,12 +75,41 @@ export const CreateSandboxResponseSchema = Type.Object(
     id: Type.String(),
     urls: Type.Array(SandboxUrlSchema),
     generated: Type.Optional(GeneratedSchema),
+    warnings: Type.Optional(
+      Type.Array(Type.String(), {
+        description:
+          "Non-fatal notes about the spawn, e.g. that it booted from the " +
+          "last good prebuild because a fresh one could not be built.",
+      }),
+    ),
   },
   { additionalProperties: false, $id: "CreateSandboxResponse" },
 );
 export type CreateSandboxResponse = Static<typeof CreateSandboxResponseSchema>;
 
 // ── get ──────────────────────────────────────────────────────────────────────
+
+/** The snapshot a sandbox booted from: what it contains and how old it is. */
+export const SandboxBootedFromSchema = Type.Object(
+  {
+    ref: Type.String(),
+    kind: Type.Union([
+      Type.Literal("prebuild"),
+      Type.Literal("pause"),
+      Type.Literal("manual"),
+      Type.Literal("fork"),
+    ]),
+    image: Type.String(),
+    repoHeads: Type.Optional(
+      Type.Record(Type.String(), Type.String(), {
+        description: "Remote HEAD of each baked repo, by clone path.",
+      }),
+    ),
+    builtAt: Type.String(),
+  },
+  { additionalProperties: false },
+);
+export type SandboxBootedFrom = Static<typeof SandboxBootedFromSchema>;
 
 export const SandboxStateSchema = Type.Object(
   {
@@ -91,6 +120,7 @@ export const SandboxStateSchema = Type.Object(
     generated: Type.Optional(GeneratedSchema),
     metadata: Type.Optional(Type.Record(Type.String(), Type.String())),
     annotations: Type.Optional(Type.Record(Type.String(), Type.String())),
+    bootedFrom: Type.Optional(SandboxBootedFromSchema),
   },
   { additionalProperties: false, $id: "SandboxState" },
 );
@@ -219,20 +249,14 @@ export const PatchFilesRequestSchema = Type.Array(
 );
 export type PatchFilesRequest = Static<typeof PatchFilesRequestSchema>;
 
-export const PatchEnvRequestSchema = Type.Record(Type.String(), Type.String(), {
-  $id: "PatchEnvRequest",
-});
-export type PatchEnvRequest = Static<typeof PatchEnvRequestSchema>;
-
-/** Ad-hoc supervised process registered after boot. */
-export const AddProcessRequestSchema = ProcessSchema;
-export type AddProcessRequest = Static<typeof AddProcessRequestSchema>;
-
 export const AddPortRequestSchema = Type.Object(
   {
     name: Type.String(),
     port: Type.Number(),
     public: Type.Optional(Type.Boolean()),
+    // `forward`: the public URL asks for an Atelier login; `none` (default,
+    // the historical behaviour): anyone with the link.
+    auth: Type.Optional(PortAuthSchema),
   },
   { additionalProperties: false, $id: "AddPortRequest" },
 );

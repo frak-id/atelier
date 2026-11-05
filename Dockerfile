@@ -20,14 +20,11 @@ WORKDIR /build
 # Workspace root + every workspace member's package.json. bun's frozen install
 # validates the whole workspace graph (root `workspaces: [packages/*, apps/*]`),
 # so ALL members must be present or the lockfile is considered out of sync
-# — even the ones whose source this image never builds (e.g. apps/cli).
+# — even the ones whose source this image never builds.
 COPY package.json bun.lock ./
-COPY packages/shared/package.json packages/shared/
 COPY packages/spec/package.json packages/spec/
-COPY packages/compose/package.json packages/compose/
 COPY apps/server/package.json apps/server/
 COPY apps/console/package.json apps/console/
-COPY apps/cli/package.json apps/cli/
 
 RUN bun install --frozen-lockfile
 
@@ -40,22 +37,18 @@ WORKDIR /build
 # time. The logger only wires up the pino-pretty transport (a thread-stream
 # worker that resolves worker.js from node_modules) when NODE_ENV !== production
 # — which the slim runtime image can't satisfy. Pin it here so the server bundle
-# bakes in JSON logging and boots cleanly in every server mode (incl. mock /
-# `atelier local up`); dev keeps pretty logs via the unbundled `bun run dev`.
+# bakes in JSON logging and boots cleanly in every server mode (incl. local);
+# dev keeps pretty logs via the unbundled `bun run dev`.
 ENV NODE_ENV=production
 
 # Installed node_modules from the deps stage (root + per-workspace symlinks)
 COPY --from=deps /build/node_modules node_modules
-COPY --from=deps /build/packages/shared/node_modules packages/shared/node_modules
 COPY --from=deps /build/packages/spec/node_modules packages/spec/node_modules
-COPY --from=deps /build/packages/compose/node_modules packages/compose/node_modules
 COPY --from=deps /build/apps/server/node_modules apps/server/node_modules
 COPY --from=deps /build/apps/console/node_modules apps/console/node_modules
 
 # Source
-COPY packages/shared packages/shared
 COPY packages/spec packages/spec
-COPY packages/compose packages/compose
 COPY apps/server apps/server
 COPY apps/console apps/console
 COPY tsconfig.json ./
@@ -106,6 +99,7 @@ COPY apps/server/src/runtime/registry/seeds ./seeds
 COPY apps/agent/Dockerfile apps/agent/Cargo.toml apps/agent/Cargo.lock \
      ./seeds/sandbox-agent/
 COPY apps/agent/src ./seeds/sandbox-agent/src
+COPY apps/agent/scripts ./seeds/sandbox-agent/scripts
 
 ENV NODE_ENV=production \
     ATELIER_SERVER_MODE=production \

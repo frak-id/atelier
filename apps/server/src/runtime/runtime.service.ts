@@ -1,34 +1,32 @@
 /**
  * `RuntimeService` — THE SEAM. `runtime.create(spec)` as a function signature
- * that policy code cannot reach past (design.md §3). Mechanism only: it knows
+ * that policy code cannot reach past (docs/archive/design.md §3). Mechanism only: it knows
  * how to boot/pause/resume/destroy, push files/env, supervise processes,
  * expose ports, run hooks, exec, and snapshot. It never parses ACP, reads a
  * harness config, or models "MCP". It imports nothing from control/ or
  * sessions/.
+ *
+ * This class owns the sandbox lifecycle. Prebuilds (`PrebuildService`) and
+ * toolsets (`ToolsetService`) are sub-services it builds from the same
+ * dependencies; their public methods are re-exposed here so callers keep one
+ * entry point, and api/ may also reach them as `runtime.prebuilds` /
+ * `runtime.toolsets`.
  */
-import { createHash } from "node:crypto";
 import {
   type ActivitySignal,
   type AddPortRequest,
-  type AddProcessRequest,
   type CreateSandboxResponse,
-  canonicalJson,
   type ExecRequest,
   gatingProcessNames,
-  isSecretRef,
-  type PatchEnvRequest,
   type PatchFilesRequest,
   type PortEntry,
   type PrebuildRecord,
   type PrebuildSpec,
   type ProcessStatus,
-  prebuildRecipeKey,
   type ResumeRequest,
   type RuntimeSurface,
-  repoKey,
-  runtimeSurfaceOf,
   SANDBOX_NAME_ANNOTATION,
-  type SandboxRepo,
+  type SandboxBootedFrom,
   type SandboxSpec,
   type SandboxState,
   type SandboxStatus,
@@ -40,7 +38,6 @@ import {
   type ToolsetRef,
   type ToolsetRefreshRequest,
   type ToolsetRefreshResult,
-  withoutSurface,
 } from "@atelier/spec";
 import {
   ConflictError,
@@ -48,9 +45,7 @@ import {
   SandboxError,
   ValidationError,
 } from "../shared/errors.ts";
-import { isMock } from "../shared/lib/config.ts";
 import {
-  buildGitAttributionFiles,
   GIT_CREDENTIALS_PATH,
   GITCONFIG_PATH,
 } from "../shared/lib/git-attribution.ts";
@@ -58,7 +53,7 @@ import { safeNanoid } from "../shared/lib/id.ts";
 import { createChildLogger } from "../shared/lib/logger.ts";
 import {
   defaultImage,
-  qualifyImageName,
+  snapshotManualKeep,
 } from "../shared/lib/runtime-config.ts";
 import {
   ActivityRecorder,
@@ -66,64 +61,64 @@ import {
   type SandboxActivityRecord,
 } from "./activity.ts";
 import type { HookPhase, WriteFilesResult } from "./agent/index.ts";
-import { AgentClient, toFileWrites } from "./agent/index.ts";
-import { specToAgentConfig } from "./agent-config.ts";
+import { AgentClient } from "./agent/index.ts";
 import { createSandboxBackend, type SandboxBackend } from "./backend/index.ts";
-import type { BootOutput } from "./boot.ts";
+import { BuildPods, type OnLog } from "./build-pod.ts";
 import { getRemoteCommitHash } from "./git-remote.ts";
+import { OpLock } from "./op-lock.ts";
 import { writePatchFiles } from "./patch-files.ts";
+import { buildPreviewHosts } from "./ports.ts";
 import {
-  ImageNotAvailableError,
-  ImageRegistryService,
-  RegistryUnreachableError,
-} from "./registry/index.ts";
+  type PrebuildOptions,
+  PrebuildService,
+  type SpawnPrebuild,
+  type SurfaceEditor,
+} from "./prebuild.service.ts";
+import { resourceName } from "./resource-name.ts";
 import {
+  newSnapshotName,
+  referencedSnapshotRefs,
+  removeSnapshot,
+} from "./snapshot-helpers.ts";
+import { type ResolvedSource, SourceResolver } from "./source-resolver.ts";
+import {
+  mergeResume,
+  rejectDuplicateToolsetRefs,
+  rejectUnresolvedSecrets,
+  resolveSpecToolsets,
+  resolveToolsetRef,
+  sourceRepos,
+  toRefEntries,
+} from "./spec-guards.ts";
+import {
+  DrizzleImageStore,
+  DrizzleSandboxStore,
+  DrizzleSandboxToolsetRefStore,
+  DrizzleSnapshotStore,
+  DrizzleToolsetStore,
   type ImageStore,
-  InMemoryImageStore,
-  InMemorySandboxStore,
-  InMemorySandboxToolsetRefStore,
-  InMemorySnapshotStore,
-  InMemoryToolsetStore,
   type SandboxRecord,
   type SandboxStore,
   type SandboxToolsetRefStore,
-  type SnapshotRecord,
+  type SnapshotKind,
   type SnapshotStore,
-  type ToolsetRecord,
   type ToolsetStore,
 } from "./store.ts";
-import { fingerprintScript, parseFingerprint } from "./toolset-fingerprint.ts";
+import { ToolsetService } from "./toolset.service.ts";
 
 const log = createChildLogger("runtime");
-
-/** Optional sink for a long op's live output (wired to the job log by the
- * api/ seam — see `JobService.dispatch`). Kept as a plain callback so the
- * runtime never depends on the jobs layer. */
-type OnLog = (chunk: string) => void;
 
 export interface RuntimeCreateOptions {
   /** Externally-chosen sandbox id (control assigns it). Defaults to a nanoid. */
   id?: string;
-  /** SSH public keys authorized on the pipe — content resolved by the caller. */
-  authorizedKeys?: string[];
   /** Optional boot-progress sink: coarse phase lines streamed to the caller
-   * (e.g. the sandbox-create job log the CLI/console tails during boot). */
+   * (e.g. the sandbox-create job log the console tails during boot). */
   onProgress?: (msg: string) => void;
 }
 
-/** A fresh snapshot identity (content hash + `snap-…` ref) owned by `ownerId`. */
-function newSnapshotName(ownerId: string): { hash: string; ref: string } {
-  const hash = createHash("sha256")
-    .update(`${ownerId}:${Date.now()}`)
-    .digest("hex");
-  return { hash, ref: `snap-${hash.slice(0, 12)}` };
-}
-
-/** What a fork's `derive` step returns: the copy's spec, plus the SSH keys
- * the caller resolved for it (same role as `RuntimeCreateOptions`'). */
+/** What a fork's `derive` step returns: the copy's spec. */
 interface ForkDerivation {
   spec: SandboxSpec;
-  authorizedKeys?: string[];
 }
 
 export interface RuntimeDeps {
@@ -137,37 +132,40 @@ export interface RuntimeDeps {
   toolsets?: ToolsetStore;
   sandboxToolsetRefs?: SandboxToolsetRefStore;
   /** Read-only view of the `images` table (shared with `ImageBuilderService`)
-   * so `resolveImage` can prefer a built image's already-pinned digest over
-   * re-resolving `:latest` on every spawn. */
+   * so the source resolver can prefer a built image's already-pinned digest
+   * over re-resolving `:latest` on every spawn. */
   images?: ImageStore;
   /** Per-sandbox activity clocks (idle auto-pause). Injectable for tests. */
   activity?: ActivityRecorder;
+  /** A repo's current remote HEAD (`git ls-remote`). Injectable so tests
+   * key prebuilds without network git. */
+  remoteHead?: typeof getRemoteCommitHash;
+  /** Turns a STORED spec into the one a boot uses: `$secret` refs resolved,
+   * fresh git credentials added. Called on every boot (create, resume, fork);
+   * its output is handed to the backend and never persisted, so the stored
+   * spec keeps refs instead of values. Injected by the api/ layer (the
+   * runtime must not import control/). Defaults to the identity. */
+  resolveBootSpec?: BootSpecResolver;
 }
 
+export type BootSpecResolver = (spec: SandboxSpec) => Promise<SandboxSpec>;
+
 export class RuntimeService {
+  /** Prebuild bake, recipe surface, staleness, retention. */
+  readonly prebuilds: PrebuildService;
+  /** Toolset build/refresh/capture/publish/delete. */
+  readonly toolsets: ToolsetService;
   private readonly agent: AgentClient;
   private readonly backend: SandboxBackend;
   private readonly sandboxes: SandboxStore;
   private readonly snapshots: SnapshotStore;
-  private readonly toolsets: ToolsetStore;
   private readonly sandboxToolsetRefs: SandboxToolsetRefStore;
-  private readonly images: ImageStore;
+  private readonly resolver: SourceResolver;
   private readonly activity: ActivityRecorder;
-  /** De-dupes concurrent prebuild() calls for the same content hash onto one
-   * execution (the temp pod name is deterministic and would collide). */
-  private readonly inflightPrebuilds = new Map<string, Promise<SnapshotRef>>();
-  /** De-dupes concurrent built-toolset executions by content hash (the temp
-   * pod name is deterministic and would otherwise collide). */
-  private readonly inflightToolsetBuilds = new Map<
-    string,
-    Promise<ToolsetRef>
-  >();
-  /** Per-sandbox operation lock: create/pause/resume/destroy/snapshot on the
-   * same id serialize instead of racing (double resume booting two pods on
-   * one pod name, destroy sweeping resources out from under an in-flight
-   * create, …). Queued ops re-read the record once they acquire the lock, so
-   * status guards see the previous op's outcome. */
-  private readonly opLocks = new Map<string, Promise<void>>();
+  private readonly resolveBootSpec: BootSpecResolver;
+  /** Per-sandbox operation lock: lifecycle ops and live mutations on the same
+   * id serialize instead of racing. */
+  private readonly opLock = new OpLock();
 
   constructor(deps: RuntimeDeps = {}) {
     // Backend before agent: the agent dials the backend's resolved endpoint
@@ -177,13 +175,34 @@ export class RuntimeService {
     this.agent =
       deps.agent ??
       new AgentClient((id) => this.backend.resolveAgentEndpoint(id));
-    this.sandboxes = deps.sandboxes ?? new InMemorySandboxStore();
-    this.snapshots = deps.snapshots ?? new InMemorySnapshotStore();
-    this.toolsets = deps.toolsets ?? new InMemoryToolsetStore();
+    this.sandboxes = deps.sandboxes ?? new DrizzleSandboxStore();
+    this.snapshots = deps.snapshots ?? new DrizzleSnapshotStore();
     this.sandboxToolsetRefs =
-      deps.sandboxToolsetRefs ?? new InMemorySandboxToolsetRefStore();
-    this.images = deps.images ?? new InMemoryImageStore();
+      deps.sandboxToolsetRefs ?? new DrizzleSandboxToolsetRefStore();
     this.activity = deps.activity ?? new ActivityRecorder();
+    this.resolveBootSpec = deps.resolveBootSpec ?? (async (spec) => spec);
+    this.resolver = new SourceResolver(
+      this.snapshots,
+      deps.images ?? new DrizzleImageStore(),
+    );
+    const buildPods = new BuildPods(this.backend, this.agent);
+    this.prebuilds = new PrebuildService({
+      agent: this.agent,
+      backend: this.backend,
+      sandboxes: this.sandboxes,
+      snapshots: this.snapshots,
+      resolver: this.resolver,
+      buildPods,
+      remoteHead: deps.remoteHead ?? getRemoteCommitHash,
+    });
+    this.toolsets = new ToolsetService({
+      agent: this.agent,
+      sandboxes: this.sandboxes,
+      toolsets: deps.toolsets ?? new DrizzleToolsetStore(),
+      sandboxToolsetRefs: this.sandboxToolsetRefs,
+      resolver: this.resolver,
+      buildPods,
+    });
   }
 
   // ── activity (idle auto-pause) ────────────────────────────────────────
@@ -203,13 +222,13 @@ export class RuntimeService {
   /** Whether a lifecycle op (create/pause/resume/snapshot/destroy/fork) holds
    * the sandbox's op lock right now. */
   hasPendingOp(id: string): boolean {
-    return this.opLocks.has(id);
+    return this.opLock.has(id);
   }
 
   /**
    * Poll the agent's `GET /activity` and fold it into the sandbox's clocks
-   * with `thresholds`. An older agent (404) or an unreachable one is
-   * recorded as not reporting; never throws.
+   * with `thresholds`. An unreachable agent is recorded as not reporting;
+   * never throws.
    */
   async pollActivity(
     id: string,
@@ -217,555 +236,10 @@ export class RuntimeService {
   ): Promise<void> {
     try {
       const report = await this.agent.activity(id);
-      if (report) this.activity.ingest(id, report, thresholds);
-      else this.activity.markUnreported(id);
+      this.activity.ingest(id, report, thresholds);
     } catch (err) {
       log.debug({ id, err }, "activity poll failed");
       this.activity.markUnreported(id);
-    }
-  }
-
-  // ── prebuild ───────────────────────────────────────────────────────────
-
-  /**
-   * Chained, content-addressed prebuild. Idempotent: keyed by content hash;
-   * a hit returns instantly. The key includes the resolved base image and
-   * each repo's current remote HEAD (`resolveContentKey`), so a base image
-   * update or a git push busts the hash instead of silently reusing a stale
-   * snapshot. `options.force` bypasses the cache hit — used by the console's
-   * explicit "rebuild" action and by `refreshStalePrebuilds`. Concurrent
-   * calls for the same hash dedupe onto one execution (deterministic temp pod
-   * name would otherwise collide).
-   *
-   * The runtime surface (`processes`/`ports`) is a setting of the *recipe*,
-   * shared by all its snapshots (see `setPrebuildSurface`), and only an
-   * explicit save writes it: `saveSurface` (the `POST /prebuilds` create or
-   * rebuild), or `setPrebuildSurface`. Any other call (a spawn re-resolving
-   * an inline recipe, the stale-prebuild refresh) never changes it, even
-   * when the call bakes: the new snapshot inherits the recipe's dev servers.
-   * The one exception is a recipe's very first bake, which has none to
-   * inherit: it records the declared ones, so the snapshot lists what its
-   * first spawn ran.
-   *
-   * `createdBy` (an opaque user id, paired with that user's `githubToken`)
-   * is recorded on the snapshot so `refreshStalePrebuilds` can re-resolve a
-   * private repo with the same user's token. A cache hit on a snapshot with
-   * no recorded creator adopts the caller: their token just resolved every
-   * repo HEAD (the hash would not match otherwise), so they can read them.
-   */
-  async prebuild(
-    spec: PrebuildSpec,
-    options: {
-      force?: boolean;
-      githubToken?: string;
-      createdBy?: string;
-      signal?: AbortSignal;
-      onLog?: OnLog;
-      saveSurface?: boolean;
-    } = {},
-  ): Promise<SnapshotRef> {
-    const { hash, image, snapshotName } = await this.resolveContentKey(
-      spec,
-      options.githubToken,
-    );
-    const declared = runtimeSurfaceOf(spec);
-    const save = options.saveSurface === true && hasSurface(declared);
-    if (!options.force) {
-      const existing = this.snapshots.getByHash(hash);
-      if (existing) {
-        if (save) this.writeRecipeSurface(existing, declared);
-        if (!existing.createdBy && options.createdBy && options.githubToken) {
-          this.snapshots.put({
-            ...(this.snapshots.get(existing.ref) ?? existing),
-            createdBy: options.createdBy,
-          });
-        }
-        return { ref: existing.ref, hash, parent: existing.parent };
-      }
-    }
-    // What the new snapshot records: a saved surface, else the recipe's
-    // current one (its re-bakes and spawns never change it), else — the
-    // recipe's first bake — whatever the caller declared.
-    const known = this.recipeSnapshots(spec).length > 0;
-    const surface = save || !known ? declared : this.recipeSurface(spec);
-    const toBake: PrebuildSpec = { ...withoutSurface(spec), ...surface };
-    // A save becomes the recipe's, on its older snapshots too — also when it
-    // joins a bake another caller (a spawn) started.
-    const saved = (snapshot: SnapshotRef): SnapshotRef => {
-      const baked = this.snapshots.get(snapshot.ref);
-      if (baked && save) this.writeRecipeSurface(baked, declared);
-      return snapshot;
-    };
-    // A concurrent request for the same content shares the in-flight build
-    // (and thus the first caller's cancellation) — cancel is best-effort, so
-    // a later job deduped onto an existing run may not observe its own signal.
-    const inflight = this.inflightPrebuilds.get(hash);
-    if (inflight) return inflight.then(saved);
-    const run = this.executePrebuild(toBake, hash, image, snapshotName, {
-      githubToken: options.githubToken,
-      createdBy: options.createdBy,
-      signal: options.signal,
-      onLog: options.onLog,
-    })
-      .then(saved)
-      .finally(() => {
-        this.inflightPrebuilds.delete(hash);
-      });
-    this.inflightPrebuilds.set(hash, run);
-    return run;
-  }
-
-  /**
-   * Set a stored prebuild's runtime surface (its dev servers, applied at
-   * boot) without resolving or baking anything: the "save, no rebuild"
-   * action. Applied to every snapshot of the same recipe, so a snapshot
-   * re-baked after a push (a newer ref of the same recipe) gets it too.
-   * An empty surface clears it.
-   */
-  setPrebuildSurface(ref: string, surface: RuntimeSurface): PrebuildSpec {
-    const record = this.snapshots.get(ref);
-    if (!record?.spec) throw new NotFoundError("Prebuild", ref);
-    this.writeRecipeSurface(record, runtimeSurfaceOf(surface));
-    return this.snapshots.get(ref)?.spec ?? record.spec;
-  }
-
-  /** The snapshots baked from the same recipe as `spec` (every re-bake
-   * after a push is another one), newest first. */
-  private recipeSnapshots(spec: PrebuildSpec): SnapshotRecord[] {
-    const key = prebuildRecipeKey(spec);
-    return this.snapshots
-      .list()
-      .filter((s) => s.spec && prebuildRecipeKey(s.spec) === key)
-      .sort((a, b) => b.createdAt.localeCompare(a.createdAt));
-  }
-
-  /** The recipe's current dev servers: the newest of its snapshots' (they
-   * agree unless written before surfaces were shared). */
-  private recipeSurface(spec: PrebuildSpec): RuntimeSurface {
-    const [newest] = this.recipeSnapshots(spec);
-    return newest?.spec ? runtimeSurfaceOf(newest.spec) : {};
-  }
-
-  private writeRecipeSurface(
-    record: SnapshotRecord,
-    surface: RuntimeSurface,
-  ): void {
-    if (!record.spec) return;
-    const want = canonicalJson(surface);
-    for (const snap of this.recipeSnapshots(record.spec)) {
-      if (!snap.spec) continue;
-      if (canonicalJson(runtimeSurfaceOf(snap.spec)) === want) continue;
-      const { processes: _p, ports: _q, ...baked } = snap.spec;
-      this.snapshots.put({ ...snap, spec: { ...baked, ...surface } });
-      log.info({ ref: snap.ref }, "prebuild processes/ports updated");
-    }
-  }
-
-  /** The recipe a stored prebuild was baked from, or `undefined` for any
-   * other snapshot (pause, manual) or an unknown ref. */
-  prebuildSpec(ref: string): PrebuildSpec | undefined {
-    return this.snapshots.get(ref)?.spec;
-  }
-
-  /** The dev servers a sandbox booted from snapshot `ref` gets: its
-   * recipe's current ones (`{}` for a pause/manual snapshot). */
-  prebuildSurface(ref: string): RuntimeSurface {
-    const spec = this.snapshots.get(ref)?.spec;
-    return spec ? this.recipeSurface(spec) : {};
-  }
-
-  /** The sandbox a snapshot belongs to (pause/manual/fork snapshots), or
-   * undefined for a shared prebuild snapshot or an unknown ref. Resolves by
-   * ref or hash like `resolveSource`; a synchronous store read. */
-  snapshotOwner(ref: string): string | undefined {
-    return (this.snapshots.get(ref) ?? this.snapshots.getByHash(ref))
-      ?.sandboxId;
-  }
-
-  /** List stored prebuild snapshots, newest first — the read side of
-   * `prebuild()`, for the console's prebuild list and one-tap spawn. Each
-   * record is flagged `inUse` so the console can offer deletion of the stale,
-   * unreferenced ones without risking a live boot source. */
-  listPrebuilds(): PrebuildRecord[] {
-    const referenced = this.referencedSnapshotRefs();
-    return (
-      this.snapshots
-        .list()
-        // Only real prebuilds: the table also holds pause/manual snapshots
-        // (no `spec`), which must never surface here as deletable prebuilds.
-        .filter((s) => s.spec !== undefined)
-        .map((s) => ({
-          ref: s.ref,
-          hash: s.hash,
-          image: s.image,
-          parent: s.parent,
-          metadata: s.metadata,
-          spec: s.spec,
-          inUse: referenced.has(s.ref),
-          createdAt: s.createdAt,
-        }))
-        .sort((a, b) => b.createdAt.localeCompare(a.createdAt))
-    );
-  }
-
-  /** Refs that must not be deleted: a sandbox boots from them
-   * (`source.snapshot`) or another snapshot is chained on them (`parent`). */
-  private referencedSnapshotRefs(): Set<string> {
-    const refs = new Set<string>();
-    for (const s of this.sandboxes.list()) {
-      if ("snapshot" in s.spec.source) refs.add(s.spec.source.snapshot);
-    }
-    for (const snap of this.snapshots.list()) {
-      if (snap.parent) refs.add(snap.parent);
-    }
-    return refs;
-  }
-
-  /** Every image reference a live sandbox's `source.image` or a stored
-   * snapshot's `image` still points at — the read `ImageBuilderService`'s
-   * delete guard consumes (mirrors `referencedSnapshotRefs`, but across the
-   * runtime/registry module seam so it stays a plain read, no shared
-   * mutable state). */
-  referencedImageRefs(): string[] {
-    const refs: string[] = [];
-    for (const s of this.sandboxes.list()) {
-      if ("image" in s.spec.source) refs.push(s.spec.source.image);
-    }
-    for (const snap of this.snapshots.list()) {
-      refs.push(snap.image);
-    }
-    return refs;
-  }
-
-  /** Delete a stored prebuild snapshot (VolumeSnapshot + record). Refuses when
-   * the snapshot is still referenced by a sandbox or a chained prebuild. */
-  async deletePrebuild(ref: string): Promise<void> {
-    // Only prebuild snapshots (`spec`-bearing) are deletable here — a
-    // pause/manual snapshot shares the table but is a sandbox's own storage,
-    // and referencedSnapshotRefs() can't see a pause ref (it isn't in
-    // `source.snapshot`), so treat those as not-a-prebuild.
-    if (!this.snapshots.get(ref)?.spec)
-      throw new NotFoundError("Prebuild", ref);
-    if (this.referencedSnapshotRefs().has(ref)) {
-      throw new ValidationError(
-        `Snapshot ${ref} is in use (a sandbox boots from it or a prebuild is ` +
-          "chained on it) and cannot be deleted.",
-      );
-    }
-    await this.removeSnapshot(ref);
-  }
-
-  /** Drop a snapshot's VolumeSnapshot then its record. The k8s delete is
-   * best-effort (an already-gone object must still clear the row) — matching
-   * the runtime's cleanup style elsewhere. */
-  private async removeSnapshot(ref: string): Promise<void> {
-    await this.backend.volumes.deleteSnapshot(ref);
-    this.snapshots.delete(ref);
-    log.info({ ref }, "snapshot deleted");
-  }
-
-  /** Cron entry: for every stored prebuild that clones repos, recompute the
-   * content key (which now reflects current remote HEADs + base image
-   * digest). A changed key means upstream moved — rebuild to a fresh
-   * snapshot. A key that already resolves to an existing snapshot is skipped
-   * (already refreshed). Superseded snapshots are NOT deleted here — the
-   * caller enforces retention separately via `pruneUnusedPrebuilds(keep)`, so
-   * a configurable history of older versions survives a drift rebuild.
-   *
-   * There is no caller here, so private repos are reached with the GitHub
-   * token of the user who baked the prebuild (`createdBy`, looked up through
-   * `githubTokenOf`, since runtime knows no users). A prebuild without a
-   * recorded creator, or whose creator has no token, only resolves public
-   * repos and so is skipped while any of its repos is private. */
-  async refreshStalePrebuilds(
-    githubTokenOf: (userId: string) => string | undefined = () => undefined,
-  ): Promise<void> {
-    for (const snap of this.snapshots.list()) {
-      if (!snap.spec?.repos?.length) continue;
-      try {
-        const githubToken = snap.createdBy
-          ? githubTokenOf(snap.createdBy)
-          : undefined;
-        const { hash, repoHeadsComplete } = await this.resolveContentKey(
-          snap.spec,
-          githubToken,
-        );
-        // A transient ls-remote failure drops a repo from the key, which would
-        // otherwise flap the hash and trigger a rebuild every tick. Only act on
-        // drift we can trust — skip until every repo HEAD resolves.
-        if (!repoHeadsComplete) continue;
-        if (hash === snap.hash) continue;
-        if (this.snapshots.getByHash(hash)) continue;
-        log.info(
-          { ref: snap.ref, oldHash: snap.hash, newHash: hash },
-          "prebuild stale, rebuilding",
-        );
-        await this.prebuild(snap.spec, {
-          githubToken,
-          createdBy: snap.createdBy,
-        });
-      } catch (err) {
-        log.error({ ref: snap.ref, err }, "prebuild staleness check failed");
-      }
-    }
-  }
-
-  /**
-   * Retention for prebuild snapshots (config `prebuild.pruneKeep`). Groups
-   * prebuilds by lineage (the same spec regardless of resolved git HEADs) and,
-   * within each lineage, keeps the newest `keep` UNUSED snapshots — deleting
-   * the rest. In-use snapshots (a sandbox boots from them, or a prebuild is
-   * chained on them) are never counted or deleted, so pause/resume and live
-   * boots are unaffected. `keep = 0` prunes every unused snapshot; `keep = 3`
-   * keeps the last three. Returns the number of snapshots deleted.
-   */
-  async pruneUnusedPrebuilds(keep: number): Promise<number> {
-    const referenced = this.referencedSnapshotRefs();
-    const lineages = new Map<string, SnapshotRecord[]>();
-    for (const snap of this.snapshots.list()) {
-      if (!snap.spec) continue; // only real prebuilds (not pause/manual)
-      const key = prebuildLineageKey(snap.spec);
-      const group = lineages.get(key);
-      if (group) group.push(snap);
-      else lineages.set(key, [snap]);
-    }
-
-    let deleted = 0;
-    for (const group of lineages.values()) {
-      const unused = group
-        .filter((s) => !referenced.has(s.ref))
-        .sort((a, b) => b.createdAt.localeCompare(a.createdAt));
-      for (const stale of unused.slice(keep)) {
-        try {
-          await this.removeSnapshot(stale.ref);
-          deleted++;
-        } catch (err) {
-          log.error({ ref: stale.ref, err }, "prebuild prune failed");
-        }
-      }
-    }
-    if (deleted > 0) log.info({ deleted, keep }, "pruned unused prebuilds");
-    return deleted;
-  }
-
-  /** Resolve the content key for a prebuild: source resolved to its current
-   * image/snapshot, plus each repo's current remote HEAD. `env` is
-   * intentionally excluded (design.md §2): it carries build-time secrets
-   * (tokens) that must never enter a persisted content key, and is treated
-   * as credential material rather than artifact-identifying input. */
-  private async resolveContentKey(
-    spec: PrebuildSpec,
-    githubToken?: string,
-  ): Promise<{
-    hash: string;
-    image: string;
-    snapshotName?: string;
-    repoHeadsComplete: boolean;
-  }> {
-    const { image, snapshotName } = await this.resolveSource(spec.source);
-    const { heads: repoHeads, complete: repoHeadsComplete } =
-      await this.resolveRepoHeads(spec.repos, githubToken);
-    const keyed = {
-      source: spec.source,
-      image,
-      files: spec.files ?? [],
-      build: spec.build ?? [],
-      repos: spec.repos ?? [],
-      repoHeads,
-    };
-    const hash = createHash("sha256")
-      .update(JSON.stringify(keyed))
-      .digest("hex");
-    return { hash, image, snapshotName, repoHeadsComplete };
-  }
-
-  /** Current remote HEAD per repo (keyed by `clonePath`), so a git push busts
-   * the content key. Resolved in parallel; skipped in mock mode (no network
-   * git). `complete` is false when any HEAD failed to resolve, so callers can
-   * avoid acting on a partial (and therefore flappy) key. */
-  private async resolveRepoHeads(
-    repos: PrebuildSpec["repos"],
-    githubToken?: string,
-  ): Promise<{ heads: Record<string, string>; complete: boolean }> {
-    if (!repos?.length || isMock()) return { heads: {}, complete: true };
-    const resolved = await Promise.all(
-      repos.map(async (repo) => ({
-        clonePath: repo.clonePath,
-        head: await getRemoteCommitHash(repo.url, repo.branch, githubToken),
-      })),
-    );
-    const heads: Record<string, string> = {};
-    let complete = true;
-    for (const { clonePath, head } of resolved) {
-      if (head) heads[clonePath] = head;
-      else complete = false;
-    }
-    return { heads, complete };
-  }
-
-  private async executePrebuild(
-    spec: PrebuildSpec,
-    hash: string,
-    image: string,
-    snapshotName: string | undefined,
-    {
-      githubToken,
-      createdBy,
-      signal,
-      onLog,
-    }: {
-      githubToken?: string;
-      createdBy?: string;
-      signal?: AbortSignal;
-      onLog?: OnLog;
-    },
-  ): Promise<SnapshotRef> {
-    const parentRef =
-      "snapshot" in spec.source ? spec.source.snapshot : undefined;
-    const ref = `snap-${hash.slice(0, 12)}`;
-    const tempId = `pb-${hash.slice(0, 12)}`;
-
-    // Boot a throwaway pod (from the image or the parent snapshot — chaining
-    // falls out of resolveSource) to bake files/repos/build[] into a fresh
-    // PVC, snapshot it, then tear the pod + PVC down. The snapshot outlives
-    // the pod. The prebuild pod runs NO processes (the synthesized spec has
-    // none), so boot just stages files + pushes env for the build steps.
-    return this.withThrowawayPod(
-      tempId,
-      prebuildToSpec(spec),
-      { image, snapshotName },
-      "prebuild pod cleanup failed",
-      async (boot) => {
-        // Inject the git credential transiently — via the agent, NOT the boot
-        // spec's files[] — so the token neither enters the content hash nor is
-        // baked into the snapshot. Written before clone/build so private repos
-        // authenticate through the `store` credential helper.
-        if (githubToken) {
-          await this.agent.writeFiles(
-            tempId,
-            toFileWrites(buildGitAttributionFiles({ githubToken })),
-          );
-        }
-        await this.runPrebuildSteps(tempId, spec, signal, onLog);
-        // Bail before the (irreversible) snapshot if canceled during the build.
-        signal?.throwIfAborted();
-        onLog?.("Snapshotting workspace…");
-        // Scrub the credential before snapshotting: the snapshot is a shared,
-        // content-addressed artifact that must never carry a user's token.
-        // (The file lives on the pod's ephemeral rootfs, outside the `/home/dev`
-        // PVC the snapshot captures — this is explicit defense-in-depth.)
-        if (githubToken) {
-          await this.agent
-            .exec(tempId, `rm -f ${GIT_CREDENTIALS_PATH}`, { user: "root" })
-            .catch((err) =>
-              log.warn({ tempId, err }, "git credential scrub failed"),
-            );
-        }
-        // Flush the guest filesystem before snapshotting. The workspace is a
-        // raw block device the Kata guest formats + mounts ext4, so a build
-        // step's writes (e.g. `git clone`'s objects/refs/checkout) can still
-        // sit in the guest page cache after the step returns exit 0. The CSI
-        // VolumeSnapshot captures the underlying block device, so without this
-        // `sync` it can snapshot a torn filesystem — the classic symptom being
-        // a baked repo with only a partial `.git` (leftover `shallow.lock`,
-        // empty `HEAD`, no working tree) and no files. Mirrors the pre-pause
-        // sync; awaited so the flush completes before the snapshot is taken.
-        await this.agent
-          .exec(tempId, "sync", { user: "root", timeout: 30_000 })
-          .catch((err) =>
-            log.warn({ tempId, err }, "pre-snapshot sync failed"),
-          );
-        // The content hash is 64 hex chars — over the 63-byte k8s label cap — so
-        // it rides as an annotation (no length cap), not a label.
-        await this.snapshotPvc(
-          boot.pvcName,
-          ref,
-          { "atelier.dev/component": "prebuild" },
-          { "atelier.dev/prebuild": hash },
-        );
-        // Record as soon as the snapshot is ReadyToUse — before teardown — so a
-        // failing cleanup can neither orphan a live-but-untracked snapshot nor
-        // mask this success.
-        this.snapshots.put({
-          hash,
-          ref,
-          image,
-          parent: parentRef,
-          metadata: spec.metadata,
-          spec,
-          createdBy,
-          createdAt: new Date().toISOString(),
-        });
-        log.info({ ref, hash, parent: parentRef }, "prebuild snapshot created");
-        return { ref, hash, parent: parentRef };
-      },
-    );
-  }
-
-  /** Clone repos then run build[] in the prebuild pod, fail-fast. The prebuild
-   * `env` rides the pod env (pushed at boot), so build steps inherit it under
-   * `/bin/bash -l`. */
-  private async runPrebuildSteps(
-    tempId: string,
-    spec: PrebuildSpec,
-    signal?: AbortSignal,
-    onLog?: OnLog,
-  ): Promise<void> {
-    for (const repo of spec.repos ?? []) {
-      signal?.throwIfAborted();
-      const branch = repo.branch ? `-b ${shellQuote(repo.branch)} ` : "";
-      // Clone as `dev` (uid 1000): clonePath lives on the /home/dev PVC the
-      // snapshot captures, so the repo must be dev-owned. Cloning as root (the
-      // default exec user) leaves the baked repo root-owned, which trips git's
-      // "dubious ownership" guard and denies writes when dev boots the sandbox.
-      await this.execStep(
-        tempId,
-        `git clone --depth 1 ${branch}${shellQuote(repo.url)} ${shellQuote(repo.clonePath)}`,
-        "dev",
-        signal,
-        onLog,
-      );
-    }
-    // Build steps also run as `dev`: they operate inside the dev-owned
-    // workspace/home the snapshot captures, so running them as root would bake
-    // root-owned artifacts (e.g. node_modules) that dev can't write. A step
-    // needing root uses `sudo` (same convention as the guest agent's hooks).
-    for (const step of spec.build ?? []) {
-      signal?.throwIfAborted();
-      await this.execStep(tempId, step, "dev", signal, onLog);
-    }
-  }
-
-  private async execStep(
-    tempId: string,
-    command: string,
-    user?: "dev" | "root",
-    signal?: AbortSignal,
-    onLog?: OnLog,
-  ): Promise<void> {
-    onLog?.(`$ ${command}`);
-    // Run `dev` steps from /home/dev, not the agent's own cwd (which is `/`,
-    // root-owned 0755 — dev can't create anything there). Every dev prebuild/
-    // toolset step assumes the home it captures: a relative `git clone <repo>
-    // <clonePath>` or a `cd <clonePath> && …` build step must resolve under
-    // /home/dev, and toolset installs must land in the captured path-sets.
-    // The `/exec` route (unlike the terminal, which defaults to SHELL_HOME)
-    // inherits the agent's cwd when no workdir is given, so pin it here. Root
-    // steps keep inheriting `/` (root can write there; they use absolute paths
-    // or sudo).
-    const res = await this.agent.exec(tempId, command, {
-      timeout: 600_000,
-      user,
-      workdir: user === "dev" ? "/home/dev" : undefined,
-      signal,
-    });
-    if (res.stdout.trim()) onLog?.(res.stdout.trimEnd());
-    if (res.stderr.trim()) onLog?.(res.stderr.trimEnd());
-    if (res.exitCode !== 0) {
-      onLog?.(`✗ exit ${res.exitCode}`);
-      throw new Error(
-        `build step failed (exit ${res.exitCode}): ${command}\n${res.stderr.trim()}`,
-      );
     }
   }
 
@@ -775,10 +249,9 @@ export class RuntimeService {
     spec: SandboxSpec,
     options: RuntimeCreateOptions = {},
   ): Promise<CreateSandboxResponse> {
-    rejectUnresolvedSecrets(spec);
     rejectDuplicateToolsetRefs(spec);
     const id = options.id ?? safeNanoid();
-    return this.withOpLock(id, () => this.executeCreate(id, spec, options));
+    return this.opLock.run(id, () => this.executeCreate(id, spec, options));
   }
 
   private async executeCreate(
@@ -790,10 +263,21 @@ export class RuntimeService {
       throw new ConflictError(`Sandbox ${id} already exists`);
     }
     const progress = options.onProgress ?? (() => {});
-    const resolved = await this.resolveSource(spec.source);
+    // Resolved before the record exists: a missing secret fails the create
+    // with no `error` sandbox left behind.
+    const bootSpec = await this.toBootSpec(spec);
+    const resolved = await this.resolver.resolveSource(spec.source);
     progress(`source resolved (${resolved.snapshotName ?? resolved.image})`);
     this.registerCreating(id, spec);
-    return this.bootNew(id, spec, resolved, options);
+    return this.bootNew(id, spec, bootSpec, resolved, options);
+  }
+
+  /** The spec a boot runs with (secrets resolved, git credentials fresh).
+   * Never stored: `spec` stays the persisted one. */
+  private async toBootSpec(spec: SandboxSpec): Promise<SandboxSpec> {
+    const bootSpec = await this.resolveBootSpec(spec);
+    rejectUnresolvedSecrets(bootSpec);
+    return bootSpec;
   }
 
   /** Insert the `creating` record — the sandbox is visible from here on. */
@@ -814,28 +298,35 @@ export class RuntimeService {
   private async bootNew(
     id: string,
     spec: SandboxSpec,
+    bootSpec: SandboxSpec,
     { image, snapshotName }: { image: string; snapshotName?: string },
     options: RuntimeCreateOptions,
     keepDisk = false,
   ): Promise<CreateSandboxResponse> {
     const progress = options.onProgress ?? (() => {});
-    const toolsets = this.resolveSpecToolsets(spec);
+    const toolsets = resolveSpecToolsets(spec);
+    // The boot image is fixed here, once: pause, resume and the image lookups
+    // read it back instead of re-resolving a source that may be gone by then.
+    this.sandboxes.update(id, { image });
+    // The backend cleans up after a failure inside its own boot; only what
+    // went wrong after it returned is the runtime's to tear down.
+    let booted = false;
     try {
       // bootSandbox pushes config + writes files[]. The fixed phase order
-      // (design.md §6): files/env -> postCreate -> processes -> postStart.
+      // (docs/archive/design.md §6): files/env -> postCreate -> processes -> postStart.
       progress("booting pod…");
       const boot = await this.backend.boot(
         id,
-        spec,
+        bootSpec,
         {
           image,
           snapshotName,
-          authorizedKeys: options.authorizedKeys,
           preserveDisk: keepDisk,
           toolsets,
         },
         this.agent,
       );
+      booted = true;
       progress("pod up…");
       // Persist which toolsets this sandbox mounted (toolset-overlay-squashfs
       // .md §6-7) as soon as boot (⇒ materialize ⇒ mounted) succeeds — NOT
@@ -862,8 +353,6 @@ export class RuntimeService {
       };
       this.sandboxes.update(id, {
         status: "running",
-        podName: boot.podName,
-        pvcName: boot.pvcName,
         generated,
       });
       // The idle clock starts at boot, not at the first signal.
@@ -875,21 +364,22 @@ export class RuntimeService {
         generated,
       };
     } catch (error) {
-      // A failure in a post-boot phase (hooks/reconcile/primary gate) would
-      // otherwise orphan the running pod; tear it down so the boot is atomic
-      // (bootSandbox already cleans up failures during its own phase).
       this.agent.invalidatePodIp(id);
-      try {
-        // `keepDisk` (a fork's boot): like a failed resume, keep the disk and
-        // the snapshot it boots from (both carry the sandbox label) so the
-        // `error` record stays resumable; destroy sweeps them.
-        if (keepDisk) await this.backend.deleteRestartable(id);
-        else await this.backend.cleanup(id);
-      } catch (cleanupError) {
-        log.warn(
-          { id, err: cleanupError },
-          "teardown after failed boot failed",
-        );
+      // A failure in a post-boot phase (hooks/reconcile/primary gate) would
+      // otherwise orphan the running pod; tear it down so the boot is atomic.
+      if (booted) {
+        try {
+          // `keepDisk` (a fork's boot): like a failed resume, keep the disk
+          // and the snapshot it boots from (both carry the sandbox label) so
+          // the `error` record stays resumable; destroy sweeps them.
+          if (keepDisk) await this.backend.deleteRestartable(id);
+          else await this.backend.cleanup(id);
+        } catch (cleanupError) {
+          log.warn(
+            { id, err: cleanupError },
+            "teardown after failed boot failed",
+          );
+        }
       }
       this.sandboxes.update(id, { status: "error" });
       throw error;
@@ -909,6 +399,23 @@ export class RuntimeService {
       generated: record.generated,
       metadata: record.metadata,
       annotations: record.spec.annotations,
+      bootedFrom: this.bootedFrom(record),
+    };
+  }
+
+  /** The snapshot a sandbox booted from (a prebuild, a fork's or a manual
+   * snapshot), so the console can show what it contains and how old it is.
+   * Undefined for an image source, or once the snapshot is gone. */
+  private bootedFrom(record: SandboxRecord): SandboxBootedFrom | undefined {
+    if (!("snapshot" in record.spec.source)) return undefined;
+    const snap = this.snapshots.get(record.spec.source.snapshot);
+    if (!snap) return undefined;
+    return {
+      ref: snap.ref,
+      kind: snap.kind,
+      image: snap.image,
+      ...(snap.repoHeads ? { repoHeads: snap.repoHeads } : {}),
+      builtAt: snap.createdAt,
     };
   }
 
@@ -945,6 +452,14 @@ export class RuntimeService {
         annotations: record.spec.annotations ?? {},
       }
     );
+  }
+
+  /** The hosts a sandbox serves previews on (public ports without
+   * forward-auth), or undefined when it is unknown. A synchronous store
+   * read, for the unauthenticated wake check. */
+  getPreviewHosts(id: string): string[] | undefined {
+    const record = this.sandboxes.get(id);
+    return record && buildPreviewHosts(id, record.spec.ports);
   }
 
   /** All sandboxes, from persistence only (no agent round-trips). Live
@@ -1004,7 +519,7 @@ export class RuntimeService {
    * ref persists on the record: it is `resume()`'s boot source if the PVC is
    * ever lost (a failed resume boot cleans the PVC; the snapshot survives). */
   async pause(id: string): Promise<SnapshotRef> {
-    return this.withOpLock(id, async () => {
+    return this.opLock.run(id, async () => {
       const record = this.require(id);
       if (record.status !== "running") {
         throw new ConflictError(
@@ -1018,7 +533,7 @@ export class RuntimeService {
       await this.agent
         .exec(id, "sync", { user: "root", timeout: 30_000 })
         .catch((err) => log.warn({ id, err }, "pre-pause sync failed"));
-      const ref = await this.executeSnapshot(record);
+      const ref = await this.executeSnapshot(record, "pause");
       this.agent.invalidatePodIp(id);
       await this.backend.deleteRestartable(id);
       this.sandboxes.update(id, {
@@ -1038,14 +553,14 @@ export class RuntimeService {
    * `status: "error"` records — a failed create/resume can be retried here.
    *
    * Toolsets are materialized on EVERY boot, including resume
-   * (toolset-overlay-squashfs.md §6) — not skipped as under the old
+   * (docs/archive/proposals/toolset-overlay-squashfs.md §6) — not skipped as under the old
    * extract-into-PVC model. Materialize is now mount-only and idempotent: the
    * squashfs blobs already live under `/data/toolsets` on the resumed PVC, so
    * this degrades to loop-mount + overlay re-assembly, no re-pull, no
    * clobber (edits live in `/data/upper`, untouched by re-mounting the RO
    * lowers). */
   async resume(id: string, req: ResumeRequest = {}): Promise<SandboxState> {
-    await this.withOpLock(id, async () => {
+    await this.opLock.run(id, async () => {
       const record = this.require(id);
       if (record.status !== "paused" && record.status !== "error") {
         throw new ConflictError(
@@ -1053,19 +568,30 @@ export class RuntimeService {
         );
       }
       const spec = mergeResume(record.spec, req);
-      rejectUnresolvedSecrets(spec);
-      const { image, snapshotName: sourceSnapshot } = await this.resolveSource(
-        spec.source,
+      // Resolved per boot (rotated secrets and tokens apply); only `spec`,
+      // the unresolved one, is stored back.
+      const bootSpec = await this.toBootSpec(spec);
+      const reusePvc = await this.backend.volumes.volumeExists(
+        resourceName(id),
       );
-      const pvcName = record.pvcName ?? `sandbox-${id}`;
-      const reusePvc = await this.backend.volumes.volumeExists(pvcName);
-      const toolsets = this.resolveSpecToolsets(spec);
+      // The image comes from the record (fixed at create); the source is only
+      // resolved for a record that predates that, or when the disk must be
+      // rebuilt from the original snapshot source (no live disk, no pause
+      // snapshot — an `error` record recovering from scratch).
+      const needsSourceSnapshot =
+        !reusePvc && !record.pauseSnapshotRef && "snapshot" in spec.source;
+      const fromSource =
+        record.image && !needsSourceSnapshot
+          ? { image: record.image }
+          : await this.resolver.resolveSource(spec.source);
+      const image = record.image ?? fromSource.image;
+      const toolsets = resolveSpecToolsets(spec);
 
       // Resume phase order: files/env -> onResume -> processes. onResume is
       // the credential-rotation primitive; it runs before processes restart.
       const boot = await this.backend.boot(
         id,
-        spec,
+        bootSpec,
         {
           image,
           reusePvc,
@@ -1074,7 +600,7 @@ export class RuntimeService {
           preserveDisk: true,
           snapshotName: reusePvc
             ? undefined
-            : (record.pauseSnapshotRef ?? sourceSnapshot),
+            : (record.pauseSnapshotRef ?? fromSource.snapshotName),
           toolsets,
         },
         this.agent,
@@ -1098,12 +624,13 @@ export class RuntimeService {
         this.sandboxes.update(id, { status: record.status });
         throw error;
       }
-      // The disk is live again — the pause snapshot no longer reflects it, so
-      // drop the pointer (the VolumeSnapshot itself is GC'd by destroy's
-      // label sweep, or overwritten by the next pause).
+      // The disk is live again — the pause snapshot no longer reflects it
+      // (the next pause takes a new, differently named one), so drop the
+      // pointer and the snapshot itself.
       this.sandboxes.update(id, {
         spec: this.withStoredAnnotations(id, spec),
         status: "running",
+        image,
         pauseSnapshotRef: undefined,
         generated: {
           agentPassword: boot.agentPassword,
@@ -1112,6 +639,26 @@ export class RuntimeService {
         },
       });
       this.activity.touch(id, "lifecycle");
+      // Kept while another sandbox boots from it (or a prebuild is chained
+      // on it): deleting it would strand that sandbox. It stays owned by this
+      // one, and `destroy` re-owns it to the dependent.
+      if (
+        record.pauseSnapshotRef &&
+        !referencedSnapshotRefs(this.sandboxes, this.snapshots).has(
+          record.pauseSnapshotRef,
+        )
+      ) {
+        await removeSnapshot(
+          this.backend,
+          this.snapshots,
+          record.pauseSnapshotRef,
+        ).catch((err) =>
+          log.warn(
+            { id, ref: record.pauseSnapshotRef, err },
+            "pause snapshot cleanup after resume failed",
+          ),
+        );
+      }
     });
     return this.get(id);
   }
@@ -1120,9 +667,10 @@ export class RuntimeService {
 
   /** Allowed from any status — destroy is the universal recovery exit. */
   async destroy(id: string): Promise<void> {
-    return this.withOpLock(id, async () => {
+    return this.opLock.run(id, async () => {
       this.require(id);
       this.agent.invalidatePodIp(id);
+      await this.reownReferencedSnapshots(id);
       const swept = await this.backend.cleanup(id);
       if (!swept) {
         // Keep the record: deleting it now would orphan whatever the sweep
@@ -1136,8 +684,9 @@ export class RuntimeService {
           502,
         );
       }
-      // The label sweep deleted every sandbox-labeled VolumeSnapshot (pause
-      // + manual snapshots); drop their store rows so no dangling ref survives.
+      // The label sweep deleted every sandbox-labeled VolumeSnapshot left
+      // (pause + manual + fork snapshots no one boots from); drop their store
+      // rows so no dangling ref survives.
       this.snapshots.deleteBySandbox(id);
       // The pod/PVC are gone too, so this sandbox no longer has any toolset
       // mounted — clear its rows or it would permanently pin those refs
@@ -1149,19 +698,59 @@ export class RuntimeService {
     });
   }
 
+  /** Hand the snapshots `id` owns that another sandbox boots from to that
+   * sandbox, before destroy's label sweep deletes them: it would otherwise
+   * break the other sandbox's pause/resume/fork (its source is gone). The
+   * new owner's own destroy repeats this for the next dependent.
+   *
+   * A snapshot that a prebuild is chained on (`parent`) has no sandbox to
+   * hand it to, and the sweep would delete the base of that chain (its
+   * rebakes and spawns would break), so destroy is refused with a
+   * `ConflictError` naming the dependents, before anything is re-owned. The
+   * prebuild is deleted first (`DELETE /v1/prebuilds/:ref`). */
+  private async reownReferencedSnapshots(id: string): Promise<void> {
+    const dependents = new Map<string, string>();
+    for (const other of this.sandboxes.list()) {
+      if (other.id === id || !("snapshot" in other.spec.source)) continue;
+      const ref = other.spec.source.snapshot;
+      if (!dependents.has(ref)) dependents.set(ref, other.id);
+    }
+    const all = this.snapshots.list();
+    const owned = new Set(
+      all.filter((s) => s.sandboxId === id && !dependents.has(s.ref)),
+    );
+    const chained = all.filter(
+      (s) =>
+        s.sandboxId !== id && [...owned].some((own) => own.ref === s.parent),
+    );
+    if (chained.length > 0) {
+      throw new ConflictError(
+        `Sandbox ${id} owns snapshots that other snapshots are chained on ` +
+          `(${chained.map((s) => s.ref).join(", ")}); delete those prebuilds ` +
+          "first, then destroy it.",
+      );
+    }
+    for (const snap of all) {
+      const heir = dependents.get(snap.ref);
+      if (snap.sandboxId !== id || !heir) continue;
+      await this.backend.volumes.reownSnapshot(snap.ref, heir);
+      this.snapshots.put({ ...snap, sandboxId: heir });
+      log.info({ ref: snap.ref, from: id, to: heir }, "snapshot re-owned");
+    }
+  }
+
   // ── startup reconciliation ────────────────────────────────────────
 
   /**
    * Reconcile persisted records against the cluster after a server restart,
    * so zombies don't accumulate: a `creating` record means the server died
    * mid-boot — its half-created resources are swept and the record parked in
-   * `error` (resumable: `resolveSource` still works from the original spec).
+   * `error` (resumable: the record keeps its boot image and source).
    * A `running` record whose pod is gone (OOM-killed, node lost, manually
    * deleted while the server was down) flips to `error` too — its PVC, if it
    * survived, makes `resume()` a disk-preserving restart.
    */
   async reconcileOnStartup(): Promise<void> {
-    if (isMock()) return;
     for (const record of this.sandboxes.list()) {
       try {
         if (record.status === "creating") {
@@ -1186,7 +775,6 @@ export class RuntimeService {
             "swept sandbox stuck in creating (server restarted mid-boot)",
           );
         } else if (record.status === "running") {
-          const podName = record.podName ?? `sandbox-${record.id}`;
           if (!(await this.backend.computeExists(record.id))) {
             this.agent.invalidatePodIp(record.id);
             // No pod means nothing has the toolsets mounted right now either
@@ -1195,7 +783,7 @@ export class RuntimeService {
             this.sandboxToolsetRefs.deleteBySandbox(record.id);
             this.sandboxes.update(record.id, { status: "error" });
             log.warn(
-              { id: record.id, podName },
+              { id: record.id, podName: resourceName(record.id) },
               "running sandbox has no pod; marked error (resume restarts it)",
             );
           }
@@ -1219,27 +807,6 @@ export class RuntimeService {
     this.require(id);
     this.activity.touch(id, "api");
     return writePatchFiles(this.agent, id, files);
-  }
-
-  /**
-   * Re-export env to future process spawns and fire the `envChanged` hook.
-   * Does NOT mutate a running process's environment (stated honestly,
-   * design.md §2 "Runtime API").
-   */
-  async patchEnv(id: string, env: PatchEnvRequest): Promise<void> {
-    const record = this.require(id);
-    this.activity.touch(id, "api");
-    const nextEnv = { ...(record.spec.env ?? {}), ...env };
-    const nextSpec = { ...record.spec, env: nextEnv };
-    // Re-push so future process spawns see the new env, then fire envChanged
-    // (the agent runs it with the updated pod env). Persist the spec only after
-    // the push succeeds, so the store never claims env the agent didn't get.
-    // Does not mutate running processes' env (stated honestly, design.md §2).
-    await this.agent.putConfig(id, specToAgentConfig(id, nextSpec));
-    this.sandboxes.update(id, {
-      spec: this.withStoredAnnotations(id, nextSpec),
-    });
-    await this.runPhase(id, "envChanged");
   }
 
   async exec(id: string, req: ExecRequest) {
@@ -1269,45 +836,34 @@ export class RuntimeService {
     return this.agent.processLogs(id, name, offset, limit);
   }
 
-  /**
-   * Register an ad-hoc supervised process after boot: append it to the spec,
-   * re-push the config so the agent supervises it (readiness/restart/attach
-   * all apply), then start it now unless `lazy` (a lazy process starts on
-   * first attach/`start`).
-   */
-  async addProcess(id: string, req: AddProcessRequest): Promise<void> {
-    const record = this.require(id);
-    this.activity.touch(id, "api");
-    const spec: SandboxSpec = {
-      ...record.spec,
-      processes: [...(record.spec.processes ?? []), req],
-    };
-    rejectUnresolvedSecrets(spec);
-    await this.agent.putConfig(id, specToAgentConfig(id, spec));
-    this.sandboxes.update(id, { spec: this.withStoredAnnotations(id, spec) });
-    if (!req.lazy) await this.agent.processStart(id, req.name);
-  }
-
-  /** Expose a port after boot — creates the ingress now, real mechanism. */
+  /** Expose a port after boot — creates the ingress now, real mechanism. The
+   * spec records the port only once the backend exposed it, so the record
+   * never claims a port that has no route. */
   async addPort(id: string, req: AddPortRequest): Promise<void> {
-    const record = this.require(id);
-    this.activity.touch(id, "api");
-    const portEntry: PortEntry = {
-      name: req.name,
-      port: req.port,
-      public: req.public ?? true,
-    };
-    const spec: SandboxSpec = {
-      ...record.spec,
-      ports: [...(record.spec.ports ?? []), portEntry],
-    };
-    this.sandboxes.update(id, { spec });
-    if (portEntry.public) {
-      // The live-added port becomes a Service port + Ingress (mechanism owned
-      // by the backend); without it the new Ingress would point at a Service
-      // port that doesn't exist until a pause/resume rebuilds the Service.
-      await this.backend.exposePort(id, portEntry);
-    }
+    return this.opLock.run(id, async () => {
+      const record = this.requireRunning(id);
+      this.activity.touch(id, "api");
+      const portEntry: PortEntry = {
+        name: req.name,
+        port: req.port,
+        public: req.public ?? true,
+        ...(req.auth ? { auth: req.auth } : {}),
+      };
+      if (portEntry.public) {
+        // The live-added port becomes a Service port + Ingress (mechanism
+        // owned by the backend); without it the new Ingress would point at a
+        // Service port that doesn't exist until a pause/resume rebuilds the
+        // Service.
+        await this.backend.exposePort(id, portEntry);
+      }
+      const spec: SandboxSpec = {
+        ...record.spec,
+        ports: [...(record.spec.ports ?? []), portEntry],
+      };
+      this.sandboxes.update(id, {
+        spec: this.withStoredAnnotations(id, spec),
+      });
+    });
   }
 
   /**
@@ -1340,11 +896,40 @@ export class RuntimeService {
 
   // ── snapshot ───────────────────────────────────────────────────────────
 
-  /** Promote the current disk → snapshotRef. */
+  /** Promote the current disk → snapshotRef. Keeps the sandbox's last
+   * `snapshot.manualKeep` manual snapshots; older unused ones are deleted. */
   async snapshot(id: string): Promise<SnapshotRef> {
-    return this.withOpLock(id, async () =>
-      this.executeSnapshot(this.requireSnapshottable(id)),
-    );
+    return this.opLock.run(id, async () => {
+      const ref = await this.executeSnapshot(
+        this.requireSnapshottable(id),
+        "manual",
+      );
+      await this.pruneManualSnapshots(id);
+      return ref;
+    });
+  }
+
+  /** Retention for a sandbox's manual snapshots. One a sandbox boots from
+   * is never deleted (nor counted): destroy hands it on instead. */
+  private async pruneManualSnapshots(ownerId: string): Promise<void> {
+    const keep = snapshotManualKeep();
+    const referenced = referencedSnapshotRefs(this.sandboxes, this.snapshots);
+    const unused = this.snapshots
+      .list()
+      .filter(
+        (s) =>
+          s.kind === "manual" &&
+          s.sandboxId === ownerId &&
+          !referenced.has(s.ref),
+      )
+      .sort((a, b) => b.createdAt.localeCompare(a.createdAt));
+    for (const old of unused.slice(keep)) {
+      try {
+        await removeSnapshot(this.backend, this.snapshots, old.ref);
+      } catch (err) {
+        log.warn({ ref: old.ref, err }, "manual snapshot prune failed");
+      }
+    }
   }
 
   private requireSnapshottable(id: string): SandboxRecord {
@@ -1363,16 +948,19 @@ export class RuntimeService {
    * a fork's snapshot belongs to the copy). */
   private async executeSnapshot(
     record: SandboxRecord,
+    kind: Exclude<SnapshotKind, "prebuild">,
     ownerId = record.id,
     { hash, ref } = newSnapshotName(ownerId),
   ): Promise<SnapshotRef> {
-    const pvcName = record.pvcName ?? `sandbox-${record.id}`;
-    const { image } = await this.resolveSource(record.spec.source);
+    const image = await this.bootImage(record);
 
-    await this.snapshotPvc(pvcName, ref, { "atelier.dev/sandbox": ownerId });
+    await this.backend.volumes.snapshot(resourceName(record.id), ref, {
+      "atelier.dev/sandbox": ownerId,
+    });
 
     this.snapshots.put({
       hash,
+      kind,
       ref,
       image,
       // Owner-scoped: the VolumeSnapshot carries the owner's label, so the
@@ -1432,10 +1020,10 @@ export class RuntimeService {
       annotations: fork.initial.annotations,
     });
 
-    return this.withOpLock(id, async () => {
+    return this.opLock.run(id, async () => {
       let forked: SandboxSpec;
-      let authorizedKeys: string[] | undefined;
-      let resolved: { image: string; snapshotName?: string };
+      let bootSpec: SandboxSpec;
+      let resolved: ResolvedSource;
       try {
         const derived = fork.derive({ ...source.spec, annotations });
         forked = {
@@ -1448,20 +1036,24 @@ export class RuntimeService {
               }
             : (derived.spec.annotations ?? {}),
         };
-        authorizedKeys = derived.authorizedKeys;
         // The stored spec was validated at the source's creation, but derive
         // is caller policy: re-check what boot would reject.
-        rejectUnresolvedSecrets(forked);
         rejectDuplicateToolsetRefs(forked);
+        bootSpec = await this.toBootSpec(forked);
         this.sandboxes.update(id, {
           spec: forked,
           metadata: forked.metadata ?? {},
         });
         options.onProgress?.(`snapshotting ${sourceId}…`);
-        await this.withOpLock(sourceId, async () =>
-          this.executeSnapshot(this.requireSnapshottable(sourceId), id, name),
+        await this.opLock.run(sourceId, async () =>
+          this.executeSnapshot(
+            this.requireSnapshottable(sourceId),
+            "fork",
+            id,
+            name,
+          ),
         );
-        resolved = await this.resolveSource(forked.source);
+        resolved = await this.resolver.resolveSource(forked.source);
       } catch (error) {
         // Nothing to keep: sweep a half-made snapshot (labelled with the
         // copy's id). Resume then fails with "Snapshot … not found".
@@ -1474,13 +1066,7 @@ export class RuntimeService {
         this.sandboxes.update(id, { status: "error" });
         throw error;
       }
-      return this.bootNew(
-        id,
-        forked,
-        resolved,
-        { ...options, authorizedKeys },
-        true,
-      );
+      return this.bootNew(id, forked, bootSpec, resolved, options, true);
     });
   }
 
@@ -1490,360 +1076,139 @@ export class RuntimeService {
     this.requireSnapshottable(id);
   }
 
-  /** Snapshot `pvcName` into `ref` via the volume backend (create + wait,
-   * idempotent on `ref`). Thin seam kept so the two call sites (prebuild bake,
-   * pause/manual snapshot) read the same. */
-  private snapshotPvc(
-    pvcName: string,
+  // ── prebuilds & toolsets (delegating to the sub-services) ──────────────
+
+  prebuild(
+    spec: PrebuildSpec,
+    options?: PrebuildOptions,
+  ): Promise<SnapshotRef> {
+    return this.prebuilds.prebuild(spec, options);
+  }
+
+  cachedPrebuild(
+    spec: PrebuildSpec,
+    options?: PrebuildOptions,
+  ): Promise<SnapshotRef | undefined> {
+    return this.prebuilds.cached(spec, options);
+  }
+
+  prebuildForSpawn(
+    spec: PrebuildSpec,
+    options?: PrebuildOptions,
+  ): Promise<SpawnPrebuild> {
+    return this.prebuilds.prebuildForSpawn(spec, options);
+  }
+
+  setPrebuildSurface(
     ref: string,
-    labels: Record<string, string>,
-    annotations?: Record<string, string>,
-  ): Promise<void> {
-    return this.backend.volumes.snapshot(pvcName, ref, labels, annotations);
+    surface: RuntimeSurface,
+    editor: SurfaceEditor,
+  ): PrebuildSpec {
+    return this.prebuilds.setSurface(ref, surface, editor);
   }
 
-  // ── toolsets ──────────────────────────────────────────
-
-  /**
-   * Build a reproducible, input-keyed toolset artifact
-   * (composed-prebuild-volumes.md §2). Runs `build[]` in a throwaway pod (as
-   * `dev`, so tools land in the home), then has the agent tar the `paths[]`
-   * and `oras push` them to the registry. Idempotent: keyed by
-   * `hash(source ⊕ build ⊕ paths)`; a hit returns instantly; concurrent builds
-   * for the same hash dedupe onto one execution. The registry-push tail
-   * replaces `prebuild()`'s snapshot tail — same executor economics.
-   */
-  async buildToolset(
-    req: ToolsetBuildRequest,
-    signal?: AbortSignal,
-    onLog?: OnLog,
-  ): Promise<ToolsetRef> {
-    const hash = hashToolset(req);
-    const existing = this.toolsets.getByHash(hash);
-    if (existing) return { ref: existing.ref };
-    const inflight = this.inflightToolsetBuilds.get(hash);
-    if (inflight) return inflight;
-    const run = this.executeToolsetBuild(req, hash, signal, onLog).finally(
-      () => {
-        this.inflightToolsetBuilds.delete(hash);
-      },
-    );
-    this.inflightToolsetBuilds.set(hash, run);
-    return run;
+  prebuildSpec(ref: string): PrebuildSpec | undefined {
+    return this.prebuilds.specOf(ref);
   }
 
-  private async executeToolsetBuild(
-    req: ToolsetBuildRequest,
-    hash: string,
-    signal?: AbortSignal,
-    onLog?: OnLog,
-  ): Promise<ToolsetRef> {
-    const source = req.source ?? { image: defaultImage() };
-    const { image, snapshotName } = await this.resolveSource(source);
-    const tempId = `ts-${hash.slice(0, 12)}`;
-    const target = `${qualifyImageName(`toolsets/${req.name}`)}:${hash.slice(0, 12)}`;
-
-    return this.withThrowawayPod(
-      tempId,
-      toolsetToSpec(source, req.env),
-      { image, snapshotName },
-      "toolset build pod cleanup failed",
-      async () => {
-        // Build steps run as `dev` so installs land in the home path-sets the
-        // artifact captures (running as root would scatter bytes into /root).
-        for (const step of req.build) {
-          signal?.throwIfAborted();
-          await this.execStep(tempId, step, "dev", signal, onLog);
-        }
-        signal?.throwIfAborted();
-        onLog?.("Packing and pushing toolset artifact…");
-        const { digest } = await this.agent.buildToolset(
-          tempId,
-          { target, paths: req.paths },
-          signal,
-        );
-        const ref = `toolsets/${req.name}@${digest}`;
-        this.toolsets.put({
-          hash,
-          name: req.name,
-          ref,
-          paths: req.paths,
-          provenance: { kind: "built", build: req.build },
-          private: false,
-          createdAt: new Date().toISOString(),
-        });
-        log.info({ ref, hash, name: req.name }, "toolset artifact built");
-        return { ref };
-      },
-    );
+  prebuildSurface(ref: string): RuntimeSurface {
+    return this.prebuilds.surfaceOf(ref);
   }
 
-  /**
-   * Boot a throwaway pod for a build-then-teardown flow (prebuild bake,
-   * toolset build) and guarantee cleanup: the pod + its PVC are torn down in
-   * a `finally` regardless of whether `fn` succeeds, and the pod-IP cache
-   * entry is invalidated so a reused `tempId` (deterministic per content
-   * hash) never dials a stale IP. `fn` receives the boot output (pod/PVC
-   * names) and returns the operation's result, which is threaded straight
-   * through. Cleanup itself is best-effort — a teardown failure is logged,
-   * never thrown, so it can't mask `fn`'s success or replace its error.
-   */
-  private async withThrowawayPod<T>(
-    tempId: string,
-    spec: SandboxSpec,
-    input: { image: string; snapshotName?: string; toolsets?: string[] },
-    cleanupFailureMessage: string,
-    fn: (boot: BootOutput) => Promise<T>,
-  ): Promise<T> {
-    const boot = await this.backend.boot(tempId, spec, input, this.agent);
-    try {
-      return await fn(boot);
-    } finally {
-      // The pod + throwaway PVC are no longer needed; whatever `fn` produced
-      // (a snapshot, a pushed toolset) stands alone. Best-effort so a teardown
-      // error never masks the build result.
-      this.agent.invalidatePodIp(tempId);
-      await this.backend
-        .cleanup(tempId)
-        .catch((err) => log.warn({ tempId, err }, cleanupFailureMessage));
+  /** The stored prebuilds; with a `viewer` (anyone who hands the list to a
+   * caller), the secrets of recipes they did not create are masked. */
+  listPrebuilds(viewer?: SurfaceEditor): PrebuildRecord[] {
+    return this.prebuilds.list(viewer);
+  }
+
+  deletePrebuild(ref: string): Promise<void> {
+    return this.prebuilds.delete(ref);
+  }
+
+  pruneUnusedPrebuilds(keep: number): Promise<number> {
+    return this.prebuilds.prune(keep);
+  }
+
+  /** The sandbox a snapshot belongs to (pause/manual/fork snapshots), or
+   * undefined for a shared prebuild snapshot or an unknown ref. Resolves by
+   * ref or hash; a synchronous store read. */
+  snapshotOwner(ref: string): string | undefined {
+    return (this.snapshots.get(ref) ?? this.snapshots.getByHash(ref))
+      ?.sandboxId;
+  }
+
+  /** Every image reference a live sandbox's `source.image` or a stored
+   * snapshot's `image` still points at — the read `ImageBuilderService`'s
+   * delete guard consumes (across the runtime/registry module seam, so it
+   * stays a plain read, no shared mutable state). */
+  referencedImageRefs(): string[] {
+    const refs: string[] = [];
+    for (const s of this.sandboxes.list()) {
+      if ("image" in s.spec.source) refs.push(s.spec.source.image);
+      if (s.image) refs.push(s.image);
     }
+    for (const snap of this.snapshots.list()) {
+      refs.push(snap.image);
+    }
+    return refs;
   }
 
-  /**
-   * Refresh a toolset without a live sandbox (docs/toolbox-versions.md
-   * §10): boot a throwaway pod with `base` materialized into the home, run
-   * `steps` as `dev`, then capture `paths` through the agent's capture route
-   * (same default excludes + secret scan as a sandbox capture). The paths
-   * are fingerprinted before and after the steps; when both are known and
-   * equal, nothing is pushed and the result is `changed: false`. An unknown
-   * fingerprint never skips: it captures, at worst an extra version.
-   * Result-keyed and private like a capture: the caller decides on publish.
-   */
-  async refreshToolset(
+  buildToolset(
+    req: ToolsetBuildRequest,
+    signal?: AbortSignal,
+    onLog?: OnLog,
+  ): Promise<ToolsetRef> {
+    return this.toolsets.build(req, signal, onLog);
+  }
+
+  refreshToolset(
     req: ToolsetRefreshRequest,
     signal?: AbortSignal,
     onLog?: OnLog,
   ): Promise<ToolsetRefreshResult> {
-    if (req.steps.length === 0) {
-      throw new ValidationError("a toolset refresh needs at least one step");
-    }
-    if (req.paths.length === 0) {
-      throw new ValidationError("a toolset refresh needs paths to capture");
-    }
-    // Built before the pod boots: a bad path fails fast, not after a boot.
-    const fingerprint = fingerprintScript(req.paths);
-    const source = req.source ?? { image: defaultImage() };
-    const { image, snapshotName } = await this.resolveSource(source);
-    const tempId = `tr-${safeNanoid()}`;
-    const target = `${qualifyImageName(`toolsets/${req.name}`)}:refresh-${safeNanoid()}`;
-
-    return this.withThrowawayPod(
-      tempId,
-      toolsetToSpec(source),
-      {
-        image,
-        snapshotName,
-        toolsets: [this.resolveToolsetRef(req.base.ref)],
-      },
-      "toolset refresh pod cleanup failed",
-      async () => {
-        onLog?.(`Starting from ${req.base.ref}`);
-        const before = await this.fingerprintPaths(tempId, fingerprint, signal);
-        for (const step of req.steps) {
-          signal?.throwIfAborted();
-          await this.execStep(tempId, step, "dev", signal, onLog);
-        }
-        signal?.throwIfAborted();
-        const after = await this.fingerprintPaths(tempId, fingerprint, signal);
-        if (before !== undefined && before === after) {
-          onLog?.("Nothing changed in the toolset paths; nothing to save.");
-          log.info(
-            { name: req.name, base: req.base.ref },
-            "toolset refresh: unchanged",
-          );
-          return { changed: false };
-        }
-        onLog?.(`Capturing ${req.paths.join(", ")}…`);
-        const { digest } = await this.agent.captureToolset(
-          tempId,
-          { target, paths: req.paths, exclude: [], overrides: [] },
-          signal,
-        );
-        const ref = `toolsets/${req.name}@${digest}`;
-        this.toolsets.put({
-          // Result-keyed like a capture (see `captureToolset`).
-          hash: createHash("sha256")
-            .update(`${req.name}\u0000${digest}`)
-            .digest("hex"),
-          name: req.name,
-          ref,
-          paths: req.paths,
-          provenance: {
-            kind: "refreshed",
-            base: req.base.ref,
-            steps: req.steps,
-          },
-          private: true,
-          createdAt: new Date().toISOString(),
-        });
-        onLog?.(`Pushed ${ref}`);
-        log.info({ ref, base: req.base.ref }, "toolset refreshed");
-        return { changed: true, ref };
-      },
-    );
+    return this.toolsets.refresh(req, signal, onLog);
   }
 
-  /** Hash a throwaway pod's toolset paths (`toolset-fingerprint.ts`), or
-   * `undefined` when it can't be told (the exec failed or printed no
-   * hash): the caller then treats the content as changed. */
-  private async fingerprintPaths(
-    tempId: string,
-    script: string,
-    signal?: AbortSignal,
-  ): Promise<string | undefined> {
-    try {
-      const res = await this.agent.exec(tempId, script, {
-        timeout: 300_000,
-        user: "dev",
-        workdir: "/home/dev",
-        signal,
-      });
-      const value =
-        res.exitCode === 0 ? parseFingerprint(res.stdout) : undefined;
-      if (value === undefined) {
-        log.warn(
-          { tempId, exitCode: res.exitCode, stderr: res.stderr.slice(0, 500) },
-          "toolset fingerprint unavailable; treating as changed",
-        );
-      }
-      return value;
-    } catch (err) {
-      signal?.throwIfAborted();
-      log.warn({ tempId, err }, "toolset fingerprint failed");
-      return undefined;
-    }
-  }
-
-  listToolsets(): ToolsetEntry[] {
-    return this.toolsets.list().map(toolsetRecordToEntry);
-  }
-
-  /** Look up a single toolset by ref (control-side guards, e.g. the org
-   * publish-before-pin check, need to inspect one entry without listing
-   * everything). */
-  getToolsetEntry(ref: string): ToolsetEntry | undefined {
-    const record = this.toolsets.getByRef(ref);
-    return record ? toolsetRecordToEntry(record) : undefined;
-  }
-
-  /** Publish a toolset to the org (flip `private` off) — the explicit sharing
-   * step for a private-by-default capture (proposal §2). */
-  publishToolset(ref: string): ToolsetEntry {
-    const record = this.toolsets.getByRef(ref);
-    if (!record) throw new NotFoundError("Toolset", ref);
-    const next: ToolsetRecord = { ...record, private: false };
-    this.toolsets.put(next);
-    return toolsetRecordToEntry(next);
-  }
-
-  /** Refs a live/paused sandbox currently has mounted — the `deleteToolset`
-   * GC guard (toolset-overlay-squashfs.md §7), mirroring
-   * `referencedSnapshotRefs()`. Backed by the `sandbox_toolset_refs` join,
-   * populated on every successful create/resume boot and cleared on destroy,
-   * so it always reflects the current fleet without deserializing every
-   * sandbox's `spec` JSON. */
-  private referencedToolsetRefs(): Set<string> {
-    return this.sandboxToolsetRefs.referencedRefs();
-  }
-
-  /** Delete a toolset record. Refuses when a live/paused sandbox still has it
-   * mounted (toolset-overlay-squashfs.md §7) — unlike the old extract-into-
-   * PVC model, a paused sandbox's squashfs blob lives on its own PVC and
-   * never depends on this record surviving, but deleting it out from under a
-   * live/paused sandbox would still 404 a future `getByRef`/compose lookup
-   * for that ref. The registry blob itself is left to zot retention/GC; this
-   * only drops the runtime's handle to it. */
-  deleteToolset(ref: string): void {
-    const record = this.toolsets.getByRef(ref);
-    if (!record) throw new NotFoundError("Toolset", ref);
-    if (this.referencedToolsetRefs().has(ref)) {
-      throw new ConflictError(
-        `Toolset ${ref} is mounted by a live or paused sandbox and cannot be deleted.`,
-      );
-    }
-    this.toolsets.delete(record.hash);
-  }
-
-  /** Resolve a host-relative toolset ref (`toolsets/<name>@sha256:…`) to a
-   * full pullable registry locator by prepending the configured registry. */
-  resolveToolsetRef(ref: string): string {
-    return qualifyImageName(ref);
-  }
-
-  /**
-   * Capture a live sandbox's declared path-sets into a toolset artifact
-   * (composed-prebuild-volumes.md §2 "captured (result-keyed)"). The agent
-   * tars `paths` minus the merged exclude globs, secret-scans the included
-   * files, and pushes — no baseline diff (there's nothing to diff against at
-   * capture time; path-set selection + exclude + scan is the honest
-   * mechanism). Result-keyed: unlike `buildToolset`, there is no content hash
-   * to dedupe on — every capture is a distinct artifact, so it is never
-   * silently evictable and is stored private-to-the-capturing-sandbox by
-   * default (org publish is a separate, explicit step, out of MVP scope).
-   */
-  async captureToolset(
+  captureToolset(
     id: string,
     req: ToolsetCaptureRequest,
     signal?: AbortSignal,
     onLog?: OnLog,
   ): Promise<ToolsetRef> {
-    this.require(id);
-    const target = `${qualifyImageName(`toolsets/${req.name}`)}:cap-${safeNanoid()}`;
-    onLog?.(`Capturing ${req.paths.join(", ")} from ${id}…`);
-    const { digest } = await this.agent.captureToolset(
-      id,
-      {
-        target,
-        paths: req.paths,
-        exclude: req.exclude ?? [],
-        overrides: req.overrides ?? [],
-      },
-      signal,
-    );
-    onLog?.(`Pushed ${req.name}@${digest}`);
-    const ref = `toolsets/${req.name}@${digest}`;
-    this.toolsets.put({
-      // Captures are result-keyed, not input-keyed: the digest is the
-      // identity (no `hashToolset`-style pre-image to dedupe concurrent
-      // captures on — each run is a distinct snapshot of live, mutable
-      // state). Scoped by name: `put` upserts by hash, and two names can
-      // legitimately capture byte-identical content (same digest) — they
-      // must be two records (own registry repo/retention), not an overwrite.
-      hash: createHash("sha256")
-        .update(`${req.name}\u0000${digest}`)
-        .digest("hex"),
-      name: req.name,
-      ref,
-      paths: req.paths,
-      provenance: { kind: "captured", capturedFrom: id },
-      private: true,
-      createdAt: new Date().toISOString(),
-    });
-    log.info({ ref, sandboxId: id, name: req.name }, "toolset captured");
-    return { ref };
+    return this.toolsets.capture(id, req, signal, onLog);
+  }
+
+  listToolsets(): ToolsetEntry[] {
+    return this.toolsets.list();
+  }
+
+  getToolsetEntry(ref: string): ToolsetEntry | undefined {
+    return this.toolsets.getEntry(ref);
+  }
+
+  publishToolset(ref: string): ToolsetEntry {
+    return this.toolsets.publish(ref);
+  }
+
+  deleteToolset(ref: string): void {
+    this.toolsets.delete(ref);
+  }
+
+  resolveToolsetRef(ref: string): string {
+    return resolveToolsetRef(ref);
   }
 
   /** Resolve a source to the concrete image it currently pulls (digest-
    * pinned where possible) — used for toolbox-version provenance/drift
    * (docs/toolbox-versions.md §5), not spawn itself. */
   async resolveSourceImage(source: SandboxSpec["source"]): Promise<string> {
-    return (await this.resolveSource(source)).image;
+    return (await this.resolver.resolveSource(source)).image;
   }
 
-  /** The sandbox's current base image, resolved the same way a spawn would
+  /** The image the sandbox booted from, as fixed at create
    * (docs/toolbox-versions.md §5 drift badge). */
-  async getSandboxImage(id: string): Promise<string> {
-    return this.resolveSourceImage(this.require(id).spec.source);
+  getSandboxImage(id: string): Promise<string> {
+    return this.bootImage(this.require(id));
   }
 
   /** The configured default base image — exposed so the api/ seam can
@@ -1854,13 +1219,6 @@ export class RuntimeService {
     return defaultImage();
   }
 
-  /** Resolve a spec's `toolsets[]` to full pull references for materialize,
-   * or undefined when the spec declares none. */
-  private resolveSpecToolsets(spec: SandboxSpec): string[] | undefined {
-    if (!spec.toolsets || spec.toolsets.length === 0) return undefined;
-    return spec.toolsets.map((t) => this.resolveToolsetRef(t.ref));
-  }
-
   // ── helpers ────────────────────────────────────────────────────────────
 
   private require(id: string): SandboxRecord {
@@ -1869,85 +1227,28 @@ export class RuntimeService {
     return record;
   }
 
-  /** Serialize lifecycle operations per sandbox id: each op chains onto the
-   * tail of the previous one (fulfilled or rejected — a failed pause must
-   * not poison a queued destroy). Ops re-read the record after acquiring
-   * the lock, so a queued duplicate (double resume) fails the status guard
-   * instead of racing. The entry is dropped when the tail drains. */
-  private async withOpLock<T>(id: string, fn: () => Promise<T>): Promise<T> {
-    const prior = this.opLocks.get(id) ?? Promise.resolve();
-    const run = prior.then(fn, fn);
-    const tail = run.then(
-      () => undefined,
-      () => undefined,
+  private requireRunning(id: string): SandboxRecord {
+    const record = this.require(id);
+    if (record.status !== "running") {
+      throw new ConflictError(
+        `Sandbox ${id} is ${record.status}; only a running sandbox can be changed live`,
+      );
+    }
+    return record;
+  }
+
+  /** The image a sandbox booted from: fixed at create, so it holds even when
+   * the source snapshot is gone or the registry is down. Only a record that
+   * predates the column resolves its source. */
+  private async bootImage(record: SandboxRecord): Promise<string> {
+    return (
+      record.image ??
+      (await this.resolver.resolveSource(record.spec.source)).image
     );
-    this.opLocks.set(id, tail);
-    tail.finally(() => {
-      if (this.opLocks.get(id) === tail) this.opLocks.delete(id);
-    });
-    return run;
-  }
-
-  private async resolveSource(
-    source: SandboxSpec["source"],
-  ): Promise<{ image: string; snapshotName?: string }> {
-    if ("snapshot" in source) {
-      const snap =
-        this.snapshots.get(source.snapshot) ??
-        this.snapshots.getByHash(source.snapshot);
-      if (!snap) throw new NotFoundError("Snapshot", source.snapshot);
-      return { image: snap.image, snapshotName: snap.ref };
-    }
-    return { image: await this.resolveImage(source) };
-  }
-
-  /** Only ever called by `resolveSource` with a non-snapshot source (the
-   * `"snapshot" in source` case is resolved there before this runs). */
-  private async resolveImage(
-    source: Exclude<SandboxSpec["source"], { snapshot: string }>,
-  ): Promise<string> {
-    // A fully-qualified ref (registry/host or digest) is used verbatim; the
-    // gate below only applies to bare names resolved against the configured
-    // (in-cluster) registry — an external ref (GHCR, a public tag, another
-    // registry entirely) can't be validated by a HEAD against OUR registry,
-    // so it would false-negative every BYO image. Let the pod's own pull
-    // surface a real error for those instead (design review R1).
-    if (source.image.includes("/") || source.image.includes("@")) {
-      return source.image;
-    }
-    // Prefer a built/registered image's already-pinned ref: a `ready`
-    // `images` row carries the exact digest we pushed (`<registry>/<name>@
-    // sha256:…`) or, for an `external` registration, the verbatim BYO ref.
-    // Using it skips BOTH registry round-trips below (the gate HEAD +
-    // resolveImageReference) and pins the same immutable digest the build
-    // produced — the design-review §5 consistency win. A row that isn't
-    // `ready` (building/error) or has no ref falls through to the live gate,
-    // which surfaces the right "not available yet" error.
-    const record = this.images.get(source.image);
-    if (record?.status === "ready" && record.ref) {
-      return record.ref;
-    }
-    // Fail CLOSED on a confirmed-missing image (404) and on an indeterminate
-    // registry (network failure/timeout) alike — the prior behaviour only
-    // hard-failed on 404 and silently proceeded on `null`, which let a spawn
-    // through to hang on ImagePullBackOff against a flaky registry instead of
-    // surfacing a clean, retryable error here. `resolveOrAssert` does this in
-    // a SINGLE HEAD instead of the previous `imageExists` + `resolveImageReference`
-    // pair (design review P2b) — no `images` row (a bare image built
-    // out-of-band, or the seed pushed before this table existed) means one
-    // round-trip resolves `:latest` to its current digest.
-    const result = await ImageRegistryService.resolveOrAssert(source.image);
-    if ("missing" in result) {
-      throw new ImageNotAvailableError(source.image);
-    }
-    if ("unreachable" in result) {
-      throw new RegistryUnreachableError(source.image);
-    }
-    return result.ref;
   }
 
   /**
-   * `live` process statuses gate `ready` (design ui-evolution.md §4.1) —
+   * `live` process statuses gate `ready` —
    * omitted at create time (nothing has started yet), present at `get()`.
    */
   private async urlsFor(id: string, spec: SandboxSpec, live?: ProcessStatus[]) {
@@ -2030,202 +1331,4 @@ export class RuntimeService {
       throw new Error(`Sandbox ${id} primary process did not become ready`);
     }
   }
-}
-
-// ── module helpers ─────────────────────────────────────────────────────────
-
-function hasSurface(surface: RuntimeSurface): boolean {
-  return Boolean(surface.processes?.length || surface.ports?.length);
-}
-
-/** `spec.toolsets` has no schema-level uniqueness guarantee — TypeBox lacks
- * `uniqueItems` (see the doc comment on `SandboxSpecSchema.toolsets`) and
- * dedup otherwise only happens downstream (agent-side overlay assembly),
- * silently. Reject a duplicate `ref` here with a clean 400 instead (design
- * review H8). */
-function rejectDuplicateToolsetRefs(spec: SandboxSpec): void {
-  if (!spec.toolsets || spec.toolsets.length < 2) return;
-  const seen = new Set<string>();
-  const duplicates = new Set<string>();
-  for (const t of spec.toolsets) {
-    if (seen.has(t.ref)) duplicates.add(t.ref);
-    seen.add(t.ref);
-  }
-  if (duplicates.size > 0) {
-    throw new ValidationError(
-      `Spec contains duplicate toolset references: ${[...duplicates].join(", ")}.`,
-    );
-  }
-}
-
-function rejectUnresolvedSecrets(spec: SandboxSpec): void {
-  const offenders: string[] = [];
-  for (const [k, v] of Object.entries(spec.env ?? {})) {
-    if (isSecretRef(v)) offenders.push(`env.${k}`);
-  }
-  for (const f of spec.files ?? []) {
-    if (isSecretRef(f.content)) offenders.push(`files[${f.path}]`);
-  }
-  for (const p of spec.processes ?? []) {
-    for (const [k, v] of Object.entries(p.env ?? {})) {
-      if (isSecretRef(v)) offenders.push(`processes[${p.name}].env.${k}`);
-    }
-  }
-  if (offenders.length > 0) {
-    throw new ValidationError(
-      `Spec contains unresolved secret references: ${offenders.join(", ")}. ` +
-        "Secrets must be resolved by control before crossing the seam.",
-    );
-  }
-}
-
-/** Deepest prebuild chain `sourceRepos` walks: a guard against a corrupt
- * `parent` loop, far past any real chain. */
-const MAX_PREBUILD_CHAIN = 16;
-
-/**
- * The repos a sandbox booted with: those cloned by the prebuild snapshot it
- * boots from and by every prebuild that one is chained on, root first,
- * deduped by `repoKey` (the nearest bake's branch wins). Empty for an image
- * source, or a snapshot without a recipe (a pause or manual snapshot).
- */
-function sourceRepos(
-  spec: SandboxSpec,
-  snapshots: ReadonlyMap<string, SnapshotRecord>,
-): SandboxRepo[] {
-  if (!("snapshot" in spec.source)) return [];
-  const chain: SnapshotRecord[] = [];
-  const seen = new Set<string>();
-  let ref: string | undefined = spec.source.snapshot;
-  while (ref && !seen.has(ref) && chain.length < MAX_PREBUILD_CHAIN) {
-    seen.add(ref);
-    const snap = snapshots.get(ref);
-    if (!snap) break;
-    chain.push(snap);
-    ref = snap.parent;
-  }
-  const repos = new Map<string, SandboxRepo>();
-  for (const snap of chain.reverse()) {
-    for (const repo of snap.spec?.repos ?? []) {
-      repos.set(repoKey(repo.url), {
-        url: repo.url,
-        ...(repo.branch ? { branch: repo.branch } : {}),
-      });
-    }
-  }
-  return [...repos.values()];
-}
-
-function mergeResume(spec: SandboxSpec, req: ResumeRequest): SandboxSpec {
-  // Files merge keyed by path (incoming wins): resume re-injects rotated
-  // credentials every cycle, so an append would grow `spec.files` — which is
-  // persisted back onto the record — without bound.
-  let files = spec.files;
-  if (req.files) {
-    const incoming = new Set(req.files.map((f) => f.path));
-    files = [
-      ...(spec.files ?? []).filter((f) => !incoming.has(f.path)),
-      ...req.files,
-    ];
-  }
-  return {
-    ...spec,
-    files,
-    env: req.env ? { ...(spec.env ?? {}), ...req.env } : spec.env,
-  };
-}
-
-/** Resources for the throwaway build pods (prebuild bake, toolset build).
- * Under the Kata runtime-rs class the guest gets exactly `memoryMb` of RAM
- * (static sizing); the Go runtime gave it `memoryMb` + a 2 GiB default on top,
- * sized past the pod's cgroup limit, and those pods were OOM-killed whole by
- * the host once page cache filled the guest. 4096 keeps the guest RAM these
- * builds ran with before (2048 + 2048) while the pod limit now really bounds
- * it: a runaway build hits the guest OOM killer, not a host VM kill. */
-const BUILD_POD_RESOURCES: SandboxSpec["resources"] = {
-  vcpus: 2,
-  memoryMb: 4096,
-};
-
-/** Synthesize the minimal SandboxSpec the prebuild pod boots from: source +
- * build resources + staged files + build env. No processes/ports (nothing
- * to supervise or expose while baking). */
-function prebuildToSpec(spec: PrebuildSpec): SandboxSpec {
-  return {
-    source: spec.source,
-    resources: BUILD_POD_RESOURCES,
-    files: spec.files,
-    env: spec.env,
-  };
-}
-
-/** Lineage identity for a prebuild: the spec's shape independent of the
- * resolved git HEADs a build was keyed on. Two snapshots share a lineage when
- * they came from the same source/files/build/repos recipe — i.e. the same
- * prebuild followed across upstream pushes. `env` is excluded (build-time
- * credential material, never lineage-defining — same rationale as the content
- * key in `resolveContentKey`). */
-function prebuildLineageKey(spec: PrebuildSpec): string {
-  const keyed = {
-    source: spec.source,
-    files: spec.files ?? [],
-    build: spec.build ?? [],
-    repos: spec.repos ?? [],
-  };
-  return createHash("sha256").update(JSON.stringify(keyed)).digest("hex");
-}
-
-/** Single-quote a shell argument (POSIX), escaping embedded single quotes. */
-function shellQuote(arg: string): string {
-  return `'${arg.replace(/'/g, "'\\''")}'`;
-}
-
-/** Synthesize the minimal SandboxSpec a toolset build pod boots from: source +
- * build resources + build env. No processes/ports/files — nothing to
- * supervise or expose while installing tools into the home. */
-function toolsetToSpec(
-  source: SandboxSpec["source"],
-  env?: Record<string, string>,
-): SandboxSpec {
-  return {
-    source,
-    resources: BUILD_POD_RESOURCES,
-    ...(env && { env }),
-  };
-}
-
-/** Drop the internal `hash` (dedup key) so the listed shape matches the
- * `ToolsetEntry` wire schema (`additionalProperties: false`). */
-function toolsetRecordToEntry(record: ToolsetRecord): ToolsetEntry {
-  const { hash: _hash, ...entry } = record;
-  return entry;
-}
-
-/** `spec.toolsets[].ref` is host-relative and digest-pinned
- * (`toolsets/<name>@sha256:<64 hex>`, `ToolsetRefSchema`'s pattern) — the
- * digest is trivially the substring after `@sha256:`. Used to populate the
- * `sandbox_toolset_refs` join (toolset-overlay-squashfs.md §6-7): the
- * digest column is denormalized so resume/GC never re-parse the ref. */
-function toRefEntries(
-  toolsetRefs: SandboxSpec["toolsets"],
-): Array<{ ref: string; digest: string }> {
-  if (!toolsetRefs || toolsetRefs.length === 0) return [];
-  return toolsetRefs.map((t) => {
-    const digest = t.ref.slice(t.ref.indexOf("@sha256:") + 1);
-    return { ref: t.ref, digest };
-  });
-}
-
-function hashToolset(req: ToolsetBuildRequest): string {
-  // `name` IS keyed: it's the artifact's registry repo (own tag namespace,
-  // own retention window), and the stored ref embeds it — so two names must
-  // build two artifacts, not alias onto the first-built ref. `env` is
-  // build-time secret material, excluded like `PrebuildSpec.env`.
-  const keyed = {
-    name: req.name,
-    source: req.source ?? null,
-    build: req.build,
-    paths: req.paths,
-  };
-  return createHash("sha256").update(JSON.stringify(keyed)).digest("hex");
 }

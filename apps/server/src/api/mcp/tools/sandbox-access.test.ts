@@ -24,7 +24,10 @@ let dataDir: string;
 let control: ControlContainer;
 let registerSandboxTools: typeof import("./sandbox.ts").registerSandboxTools;
 let registerTaskTools: typeof import("./tasks.ts").registerTaskTools;
-let registerConfigTools: typeof import("./config.ts").registerConfigTools;
+let registerAdminTools: typeof import("./admin.ts").registerAdminTools;
+let JobService: typeof import("../../../runtime/jobs.service.ts").JobService;
+let SandboxOps: typeof import("../../app/sandbox-ops.ts").SandboxOps;
+let ToolboxOps: typeof import("../../app/toolbox-ops.ts").ToolboxOps;
 let owner: AuthUser;
 let member: AuthUser;
 let stranger: AuthUser;
@@ -41,6 +44,14 @@ function mkUser(name: string): AuthUser {
     `${name}@x.test`,
     "",
   );
+  // Toolboxes created without an explicit org land in the personal org.
+  const personal = control.organizationService.create(
+    u.username,
+    `mcp-acc-personal-${name}`,
+    true,
+  );
+  control.orgMemberService.addMember(personal.id, u.id, "owner");
+  control.userService.setPersonalOrg(u.id, personal.id);
   return { id: u.id, username: u.username, email: u.email, avatarUrl: "" };
 }
 
@@ -59,7 +70,10 @@ beforeAll(async () => {
   control = createControlContainer();
   ({ registerSandboxTools } = await import("./sandbox.ts"));
   ({ registerTaskTools } = await import("./tasks.ts"));
-  ({ registerConfigTools } = await import("./config.ts"));
+  ({ registerAdminTools } = await import("./admin.ts"));
+  ({ JobService } = await import("../../../runtime/jobs.service.ts"));
+  ({ SandboxOps } = await import("../../app/sandbox-ops.ts"));
+  ({ ToolboxOps } = await import("../../app/toolbox-ops.ts"));
   owner = mkUser("owner");
   member = mkUser("member");
   stranger = mkUser("stranger");
@@ -91,6 +105,8 @@ function fakeContainer(): ServerContainer {
     },
   };
   const runtime = {
+    getStatus: () => "running",
+    assertSnapshottable: () => undefined,
     getLabels: (id: string) => labels[id as keyof typeof labels],
     snapshotOwner: (ref: string) =>
       ref === "snap-shared" ? "shared" : undefined,
@@ -154,7 +170,30 @@ function fakeContainer(): ServerContainer {
       track(id);
     },
   };
-  return { runtime, control, tasks, idle } as unknown as ServerContainer;
+  const jobs = new JobService();
+  const toolboxOps = new ToolboxOps({ runtime, control, jobs } as never);
+  const sandboxOps = new SandboxOps({
+    runtime,
+    control,
+    jobs,
+    toolboxes: toolboxOps,
+    idle,
+  } as never);
+  return {
+    runtime,
+    control,
+    tasks,
+    idle,
+    jobs,
+    sandboxOps,
+    toolboxOps,
+  } as unknown as ServerContainer;
+}
+
+/** The create job boots in the background: wait for its runtime call. */
+async function until(done: () => boolean) {
+  for (let i = 0; i < 200 && !done(); i++) await Bun.sleep(5);
+  expect(done()).toBe(true);
 }
 
 async function as(user: AuthUser) {
@@ -162,7 +201,7 @@ async function as(user: AuthUser) {
   const mcp = await connectMcp((server) => {
     registerSandboxTools(server, container, user);
     registerTaskTools(server, container, user);
-    registerConfigTools(server, container, user);
+    registerAdminTools(server, container, user);
   });
   return mcp;
 }
@@ -170,11 +209,12 @@ async function as(user: AuthUser) {
 const SANDBOX_CALLS: [string, Record<string, unknown>][] = [
   ["get_sandbox", { id: "shared" }],
   ["sandbox_lifecycle", { id: "shared", action: "pause" }],
-  ["sandbox_lifecycle", { id: "shared", action: "destroy" }],
+  ["destroy_sandbox", { id: "shared" }],
   ["exec", { id: "shared", command: "id" }],
   ["manage_process", { id: "shared", name: "web", action: "logs" }],
   ["manage_process", { id: "shared", name: "web", action: "start" }],
-  ["patch_files", { id: "shared", files: [{ path: "/tmp/a", content: "x" }] }],
+  ["write_files", { id: "shared", files: [{ path: "/tmp/a", content: "x" }] }],
+  ["read_files", { id: "shared", paths: ["/tmp/a"] }],
   ["expose_port", { id: "shared", name: "web", port: 3000 }],
   ["send_prompt", { sandboxId: "shared", prompt: "hi" }],
 ];
@@ -203,15 +243,17 @@ describe("MCP sandbox access", () => {
 
   test("toolbox capture of someone else's sandbox is NOT_FOUND", async () => {
     const mcp = await as(stranger);
-    const tb = control.toolboxService.create(
-      { type: "user", id: stranger.id },
-      {
-        slug: "mine",
-        description: "d",
-        build: ["true"],
-        paths: [".local"],
-      } as never,
+    const strangerOrg = control.organizationService.create(
+      "Stranger",
+      "mcp-acc-stranger-org",
     );
+    control.orgMemberService.addMember(strangerOrg.id, stranger.id, "owner");
+    const tb = control.toolboxService.create(strangerOrg.id, {
+      slug: "mine",
+      description: "d",
+      build: ["true"],
+      paths: [".local"],
+    } as never);
     reached.length = 0;
     const res = await mcp.call("manage_toolbox", {
       action: "capture",
@@ -236,7 +278,7 @@ describe("MCP sandbox access", () => {
       const mcp = await as(user);
       const res = await mcp.call("get_sandbox");
       await mcp.close();
-      return res.data.map((s: { id: string }) => s.id).sort();
+      return res.data.sandboxes.map((s: { id: string }) => s.id).sort();
     };
     expect(await idsFor(stranger)).toEqual([]);
     expect(await idsFor(member)).toEqual(["shared"]);
@@ -256,8 +298,11 @@ describe("MCP sandbox access", () => {
     const denied = await boot(stranger, "snap-shared");
     expect(denied.data.error).toBe("NOT_FOUND");
     expect(created).toEqual([]);
-    expect((await boot(member, "snap-shared")).isError).toBe(false);
+    const ok = await boot(member, "snap-shared");
+    expect(ok.isError).toBe(false);
+    expect(ok.data.status).toBe("creating");
     expect((await boot(stranger, "prebuild-snap")).isError).toBe(false);
+    await until(() => created.length === 2);
   });
 
   test("manage_prebuilds and manage_toolbox sources are checked too", async () => {
@@ -306,12 +351,16 @@ describe("MCP sandbox access", () => {
     });
     await mcp.close();
     expect(res.isError).toBe(false);
+    await until(() => created.length > 0);
     const spec = created[0];
     // The owner is the caller (set by enrichment), never the supplied one.
     expect(spec?.metadata?.[OWNER]).toBe(member.id);
     expect(spec?.metadata?.keep).toBe("me");
-    // The org is the one resolved for the caller, never the supplied one.
-    expect(spec?.annotations?.[ORG]).toBe(orgId);
+    // The org is the one resolved for the caller (their personal org, with
+    // no default org configured), never the supplied one.
+    expect(spec?.annotations?.[ORG]).toBe(
+      control.userService.getById(member.id)?.personalOrgId,
+    );
     expect(spec?.annotations?.note).toBe("x");
   });
 });

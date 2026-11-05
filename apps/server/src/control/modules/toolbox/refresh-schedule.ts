@@ -1,7 +1,7 @@
 /**
  * Toolbox refresh schedules (docs/toolbox-versions.md §10): a cron
  * expression (5 fields or a nickname like `@daily`) read in UTC, parsed by
- * Bun's own cron parser so the console, CLI and MCP all accept exactly what
+ * Bun's own cron parser so the console and MCP both accept exactly what
  * the scheduler runs.
  */
 import { ValidationError } from "../../../shared/errors.ts";

@@ -1,4 +1,4 @@
-import type { AgentSession, AgentSessionStatus } from "@frak/atelier-shared";
+import type { AgentSession, AgentSessionStatus } from "@atelier/spec";
 import { useQuery } from "@tanstack/react-query";
 import { FolderGit2, Maximize2, Square, Trash2 } from "lucide-react";
 import { useState } from "react";

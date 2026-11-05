@@ -2,11 +2,11 @@
  * Embedded base-image "seeds" — the server ships these Dockerfile+rootfs
  * build contexts (`apps/server/src/runtime/registry/seeds/<name>/`) so a base
  * image is no longer built out-of-band at deploy time (see
- * `infra/k8s/deploy.sh`'s old `build_devbase` step): the console/CLI list
- * them via `GET /v1/images/templates` and trigger an in-cluster build through
- * `ImageBuilderService`, which pushes the result to the operator's own
- * registry. Users may also bring their own Dockerfile or register an
- * external (e.g. GHCR) ref — seeds are just the batteries-included option.
+ * `infra/k8s/deploy.sh`'s old `build_devbase` step): the console lists
+ * them via `GET /v1/images/templates` and a server admin triggers a build
+ * through `ImageBuilderService`, which pushes the result to the operator's
+ * own registry. An admin may also register an external (e.g. GHCR) ref —
+ * seeds are just the batteries-included option.
  *
  * A seed's `image.json` is the identity + build-DAG declaration. Two things
  * only the seed author can know, and only a *build* step (not this loader)

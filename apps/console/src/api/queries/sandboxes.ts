@@ -6,7 +6,7 @@ import {
 } from "@tanstack/react-query";
 import { toast } from "sonner";
 import { api } from "@/api/client";
-import { errorMessage } from "./error";
+import { ApiError, unwrap } from "./error";
 import { queryKeys } from "./keys";
 
 // ── queries ──────────────────────────────────────────────────────────────
@@ -15,12 +15,10 @@ export function sandboxListQuery() {
   return queryOptions({
     queryKey: queryKeys.sandboxes.list(),
     queryFn: async () => {
-      const { data, error } = await api.v1.sandboxes.get();
-      if (error)
-        throw new Error(errorMessage(error, "Failed to list sandboxes"));
-      return data;
+      return unwrap(await api.v1.sandboxes.get(), "Failed to list sandboxes");
     },
-    refetchInterval: 10_000,
+    // No polling: the job feed (`useJobEvents`) invalidates the list when a
+    // spawn/pause/resume/destroy settles, idle auto-pauses included.
   });
 }
 
@@ -28,15 +26,10 @@ export function sandboxDetailQuery(id: string) {
   return queryOptions({
     queryKey: queryKeys.sandboxes.detail(id),
     queryFn: async () => {
-      const { data, error } = await api.v1.sandboxes({ id }).get();
-      if (error) {
-        const err = new Error(
-          errorMessage(error, "Failed to load sandbox"),
-        ) as Error & { status?: number };
-        err.status = error.status;
-        throw err;
-      }
-      return data;
+      return unwrap(
+        await api.v1.sandboxes({ id }).get(),
+        "Failed to load sandbox",
+      );
     },
     // A just-spawned sandbox is created asynchronously: `POST /sandboxes`
     // answers 202 + job (the console navigates here immediately) before the
@@ -46,9 +39,12 @@ export function sandboxDetailQuery(id: string) {
     // the record appears, instead of flashing a "not found" error. Real
     // failures (non-404) surface immediately.
     retry: (count, err) =>
-      (err as { status?: number })?.status === 404 && count < 8,
+      err instanceof ApiError && err.status === 404 && count < 8,
     retryDelay: 1000,
-    refetchInterval: 5_000,
+    // Fast while it boots, then a slow refresh for process health; lifecycle
+    // changes arrive through the job feed.
+    refetchInterval: (query) =>
+      query.state.data?.status === "creating" ? 2_000 : 30_000,
   });
 }
 
@@ -59,29 +55,12 @@ export function sandboxActivityQuery(id: string) {
   return queryOptions({
     queryKey: queryKeys.sandboxes.activity(id),
     queryFn: async () => {
-      const { data, error } = await api.v1.sandboxes({ id }).activity.get();
-      if (error)
-        throw new Error(errorMessage(error, "Failed to load activity"));
-      return data;
+      return unwrap(
+        await api.v1.sandboxes({ id }).activity.get(),
+        "Failed to load activity",
+      );
     },
     refetchInterval: 30_000,
-  });
-}
-
-/** Only mounted while the log panel is expanded — mount/unmount gates it. */
-export function processLogsQuery(id: string, name: string) {
-  return queryOptions({
-    queryKey: queryKeys.sandboxes.processLogs(id, name),
-    queryFn: async () => {
-      const { data, error } = await api.v1
-        .sandboxes({ id })
-        .processes({ name })
-        .logs.get();
-      if (error)
-        throw new Error(errorMessage(error, "Failed to load process logs"));
-      return data;
-    },
-    refetchInterval: 3_000,
   });
 }
 
@@ -99,9 +78,10 @@ export function usePauseSandbox() {
   const invalidate = useInvalidateSandboxes();
   return useMutation({
     mutationFn: async (id: string) => {
-      const { error } = await api.v1.sandboxes({ id }).pause.post();
-      if (error)
-        throw new Error(errorMessage(error, "Failed to pause sandbox"));
+      unwrap(
+        await api.v1.sandboxes({ id }).pause.post(),
+        "Failed to pause sandbox",
+      );
     },
     onSuccess: () => {
       invalidate();
@@ -115,9 +95,10 @@ export function useResumeSandbox() {
   const invalidate = useInvalidateSandboxes();
   return useMutation({
     mutationFn: async (id: string) => {
-      const { error } = await api.v1.sandboxes({ id }).resume.post({});
-      if (error)
-        throw new Error(errorMessage(error, "Failed to resume sandbox"));
+      unwrap(
+        await api.v1.sandboxes({ id }).resume.post({}),
+        "Failed to resume sandbox",
+      );
     },
     onSuccess: () => {
       invalidate();
@@ -131,9 +112,10 @@ export function useDestroySandbox() {
   const invalidate = useInvalidateSandboxes();
   return useMutation({
     mutationFn: async (id: string) => {
-      const { error } = await api.v1.sandboxes({ id }).delete();
-      if (error)
-        throw new Error(errorMessage(error, "Failed to destroy sandbox"));
+      unwrap(
+        await api.v1.sandboxes({ id }).delete(),
+        "Failed to destroy sandbox",
+      );
     },
     onSuccess: () => {
       invalidate();
@@ -147,10 +129,10 @@ export function useSnapshotSandbox() {
   const invalidate = useInvalidateSandboxes();
   return useMutation({
     mutationFn: async (id: string) => {
-      const { data, error } = await api.v1.sandboxes({ id }).snapshot.post();
-      if (error)
-        throw new Error(errorMessage(error, "Failed to snapshot sandbox"));
-      return data;
+      return unwrap(
+        await api.v1.sandboxes({ id }).snapshot.post(),
+        "Failed to snapshot sandbox",
+      );
     },
     onSuccess: (data) => {
       invalidate();
@@ -165,11 +147,10 @@ export function useRenameSandbox() {
   const invalidate = useInvalidateSandboxes();
   return useMutation({
     mutationFn: async ({ id, name }: { id: string; name: string }) => {
-      const { error } = await api.v1
-        .sandboxes({ id })
-        .patch({ name: name.trim() || null });
-      if (error)
-        throw new Error(errorMessage(error, "Failed to rename sandbox"));
+      unwrap(
+        await api.v1.sandboxes({ id }).patch({ name: name.trim() || null }),
+        "Failed to rename sandbox",
+      );
     },
     onSuccess: (_data, { name }) => {
       invalidate();
@@ -185,17 +166,39 @@ export function useKeepAwake() {
   const invalidate = useInvalidateSandboxes();
   return useMutation({
     mutationFn: async ({ id, until }: { id: string; until: string | null }) => {
-      const { error } = await api.v1
-        .sandboxes({ id })
-        .patch({ keepAwakeUntil: until });
-      if (error)
-        throw new Error(errorMessage(error, "Failed to keep sandbox awake"));
+      unwrap(
+        await api.v1.sandboxes({ id }).patch({ keepAwakeUntil: until }),
+        "Failed to keep sandbox awake",
+      );
     },
     onSuccess: (_data, { until }) => {
       invalidate();
       toast.success(
         until ? "Sandbox kept awake" : "Sandbox can sleep when idle again",
       );
+    },
+    onError: (error) => toast.error(error.message),
+  });
+}
+
+/**
+ * Fork a sandbox: `202` + a `sandbox-create` job whose
+ * `metadata.sandboxId` is the copy's id. Resolves to that id so the caller can
+ * open the copy while it boots.
+ */
+export function useForkSandbox() {
+  const invalidate = useInvalidateSandboxes();
+  return useMutation({
+    mutationFn: async (id: string): Promise<string | undefined> => {
+      const job = unwrap(
+        await api.v1.sandboxes({ id }).fork.post({}),
+        "Failed to fork sandbox",
+      );
+      return job.metadata?.sandboxId;
+    },
+    onSuccess: () => {
+      invalidate();
+      toast.success("Forking sandbox…");
     },
     onError: (error) => toast.error(error.message),
   });
@@ -211,12 +214,10 @@ export function useProcessAction(id: string) {
       name: string;
       action: "start" | "stop";
     }) => {
-      const { error } = await api.v1
-        .sandboxes({ id })
-        .processes({ name })({ action })
-        .post();
-      if (error)
-        throw new Error(errorMessage(error, `Failed to ${action} process`));
+      unwrap(
+        await api.v1.sandboxes({ id }).processes({ name })({ action }).post(),
+        `Failed to ${action} process`,
+      );
     },
     onSuccess: (_data, { name, action }) => {
       invalidate();
@@ -236,8 +237,10 @@ export function useAddPort(id: string) {
       port: number;
       public?: boolean;
     }) => {
-      const { error } = await api.v1.sandboxes({ id }).ports.post(body);
-      if (error) throw new Error(errorMessage(error, "Failed to add port"));
+      unwrap(
+        await api.v1.sandboxes({ id }).ports.post(body),
+        "Failed to add port",
+      );
     },
     onSuccess: (_data, { name }) => {
       invalidate();
@@ -260,10 +263,10 @@ export function useSpawnSandbox() {
   const invalidate = useInvalidateSandboxes();
   return useMutation({
     mutationFn: async (request: CreateSandboxRequest) => {
-      const { data, error } = await api.v1.sandboxes.post(request);
-      if (error)
-        throw new Error(errorMessage(error, "Failed to spawn sandbox"));
-      return data;
+      return unwrap(
+        await api.v1.sandboxes.post(request),
+        "Failed to spawn sandbox",
+      );
     },
     onSuccess: () => {
       // Surface the `creating` row in the list immediately; the job feed

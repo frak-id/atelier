@@ -9,18 +9,13 @@
  * created (confirmed create, deleted by uid): a same-name PVC that already
  * existed may hold a workspace.
  */
-import { afterEach, describe, expect, spyOn, test } from "bun:test";
+import { afterEach, beforeEach, describe, expect, spyOn, test } from "bun:test";
 import type { SandboxSpec } from "@atelier/spec";
-import { VM } from "@frak/atelier-shared/constants";
-
-process.env.ATELIER_SERVER_MODE = "mock";
-
-const { bootSandbox } = await import("./boot.ts");
-const { kubeClient, KubeApiError } = await import("./kube/index.ts");
-type KubeDeleteOptions = import("./kube/kube.client.ts").KubeDeleteOptions;
-const { AgentClient } = await import("./agent/index.ts");
-type BootInput = import("./boot.ts").BootInput;
-type KubeResource = import("./kube/index.ts").KubeResource;
+import { VM } from "../config/constants.ts";
+import { type BootInput, bootSandbox } from "./boot.ts";
+import { KubeApiError, type KubeResource, kubeClient } from "./kube/index.ts";
+import type { KubeDeleteOptions } from "./kube/kube.client.ts";
+import { FakeAgentClient } from "./runtime.test-support.ts";
 
 const ID = "sbfresh";
 const spec: SandboxSpec = {
@@ -31,6 +26,19 @@ const spec: SandboxSpec = {
 const spies: Array<{ mockRestore: () => void }> = [];
 afterEach(() => {
   for (const s of spies.splice(0)) s.mockRestore();
+});
+
+// The kube calls a boot makes besides the creates/deletes each test captures:
+// the shared SSH key Secret read, and the teardown's wait.
+beforeEach(() => {
+  spies.push(
+    spyOn(kubeClient, "get").mockResolvedValue({
+      data: {
+        "ssh-publickey": Buffer.from("ssh-ed25519 AAAA").toString("base64"),
+      },
+    }),
+    spyOn(kubeClient, "waitForResourceDeleted").mockResolvedValue(true),
+  );
 });
 
 const PVC_UID = "pvc-uid-created-by-this-boot";
@@ -78,12 +86,15 @@ function freshMarker(created: KubeResource[]): string | undefined {
   return env?.find((e) => e.name === VM.DATA_FRESH_ENV)?.value;
 }
 
-async function boot(input: Partial<BootInput>, agent = new AgentClient()) {
+async function boot(
+  input: Partial<BootInput>,
+  agent: FakeAgentClient = new FakeAgentClient(),
+) {
   return bootSandbox(ID, spec, { image: "img", ...input }, agent);
 }
 
 function failingAgent() {
-  const agent = new AgentClient();
+  const agent = new FakeAgentClient();
   spies.push(
     spyOn(agent, "waitForAgent").mockResolvedValue({
       ready: false,

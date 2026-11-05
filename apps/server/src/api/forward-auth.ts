@@ -93,3 +93,76 @@ export function decideForwardAuth(input: {
   }
   return { status: 401 };
 }
+
+// ── auto-resume on access ────────────────────────────────────────────────
+
+/** How long a client should wait before retrying a request answered 503
+ * while its sandbox wakes up. */
+export const WAKE_RETRY_AFTER_SECONDS = 5;
+
+/**
+ * The sandbox a tool URL belongs to. Tool hosts are `{name}-{id}.{baseDomain}`
+ * (`toolHost`, runtime/kube); sandbox ids are lowercase alphanumerics, so the
+ * id is what follows the last dash of the first label. `undefined` for any
+ * other host (the console, an unrelated domain).
+ */
+export function sandboxIdFromHost(
+  host: string | undefined,
+  baseDomain: string,
+): string | undefined {
+  if (!host) return undefined;
+  const lower = host.toLowerCase().replace(/:\d+$/, "");
+  const suffix = `.${baseDomain.toLowerCase()}`;
+  if (!lower.endsWith(suffix)) return undefined;
+  const label = lower.slice(0, -suffix.length);
+  if (label.includes(".")) return undefined;
+  const dash = label.lastIndexOf("-");
+  const id = dash > 0 ? label.slice(dash + 1) : "";
+  return /^[a-z0-9]+$/.test(id) ? id : undefined;
+}
+
+/** Whether `host` (any case, with or without a port) is one of the
+ * sandbox's `previewHosts`: the only hosts the unauthenticated wake check
+ * answers for. */
+export function isPreviewHost(
+  host: string | undefined,
+  previewHosts: string[] | undefined,
+): boolean {
+  if (!host || !previewHosts) return false;
+  const lower = host.toLowerCase().replace(/:\d+$/, "");
+  return previewHosts.some((h) => h.toLowerCase() === lower);
+}
+
+export type WakeDecision =
+  /** Let the request through (the sandbox is up, or not ours to wake). */
+  | { status: 200 }
+  /** The sandbox is paused: a resume is under way. `page` is whether the
+   * client is a browser page load, which gets the auto-refreshing page
+   * instead of a bare 503 + `Retry-After`. */
+  | { status: 503; page: boolean };
+
+/** Only a `paused` sandbox auto-resumes: an `error` one needs a person
+ * (resuming it again would loop on whatever broke it). */
+export function decideWake(
+  status: string | undefined,
+  forwarded: ForwardedRequest,
+): WakeDecision {
+  if (status !== "paused") return { status: 200 };
+  const method = (forwarded.method ?? "GET").toUpperCase();
+  const page =
+    method === "GET" && (forwarded.accept?.includes("text/html") ?? false);
+  return { status: 503, page };
+}
+
+/** The tiny page a browser sees while its sandbox wakes: it reloads itself
+ * (through the same forward-auth check) until the sandbox answers. */
+export function wakePage(): string {
+  return (
+    `<!doctype html><html><head><meta charset="utf-8">` +
+    `<meta http-equiv="refresh" content="${WAKE_RETRY_AFTER_SECONDS}">` +
+    `<title>Waking up sandbox…</title>` +
+    `<style>body{font:16px system-ui;display:grid;place-items:center;` +
+    `height:100vh;margin:0;color:#444}</style></head>` +
+    `<body><p>Waking up sandbox… this page reloads on its own.</p></body></html>`
+  );
+}

@@ -1,6 +1,7 @@
 import type { SandboxUrl } from "@atelier/spec";
+import * as DialogPrimitive from "@radix-ui/react-dialog";
 import { Play, TerminalSquare, X } from "lucide-react";
-import { useEffect, useState } from "react";
+import { useState } from "react";
 import { MultiTerminal } from "@/components/multi-terminal";
 import { Button } from "@/components/ui/button";
 import { useServiceGate } from "@/hooks/use-service-gate";
@@ -18,12 +19,16 @@ type ImmersiveSandbox = {
   annotations?: Record<string, string>;
 };
 
-/** "Open" prefers the harness's own web UI (design ui-evolution.md §3.3) — the
+/** "Open" prefers the harness's own web UI — the
  * url whose name matches the `atelier.dev/harness` annotation, by convention
  * (opencode/pi's composer names their web-UI port after the harness id).
  * Falls back to the terminal tab when the harness has no web UI (or the
  * sandbox has no harness at all). */
-function preferredInitialTab(sandbox: ImmersiveSandbox): string {
+function preferredInitialTab(
+  sandbox: ImmersiveSandbox,
+  initialTab?: "terminal",
+): string {
+  if (initialTab === "terminal") return TERMINAL_TAB;
   const harness = harnessFromAnnotations(sandbox.annotations);
   if (harness && sandbox.urls.some((u) => u.name === harness)) return harness;
   return TERMINAL_TAB;
@@ -34,100 +39,114 @@ function preferredInitialTab(sandbox: ImmersiveSandbox): string {
  * iframe tab. All panels stay mounted so switching tabs never drops a live
  * PTY or reloads an app. Extracted from the sandbox detail route so other
  * surfaces (e.g. a session's "Open" action) can deep-link straight into it.
- *
- * TODO(review): this full-screen overlay lacks a focus trap — keyboard/screen
- * reader users can still tab to elements behind it. Adopt a focus trap (or a
- * Radix Dialog base) when hardening a11y.
  */
 export function ImmersiveView({
   sandbox,
+  initialTab,
   onClose,
 }: {
   sandbox: ImmersiveSandbox;
+  /** Open on the terminal instead of the harness's web UI. */
+  initialTab?: "terminal";
   onClose: () => void;
 }) {
   const [active, setActive] = useState<string>(() =>
-    preferredInitialTab(sandbox),
+    preferredInitialTab(sandbox, initialTab),
   );
   const name = sandboxNameFromAnnotations(sandbox.annotations);
 
-  useEffect(() => {
-    const onKey = (event: KeyboardEvent) => {
-      if (event.key === "Escape") onClose();
-    };
-    window.addEventListener("keydown", onKey);
-    return () => window.removeEventListener("keydown", onKey);
-  }, [onClose]);
-
+  // A Radix Dialog gives the focus trap, Escape and focus return for free.
   return (
-    <div className="fixed inset-0 z-50 flex flex-col bg-background">
-      <div className="flex h-12 shrink-0 items-center gap-2 border-b bg-card px-3">
-        {name ? (
-          <span className="truncate text-sm font-medium" title={sandbox.id}>
-            {name}
-          </span>
-        ) : (
-          <span className="truncate font-mono text-sm">{sandbox.id}</span>
-        )}
-        <div className="ml-2 flex items-center gap-1 overflow-x-auto">
-          <button
-            type="button"
-            onClick={() => setActive(TERMINAL_TAB)}
-            className={cn(
-              "flex items-center gap-1.5 rounded-md px-2.5 h-8 text-sm transition-colors duration-200",
-              active === TERMINAL_TAB
-                ? "bg-accent text-accent-foreground"
-                : "text-muted-foreground hover:bg-muted hover:text-foreground",
+    <DialogPrimitive.Root open onOpenChange={(open) => !open && onClose()}>
+      <DialogPrimitive.Portal>
+        <DialogPrimitive.Content
+          aria-describedby={undefined}
+          onOpenAutoFocus={(event) => event.preventDefault()}
+          className="fixed inset-0 z-50 flex flex-col bg-background pb-[env(safe-area-inset-bottom)] focus:outline-hidden"
+        >
+          <DialogPrimitive.Title className="sr-only">
+            Sandbox {name ?? sandbox.id}
+          </DialogPrimitive.Title>
+          <div className="flex h-12 shrink-0 items-center gap-2 border-b bg-card pr-[max(0.75rem,env(safe-area-inset-right))] pl-[max(0.75rem,env(safe-area-inset-left))] pt-[env(safe-area-inset-top)] box-content">
+            {name ? (
+              <span className="truncate text-sm font-medium" title={sandbox.id}>
+                {name}
+              </span>
+            ) : (
+              <span className="truncate font-mono text-sm">{sandbox.id}</span>
             )}
-          >
-            <TerminalSquare className="size-4" />
-            Terminal
-          </button>
-          {sandbox.urls.map((url) => (
-            <button
-              key={url.name}
-              type="button"
-              onClick={() => setActive(url.name)}
+            <div
+              role="tablist"
+              aria-label="Sandbox views"
+              className="ml-2 flex items-center gap-1 overflow-x-auto"
+            >
+              <button
+                type="button"
+                role="tab"
+                aria-selected={active === TERMINAL_TAB}
+                onClick={() => setActive(TERMINAL_TAB)}
+                className={cn(
+                  "flex items-center gap-1.5 rounded-md px-2.5 h-10 text-sm sm:h-8 transition-colors duration-200",
+                  active === TERMINAL_TAB
+                    ? "bg-accent text-accent-foreground"
+                    : "text-muted-foreground hover:bg-muted hover:text-foreground",
+                )}
+              >
+                <TerminalSquare className="size-4" />
+                Terminal
+              </button>
+              {sandbox.urls.map((url) => (
+                <button
+                  key={url.name}
+                  type="button"
+                  role="tab"
+                  aria-selected={active === url.name}
+                  onClick={() => setActive(url.name)}
+                  className={cn(
+                    "flex items-center gap-1.5 rounded-md px-2.5 h-10 text-sm sm:h-8 transition-colors duration-200",
+                    active === url.name
+                      ? "bg-accent text-accent-foreground"
+                      : "text-muted-foreground hover:bg-muted hover:text-foreground",
+                  )}
+                >
+                  {url.name}
+                </button>
+              ))}
+            </div>
+            <div className="flex-1" />
+            <Button variant="ghost" size="touch" onClick={onClose}>
+              <X />
+              Close
+            </Button>
+          </div>
+
+          <div className="relative min-h-0 flex-1">
+            <div
               className={cn(
-                "flex items-center gap-1.5 rounded-md px-2.5 h-8 text-sm transition-colors duration-200",
-                active === url.name
-                  ? "bg-accent text-accent-foreground"
-                  : "text-muted-foreground hover:bg-muted hover:text-foreground",
+                "absolute inset-0",
+                active !== TERMINAL_TAB && "hidden",
               )}
             >
-              {url.name}
-            </button>
-          ))}
-        </div>
-        <div className="flex-1" />
-        <Button variant="ghost" size="sm" onClick={onClose}>
-          <X />
-          Close
-        </Button>
-      </div>
-
-      <div className="relative min-h-0 flex-1">
-        <div
-          className={cn(
-            "absolute inset-0",
-            active !== TERMINAL_TAB && "hidden",
-          )}
-        >
-          <MultiTerminal
-            sandboxId={sandbox.id}
-            className="h-full rounded-none border-0"
-          />
-        </div>
-        {sandbox.urls.map((url) => (
-          <div
-            key={url.name}
-            className={cn("absolute inset-0", active !== url.name && "hidden")}
-          >
-            <GatedUrlPanel sandboxId={sandbox.id} url={url} />
+              <MultiTerminal
+                sandboxId={sandbox.id}
+                className="h-full rounded-none border-0"
+              />
+            </div>
+            {sandbox.urls.map((url) => (
+              <div
+                key={url.name}
+                className={cn(
+                  "absolute inset-0",
+                  active !== url.name && "hidden",
+                )}
+              >
+                <GatedUrlPanel sandboxId={sandbox.id} url={url} />
+              </div>
+            ))}
           </div>
-        ))}
-      </div>
-    </div>
+        </DialogPrimitive.Content>
+      </DialogPrimitive.Portal>
+    </DialogPrimitive.Root>
   );
 }
 

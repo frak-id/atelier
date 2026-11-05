@@ -1,10 +1,16 @@
+import { version as serverVersion } from "../../../package.json";
 import { SandboxError } from "../../shared/errors.ts";
-import { config, isMock } from "../../shared/lib/config.ts";
 import { createChildLogger } from "../../shared/lib/logger.ts";
 import type { AgentActivityReport } from "../activity.ts";
 import type { AgentConfig } from "../agent-config.ts";
 import type { AgentEndpoint } from "../backend/backend.types.ts";
-import { kubeClient } from "../kube/index.ts";
+import {
+  BUILD_TIMEOUT_MS,
+  EXEC_DEFAULT_TIMEOUT_MS,
+  EXEC_MARGIN_MS,
+  hookPhaseTimeoutMs,
+  MATERIALIZE_TIMEOUT_MS,
+} from "./agent.contract.ts";
 import type {
   AgentHealth,
   AgentProcessListResult,
@@ -27,45 +33,23 @@ const DEFAULT_TIMEOUT = 10000;
  * come up when boot asks). */
 const HOST_KEY_RETRY_DELAYS_MS = [0, 500, 2_000];
 
-/** Unified attach bridge (WS), separate from the HTTP control plane. */
-const ATTACH_PORT = 9997;
-/**
- * C3: the agent's `toolset::materialize_inner` bounds its whole pull/mount/
- * assembly loop to a single global 600s deadline (`BUILD_TIMEOUT_MS`),
- * regardless of toolset count, and fails fast with a "pulled X of N" error
- * once exhausted. This client-side timeout must be >= that deadline (else it
- * would abort a call the agent was about to finish/fail on its own, losing
- * the agent's more specific error) — a 30s margin covers HTTP/serialization
- * overhead on top of the agent's own budget. Keep in sync with
- * `sandbox-boot.sh`'s wait-loop cap (both are downstream of the same agent
- * ceiling).
- */
-const MATERIALIZE_TOOLSETS_TIMEOUT_MS = 630_000;
-
 /**
  * Resolve where a sandbox's agent is reachable ({@link AgentEndpoint}), or
  * `null` while compute isn't ready. The composition root wires this to the
  * active backend's `resolveAgentEndpoint` so a Docker container's mapped host
- * ports are dialed; the default below is the Kubernetes pod IP + fixed ports,
- * kept so `new AgentClient()` stays independently constructable and
- * behavior-preserving.
+ * ports are dialed and a pod's IP is used on Kubernetes.
  */
 export type AgentEndpointResolver = (
   sandboxId: string,
 ) => Promise<AgentEndpoint | null>;
 
-async function kubeEndpointResolver(
-  sandboxId: string,
-): Promise<AgentEndpoint | null> {
-  const host = await kubeClient.getPodIp(`sandbox-${sandboxId}`);
-  if (!host) return null;
-  return {
-    host,
-    agentPort: config.ports.agent,
-    attachPort: ATTACH_PORT,
-    terminalPort: config.ports.terminal,
-  };
-}
+/**
+ * Look up the per-sandbox agent token (`generated.agentPassword` on the
+ * record) when this process hasn't seen the sandbox boot, e.g. after a server
+ * restart. A sandbox that is booting (or a throwaway build pod) has no record
+ * yet; its token comes from {@link AgentClient.setToken}.
+ */
+export type AgentTokenResolver = (sandboxId: string) => string | undefined;
 
 class AgentUnavailableError extends SandboxError {
   constructor(sandboxId: string, cause: string) {
@@ -108,10 +92,49 @@ export class AgentClient {
   // a stop. Caching it spares a resolution round-trip on every one of the
   // ~10-20 agent calls a single spawn issues.
   private readonly endpointCache = new Map<string, AgentEndpoint>();
+  // The agent refuses everything but `GET /health` without this bearer token.
+  private readonly tokens = new Map<string, string>();
+  // Sandboxes already checked for an agent/server version mismatch.
+  private readonly versionChecked = new Set<string>();
 
   constructor(
-    private readonly resolveEndpoint: AgentEndpointResolver = kubeEndpointResolver,
+    private readonly resolveEndpoint: AgentEndpointResolver,
+    private readonly resolveToken: AgentTokenResolver = () => undefined,
   ) {}
+
+  /**
+   * Register the agent token a boot just generated for a sandbox (or a
+   * throwaway build pod) so calls made before its record exists authenticate.
+   */
+  setToken(sandboxId: string, token: string): void {
+    this.tokens.set(sandboxId, token);
+  }
+
+  private tokenFor(sandboxId: string): string | undefined {
+    const known = this.tokens.get(sandboxId);
+    if (known) return known;
+    const resolved = this.resolveToken(sandboxId);
+    if (resolved) this.tokens.set(sandboxId, resolved);
+    return resolved;
+  }
+
+  private authHeaders(sandboxId: string): Record<string, string> {
+    const token = this.tokenFor(sandboxId);
+    return token ? { Authorization: `Bearer ${token}` } : {};
+  }
+
+  /** Warn once per sandbox when the agent's release differs from the
+   * server's: a rebuilt base image can lag (or lead) the server, and a strict
+   * config schema then fails with an unexplained 400. */
+  private checkVersion(sandboxId: string, agentVersion: string | undefined) {
+    if (this.versionChecked.has(sandboxId)) return;
+    this.versionChecked.add(sandboxId);
+    if (agentVersion === serverVersion) return;
+    log.warn(
+      { sandboxId, agentVersion: agentVersion ?? "unknown", serverVersion },
+      "Agent version differs from the server's; rebuild the base image if requests start failing",
+    );
+  }
 
   /**
    * Drop the cached endpoint for a sandbox. Callers invoke this whenever
@@ -120,6 +143,7 @@ export class AgentClient {
    */
   invalidatePodIp(sandboxId: string): void {
     this.endpointCache.delete(sandboxId);
+    this.versionChecked.delete(sandboxId);
   }
 
   private async getAgentUrl(sandboxId: string): Promise<string> {
@@ -161,9 +185,10 @@ export class AgentClient {
     try {
       const response = await fetch(url, {
         method: options.method ?? "GET",
-        headers: options.body
-          ? { "Content-Type": "application/json" }
-          : undefined,
+        headers: {
+          ...this.authHeaders(sandboxId),
+          ...(options.body ? { "Content-Type": "application/json" } : {}),
+        },
         body: options.body ? JSON.stringify(options.body) : undefined,
         signal,
       });
@@ -215,49 +240,29 @@ export class AgentClient {
   }
 
   async health(sandboxId: string): Promise<AgentHealth> {
-    return this.request<AgentHealth>(sandboxId, "/health");
+    const health = await this.request<AgentHealth>(sandboxId, "/health");
+    this.checkVersion(sandboxId, health.version);
+    return health;
   }
 
   /**
    * The agent's last hour of measured activity (`GET /activity`: network
-   * bytes, file writes, CPU). `null` when the agent
-   * predates the endpoint (404): an image built before idle auto-pause.
-   * Throws `AgentUnavailableError` when the agent can't be reached.
+   * bytes, file writes, CPU). Throws `AgentUnavailableError` when the agent
+   * can't be reached.
    */
-  async activity(sandboxId: string): Promise<AgentActivityReport | null> {
-    if (isMock()) {
-      const now = Date.now();
-      return {
-        nowMs: now,
-        bootedAtMs: now,
-        bucketSeconds: 60,
-        network: "unavailable",
-        files: "unavailable",
-        cpu: "unavailable",
-        buckets: [],
-      };
-    }
-    try {
-      return await this.request<AgentActivityReport>(sandboxId, "/activity", {
-        timeout: 5000,
-      });
-    } catch (err) {
-      if (err instanceof AgentRequestError && err.statusCode === 404) {
-        return null;
-      }
-      throw err;
-    }
+  async activity(sandboxId: string): Promise<AgentActivityReport> {
+    return this.request<AgentActivityReport>(sandboxId, "/activity", {
+      timeout: 5000,
+    });
   }
 
   /**
    * Fetch the sandbox's sshd host public key line(s) (`GET /ssh/host-keys`)
-   * for SSH host-key pinning (ssh-gateway.ts / ssh/proxy.ts). Retries
+   * for SSH host-key pinning (runtime/boot.ts / ssh/proxy.ts). Retries
    * transient failures (the agent has only just come up), then throws.
-   * Empty when the image has no sshd host keys; always empty in mock mode
-   * (no sshd).
+   * Empty when the image has no sshd host keys.
    */
   async getSshHostKeys(sandboxId: string): Promise<string[]> {
-    if (isMock()) return [];
     let lastError: unknown;
     for (const delayMs of HOST_KEY_RETRY_DELAYS_MS) {
       if (delayMs > 0) await Bun.sleep(delayMs);
@@ -290,7 +295,6 @@ export class AgentClient {
    * that must not land in etcd or a pause snapshot.
    */
   async putConfig(sandboxId: string, config: AgentConfig): Promise<void> {
-    if (isMock()) return;
     await this.request(sandboxId, "/config", {
       method: "PUT",
       body: config,
@@ -304,12 +308,14 @@ export class AgentClient {
    * the commands (from pushed config) and how they run.
    */
   async runHook(sandboxId: string, phase: HookPhase): Promise<HookPhaseResult> {
-    if (isMock()) return { success: true, results: [] };
+    // Each command may take its own full limit, so the abort has to cover
+    // the phase's command count (read off the config the agent holds).
+    const { hooks } = await this.request<AgentConfig>(sandboxId, "/config");
     return this.post<HookPhaseResult>(
       sandboxId,
       `/hooks/${phase}`,
       undefined,
-      130000,
+      hookPhaseTimeoutMs(hooks?.[phase]?.length ?? 0),
     );
   }
 
@@ -319,7 +325,6 @@ export class AgentClient {
    * separately via `waitForPrimary`.
    */
   async reconcile(sandboxId: string): Promise<void> {
-    if (isMock()) return;
     await this.post(sandboxId, "/reconcile", undefined, 15000);
   }
 
@@ -327,17 +332,6 @@ export class AgentClient {
     sandboxId: string,
     options: { timeout?: number } = {},
   ): Promise<{ ready: boolean; podIp: string | null }> {
-    if (isMock()) {
-      const endpoint: AgentEndpoint = {
-        host: "10.42.0.99",
-        agentPort: config.ports.agent,
-        attachPort: ATTACH_PORT,
-        terminalPort: config.ports.terminal,
-      };
-      this.endpointCache.set(sandboxId, endpoint);
-      return { ready: true, podIp: endpoint.host };
-    }
-
     const timeout = options.timeout ?? 60000;
     const deadline = Date.now() + timeout;
 
@@ -349,6 +343,8 @@ export class AgentClient {
           continue;
         }
 
+        // `/health` is the one open route: no token needed (and none exists
+        // in the record yet for a sandbox that is still booting).
         const response = await fetch(
           `http://${endpoint.host}:${endpoint.agentPort}/health`,
           { signal: AbortSignal.timeout(2000) },
@@ -357,6 +353,8 @@ export class AgentClient {
         // readiness: the runtime pushes config only after the agent is up, and
         // gates on the primary separately via waitForPrimary after reconcile.
         if (response.ok) {
+          const health = (await response.json()) as AgentHealth;
+          this.checkVersion(sandboxId, health.version);
           this.endpointCache.set(sandboxId, endpoint);
           log.info({ sandboxId, podIp: endpoint.host }, "Agent is alive");
           return { ready: true, podIp: endpoint.host };
@@ -380,7 +378,6 @@ export class AgentClient {
     sandboxId: string,
     options: { timeout?: number } = {},
   ): Promise<boolean> {
-    if (isMock()) return true;
     const deadline = Date.now() + (options.timeout ?? 120000);
     while (Date.now() < deadline) {
       try {
@@ -395,17 +392,14 @@ export class AgentClient {
   // ── Supervised process control (agent `/processes`) ──────────────────────
 
   async processList(sandboxId: string): Promise<AgentProcessListResult> {
-    if (isMock()) return { processes: [] };
     return this.request<AgentProcessListResult>(sandboxId, "/processes");
   }
 
   async processStart(sandboxId: string, name: string): Promise<void> {
-    if (isMock()) return;
     await this.post(sandboxId, `/processes/${name}/start`, undefined, 30000);
   }
 
   async processStop(sandboxId: string, name: string): Promise<void> {
-    if (isMock()) return;
     await this.post(sandboxId, `/processes/${name}/stop`, undefined, 30000);
   }
 
@@ -415,7 +409,6 @@ export class AgentClient {
     offset = 0,
     limit = 1_000_000,
   ): Promise<DevLogsResult> {
-    if (isMock()) return { name, content: "", nextOffset: 0 };
     return this.request<DevLogsResult>(
       sandboxId,
       `/processes/${name}/logs?offset=${offset}&limit=${limit}`,
@@ -423,31 +416,47 @@ export class AgentClient {
   }
 
   /** WS URL for a process's stdio/PTY attach bridge (single-writer for rw,
-   * fan-out for ro). The process must be `stdio: bridge` or `pty`. */
+   * fan-out for ro). The process must be `stdio: bridge` or `pty`. The agent
+   * token rides in the query: the relays dial this bare URL. `replay: false`
+   * skips the agent's buffered-output replay for this client (live output
+   * only). */
   async attachUrl(
     sandboxId: string,
     name: string,
     mode: "rw" | "ro" = "rw",
+    options: { replay?: boolean } = {},
   ): Promise<string> {
     const ep = await this.resolveEndpointCached(sandboxId);
-    return `ws://${ep.host}:${ep.attachPort}/attach/${name}?mode=${mode}`;
+    const query = new URLSearchParams({ mode });
+    if (options.replay === false) query.set("replay", "0");
+    this.addToken(sandboxId, query);
+    return `ws://${ep.host}:${ep.attachPort}/attach/${name}?${query}`;
   }
 
-  /** Raw WS URL for the pod's terminal multiplexer (byte relay, no ACP). The
-   * terminal port varies per backend (fixed on k8s, mapped on Docker), so the
-   * URL is shaped here rather than by the caller. */
+  /** Raw WS URL for a terminal session (byte relay, no ACP). Terminals ride
+   * the attach port at `/terminal/{id}`; that port varies per backend (fixed
+   * on k8s, mapped on Docker), so the URL is shaped here rather than by the
+   * caller. */
   async terminalBridgeUrl(
     sandboxId: string,
     sessionId: string,
   ): Promise<string> {
     const ep = await this.resolveEndpointCached(sandboxId);
-    return `ws://${ep.host}:${ep.terminalPort}/${sessionId}`;
+    const query = new URLSearchParams();
+    this.addToken(sandboxId, query);
+    return `ws://${ep.host}:${ep.attachPort}/terminal/${sessionId}?${query}`;
+  }
+
+  private addToken(sandboxId: string, query: URLSearchParams): void {
+    const token = this.tokenFor(sandboxId);
+    if (token) query.set("token", token);
   }
 
   /**
    * Build+push a toolset artifact from declared home path-sets (agent
-   * `POST /toolsets/build`). The agent tars the paths and `oras push`es them
-   * to `target` from inside the pod; the runtime never handles the bytes.
+   * `POST /toolsets/build`). The agent stages the paths, packs them into a
+   * blob (erofs/squashfs/tar) and `oras push`es it to `target` from inside the
+   * pod; the runtime never handles the bytes.
    * Returns the pushed manifest digest (`sha256:…`).
    */
   async buildToolset(
@@ -455,22 +464,18 @@ export class AgentClient {
     body: { target: string; paths: string[] },
     signal?: AbortSignal,
   ): Promise<{ digest: string }> {
-    if (isMock()) {
-      const hex = "0".repeat(64);
-      return { digest: `sha256:${hex}` };
-    }
     return this.post<{ digest: string }>(
       sandboxId,
       "/toolsets/build",
       body,
-      600_000,
+      BUILD_TIMEOUT_MS,
       signal,
     );
   }
 
   /**
    * Capture a live sandbox's declared path-sets into a toolset artifact
-   * (agent `POST /toolsets/capture`). The agent tars `paths` MINUS the
+   * (agent `POST /toolsets/capture`). The agent packs `paths` MINUS the
    * merged exclude globs, secret-scans the included files (failing unless a
    * finding is covered by `overrides`), and `oras push`es to `target` —
    * mirrors `buildToolset`'s push tail. Returns the pushed manifest digest.
@@ -485,22 +490,18 @@ export class AgentClient {
     },
     signal?: AbortSignal,
   ): Promise<{ digest: string }> {
-    if (isMock()) {
-      const hex = "0".repeat(64);
-      return { digest: `sha256:${hex}` };
-    }
     return this.post<{ digest: string }>(
       sandboxId,
       "/toolsets/capture",
       body,
-      600_000,
+      BUILD_TIMEOUT_MS,
       signal,
     );
   }
 
   /**
    * Assemble the `/home/dev` overlay before the files/env phase (agent
-   * `POST /toolsets`, toolset-overlay-squashfs.md §5). `references` are full,
+   * `POST /toolsets`, docs/archive/proposals/toolset-overlay-squashfs.md §5). `references` are full,
    * digest-pinned pull refs (`<registry>/toolsets/<name>@sha256:…`), ordered
    * — later wins (topmost overlay lower). The agent pulls each squashfs blob
    * to `/data/toolsets` (skipped if already present — the resume case),
@@ -515,26 +516,20 @@ export class AgentClient {
    * handshake replacing the old base-overlay-then-remount design. Idempotent
    * and safe to call on every boot, including resume.
    *
-   * C3: the agent now enforces a single GLOBAL deadline
-   * (`toolset::BUILD_TIMEOUT_MS` = 600s) across its whole pull/mount/assembly
-   * loop, no matter how many toolsets are requested — so this timeout no
-   * longer needs to scale with toolset count. It's set a little ABOVE the
-   * agent's own deadline (not equal) so the agent's own "pulled X of N"
-   * timeout error has a chance to land before this client-side abort fires;
-   * keep it in sync with `MATERIALIZE_TOOLSETS_TIMEOUT_MS` and with
-   * `sandbox-boot.sh`'s wait-loop cap (both must agree with the agent's
-   * ceiling for the create/resume race this replaces to stay closed).
+   * The agent enforces a single global deadline across its whole
+   * pull/mount/assembly loop, however many toolsets are requested; the
+   * client timeout sits above it ({@link MATERIALIZE_TIMEOUT_MS}, see
+   * agent.contract.ts) so the agent's own "pulled X of N" error lands first.
    */
   async materializeToolsets(
     sandboxId: string,
     references: string[],
   ): Promise<void> {
-    if (isMock()) return;
     await this.post(
       sandboxId,
       "/toolsets",
       { toolsets: references },
-      MATERIALIZE_TOOLSETS_TIMEOUT_MS,
+      MATERIALIZE_TIMEOUT_MS,
     );
   }
 
@@ -542,11 +537,6 @@ export class AgentClient {
     sandboxId: string,
     files: FileWrite[],
   ): Promise<WriteFilesResult> {
-    if (isMock()) {
-      return {
-        results: files.map((f) => ({ path: f.path, success: true })),
-      };
-    }
     return this.post<WriteFilesResult>(
       sandboxId,
       "/files/write",
@@ -565,19 +555,19 @@ export class AgentClient {
       signal?: AbortSignal;
     } = {},
   ): Promise<ExecResult> {
-    if (isMock()) {
-      return { exitCode: 0, stdout: "", stderr: "" };
-    }
+    // Always name the timeout: the agent's own default is longer than the
+    // client would wait, which turned a slow command into a 503.
+    const timeout = options.timeout ?? EXEC_DEFAULT_TIMEOUT_MS;
     return this.post<ExecResult>(
       sandboxId,
       "/exec",
       {
         command,
-        timeout: options.timeout,
+        timeout,
         user: options.user,
         workdir: options.workdir,
       },
-      (options.timeout ?? 30000) + 5000,
+      timeout + EXEC_MARGIN_MS,
       options.signal,
     );
   }
@@ -585,7 +575,13 @@ export class AgentClient {
   async terminalSessionCreate(
     sandboxId: string,
     userId: string,
-    options?: { title?: string; command?: string; workdir?: string },
+    options?: {
+      title?: string;
+      command?: string;
+      workdir?: string;
+      /** Extra env for the shell (terminal capability hints). */
+      env?: Record<string, string>;
+    },
   ): Promise<TerminalSessionCreateResult> {
     return this.post<TerminalSessionCreateResult>(
       sandboxId,
@@ -595,6 +591,7 @@ export class AgentClient {
         title: options?.title,
         command: options?.command,
         workdir: options?.workdir,
+        env: options?.env,
       },
       10000,
     );

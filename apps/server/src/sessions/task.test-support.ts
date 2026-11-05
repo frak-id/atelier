@@ -1,19 +1,64 @@
 /**
  * Test support: a stubbed `AgentDispatch` for `AgentTaskService` tests (no ACP,
- * no sandbox). The fake hands back a controllable session handle, lets a test
- * stream `session/update` notifications into the service, and raises/answers
- * permission requests the way the real hub does (including its synchronous
- * `permissions` re-emit on reply). The real ACP wiring is covered by
+ * no sandbox). The fake hands back a controllable session handle and lets a
+ * test stream `session/update` notifications into the service. The real ACP
+ * wiring (incl. auto-approved permission requests) is covered by
  * `acp/agent-dispatch.test.ts`.
  */
 import type { SessionNotification } from "@agentclientprotocol/sdk";
-import type { AgentPermissionRequest } from "@frak/atelier-shared";
 import type { OpenAgentSessionInput } from "./acp/agent-dispatch.ts";
 import type { AgentTaskServiceDeps } from "./task.service.ts";
+import type { StoredTask, TaskListFilter, TaskStore } from "./task.store.ts";
 
 export const OWNER = "user-1";
 export const SANDBOX = "sbx-1";
 export const SESSION = "sess-1";
+
+/** An in-memory {@link TaskStore}: the service's persistence without a DB. */
+export class MemoryTaskStore implements TaskStore {
+  readonly rows = new Map<string, StoredTask>();
+
+  upsert(task: StoredTask): void {
+    this.rows.set(task.id, structuredClone(task));
+  }
+
+  get(id: string): StoredTask | undefined {
+    const row = this.rows.get(id);
+    return row && structuredClone(row);
+  }
+
+  list(filter: TaskListFilter): StoredTask[] {
+    return [...this.rows.values()]
+      .filter(
+        (t) =>
+          (!filter.ownerId || t.ownerId === filter.ownerId) &&
+          (!filter.sandboxIds || filter.sandboxIds.includes(t.sandboxId)) &&
+          (!filter.status || t.status === filter.status),
+      )
+      .sort((a, b) => b.createdAt.localeCompare(a.createdAt))
+      .slice(0, filter.limit)
+      .map((t) => structuredClone(t));
+  }
+
+  delete(id: string): void {
+    this.rows.delete(id);
+  }
+
+  failInterrupted(message: string): void {
+    for (const row of this.rows.values()) {
+      if (row.status === "running") {
+        row.status = "failed";
+        row.lastError = message;
+      }
+    }
+  }
+
+  deleteUpdatedBefore(beforeIso: string): void {
+    for (const [id, row] of this.rows) {
+      if (row.updatedAt < beforeIso) this.rows.delete(id);
+    }
+  }
+}
 
 interface PendingPrompt {
   text: string;
@@ -27,11 +72,8 @@ export function makeFake(
     annotations?: Record<string, string> | undefined;
   } = {},
 ) {
-  const permissions: AgentPermissionRequest[] = [];
-  const listeners = new Set<(e: { resource: string }) => void>();
   const prompts: PendingPrompt[] = [];
   const opened: OpenAgentSessionInput[] = [];
-  const replies: { id: string; reply: string }[] = [];
   /** `connection` counts drops: a handle is live while it matches.
    * `unseenRestart`: the acp process restarted and only `stillLive` (which
    * asks the agent) finds out. */
@@ -43,12 +85,12 @@ export function makeFake(
     unseenRestart: false,
     stillLiveCalls: 0,
     status: opts.status ?? "running",
+    /** What the end-of-turn git summary command prints. */
+    gitOutput: "",
+    execs: [] as { command: string; cwd?: string }[],
   };
+  const store = new MemoryTaskStore();
   let onUpdate: ((n: SessionNotification) => void) | undefined;
-
-  const emit = () => {
-    for (const l of [...listeners]) l({ resource: "permissions" });
-  };
 
   const handleFor = (sessionId: string, connection = state.connection) => ({
     sessionId,
@@ -84,15 +126,20 @@ export function makeFake(
 
   const deps: AgentTaskServiceDeps = {
     runtime: {
-      get: async () => ({
-        id: SANDBOX,
-        status: state.status,
+      getStatus: () => state.status,
+      exec: async (_id: string, req: { command: string; cwd?: string }) => {
+        state.execs.push(req);
+        return { exitCode: 0, stdout: state.gitOutput, stderr: "" };
+      },
+      getLabels: () => ({
+        metadata: {},
         annotations:
-          "annotations" in opts
+          ("annotations" in opts
             ? opts.annotations
-            : { "atelier.dev/harness": "opencode" },
+            : { "atelier.dev/harness": "opencode" }) ?? {},
       }),
     } as unknown as AgentTaskServiceDeps["runtime"],
+    store,
     dispatch: {
       openSession: async (input: OpenAgentSessionInput) => {
         opened.push(input);
@@ -101,31 +148,16 @@ export function makeFake(
         const id = state.nextSession++;
         return handleFor(id === 1 ? SESSION : `${SESSION}-${id}`);
       },
-      permissionsFor: () => [...permissions],
-      replyPermission: (_sandbox: string, id: string, reply: string) => {
-        const at = permissions.findIndex((p) => p.id === id);
-        if (at === -1) return { ok: false, status: 404 };
-        permissions.splice(at, 1);
-        replies.push({ id, reply });
-        emit();
-        return { ok: true };
-      },
-      subscribe: (_sandbox: string, l: (e: { resource: string }) => void) => {
-        listeners.add(l);
-        return () => listeners.delete(l);
-      },
       todosFor: async () => [],
     } as unknown as AgentTaskServiceDeps["dispatch"],
   };
 
   return {
     deps,
+    store,
     opened,
     prompts,
-    replies,
     state,
-    listeners,
-    permissions,
     /** Stream an agent text chunk into the service. */
     say(text: string, messageId?: string, sessionId = SESSION) {
       onUpdate?.({
@@ -152,11 +184,6 @@ export function makeFake(
           status: "completed",
         },
       } as SessionNotification);
-    },
-    /** The agent raises a permission request. */
-    askPermission(id = "perm-1", sessionId = SESSION) {
-      permissions.push({ id, sessionId, permission: "Run a command" });
-      emit();
     },
     /** Finish the oldest in-flight turn. */
     finish(stopReason = "end_turn") {

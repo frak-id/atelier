@@ -1,7 +1,7 @@
 /**
  * The runtime module's public interface — the seam control/ imports.
  *
- * BOUNDARY RULE (design.md §3.1): `runtime/` compiles without `control/` or
+ * BOUNDARY RULE (docs/archive/design.md §3.1): `runtime/` compiles without `control/` or
  * `sessions/`. Nothing under this folder may import from those modules. This
  * barrel is the only surface the rest of the server is allowed to touch.
  */
@@ -14,12 +14,8 @@ export {
   ensureSharedSshPipeKey,
   getSharedSshPipeKeyOpenSSH,
 } from "./kube/index.ts";
-export {
-  createImageBuilder,
-  ImageBuilderService,
-  readContextDockerfile,
-  unpackZipContext,
-} from "./registry/index.ts";
+export { createImageBuilder, ImageBuilderService } from "./registry/index.ts";
+export { resourceName } from "./resource-name.ts";
 export { RuntimeService } from "./runtime.service.ts";
 export type { JobRecord } from "./store.ts";
 export {

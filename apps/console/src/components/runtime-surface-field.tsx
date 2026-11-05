@@ -27,6 +27,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { NativeSelect } from "@/components/ui/native-select";
 import { SegmentedControl } from "@/components/ui/segmented-control";
+import { Textarea } from "@/components/ui/textarea";
 import {
   addPort,
   addService,
@@ -272,7 +273,7 @@ function ServiceCard({
 
       <div className="space-y-1">
         <Label htmlFor={`${id}-command`}>Command</Label>
-        <textarea
+        <Textarea
           id={`${id}-command`}
           aria-invalid={issues.command ? true : undefined}
           value={process.command}

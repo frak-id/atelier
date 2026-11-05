@@ -1,6 +1,6 @@
 import { Buffer } from "node:buffer";
 import { SandboxError } from "../../shared/errors.ts";
-import { config, isMock } from "../../shared/lib/config.ts";
+import { config } from "../../shared/lib/config.ts";
 import { createChildLogger } from "../../shared/lib/logger.ts";
 import type { KubeResource } from "./kube.resources.ts";
 
@@ -119,12 +119,29 @@ export class KubeClient {
     resource: KubeResource,
     namespace = this.namespace,
   ): Promise<KubeResource> {
-    if (isMock()) {
-      return resource;
-    }
-
     const path = resourceCollectionPath(resource.kind, namespace);
     return this.create<KubeResource>(path, resource);
+  }
+
+  /** Create `resource`, or merge-patch it onto the existing object of that
+   * name (a paused sandbox keeps its Service and Ingresses, so a resume finds
+   * them in place). */
+  async applyResource(
+    resource: KubeResource,
+    namespace = this.namespace,
+  ): Promise<void> {
+    try {
+      await this.createResource(resource, namespace);
+    } catch (err) {
+      if (!(err instanceof KubeApiError) || err.status !== 409) throw err;
+      await this.patchResource(
+        resource.kind,
+        resource.metadata.name,
+        resource,
+        namespace,
+        "merge",
+      );
+    }
   }
 
   async deleteResource(
@@ -133,17 +150,13 @@ export class KubeClient {
     namespace = this.namespace,
     options?: KubeDeleteOptions,
   ): Promise<void> {
-    if (isMock()) {
-      return;
-    }
-
     const path = resourceItemPath(kind, name, namespace);
     await this.delete(path, options);
   }
 
   /** Patch a namespaced resource by kind/name. Built-in kinds default to
-   * strategic-merge; custom resources (e.g. sshpiper `Pipe`) MUST pass
-   * `"merge"` — the API server rejects strategic-merge on CRDs with a 415. */
+   * strategic-merge; custom resources MUST pass `"merge"` — the API server
+   * rejects strategic-merge on CRDs with a 415. */
   async patchResource(
     kind: string,
     name: string,
@@ -151,10 +164,6 @@ export class KubeClient {
     namespace = this.namespace,
     type: KubePatchType = "strategic",
   ): Promise<void> {
-    if (isMock()) {
-      return;
-    }
-
     const path = resourceItemPath(kind, name, namespace);
     await this.patch(path, body, type);
   }
@@ -163,10 +172,6 @@ export class KubeClient {
     labelSelector: string,
     namespace = this.namespace,
   ): Promise<void> {
-    if (isMock()) {
-      return;
-    }
-
     const selector = encodeURIComponent(labelSelector);
     const failures: string[] = [];
     const collections = [
@@ -183,10 +188,6 @@ export class KubeClient {
         path: "volumesnapshots",
         api: "snapshot",
       },
-      {
-        path: "pipes",
-        api: "sshpiper",
-      },
     ] as const;
 
     for (const col of collections) {
@@ -195,8 +196,6 @@ export class KubeClient {
         base = `/apis/networking.k8s.io/v1/namespaces/${namespace}/${col.path}`;
       } else if (col.api === "snapshot") {
         base = `/apis/snapshot.storage.k8s.io/v1/namespaces/${namespace}/${col.path}`;
-      } else if (col.api === "sshpiper") {
-        base = `/apis/sshpiper.com/v1beta1/namespaces/${namespace}/${col.path}`;
       } else {
         base = `/api/v1/namespaces/${namespace}/${col.path}`;
       }
@@ -217,8 +216,8 @@ export class KubeClient {
           });
         }
       } catch (err) {
-        // A 404 on the *list* means the CRD isn't installed (volumesnapshots,
-        // pipes) — nothing to sweep. Anything else is a real failure the
+        // A 404 on the *list* means the CRD isn't installed (volumesnapshots)
+        // — nothing to sweep. Anything else is a real failure the
         // caller must see (destroy keeps the record for retry on failure) —
         // but keep sweeping the remaining collections first, so one broken
         // collection (e.g. an RBAC gap) doesn't leak everything after it.
@@ -239,36 +238,10 @@ export class KubeClient {
     }
   }
 
-  async deleteLabeledIngresses(
-    labelSelector: string,
-    namespace = this.namespace,
-  ): Promise<void> {
-    if (isMock()) {
-      return;
-    }
-
-    const selector = encodeURIComponent(labelSelector);
-    const base = `/apis/networking.k8s.io/v1/namespaces/${namespace}/ingresses`;
-    const list = await this.list<{
-      items?: Array<{ metadata?: { name?: string } }>;
-    }>(`${base}?labelSelector=${selector}`);
-
-    for (const item of list.items ?? []) {
-      const name = item.metadata?.name;
-      // Per-item catch so one stale entry (e.g. a concurrent destroy 404)
-      // doesn't abort the sweep and leak the remaining ingresses.
-      if (name) await this.delete(`${base}/${name}`).catch(() => {});
-    }
-  }
-
   async getPodIp(
     name: string,
     namespace = this.namespace,
   ): Promise<string | null> {
-    if (isMock()) {
-      return "10.42.0.99";
-    }
-
     const pod = await this.get<KubeStatusResponse>(
       `/api/v1/namespaces/${namespace}/pods/${name}`,
     );
@@ -295,8 +268,6 @@ export class KubeClient {
       signal?: AbortSignal;
     } = {},
   ): Promise<void> {
-    if (isMock()) return;
-
     const namespace = options.namespace ?? this.namespace;
     const auth = await this.getAuthConfig();
     const query = new URLSearchParams({
@@ -342,10 +313,6 @@ export class KubeClient {
     name: string,
     options: { timeout?: number; namespace?: string } = {},
   ): Promise<boolean> {
-    if (isMock()) {
-      return true;
-    }
-
     const timeout = options.timeout ?? 120_000;
     const namespace = options.namespace ?? this.namespace;
     const startedAt = Date.now();
@@ -373,7 +340,6 @@ export class KubeClient {
     name: string,
     namespace = this.namespace,
   ): Promise<boolean> {
-    if (isMock()) return false;
     try {
       const path = resourceItemPath(kind, name, namespace);
       await this.get(path);
@@ -393,8 +359,6 @@ export class KubeClient {
       pollIntervalMs?: number;
     } = {},
   ): Promise<boolean> {
-    if (isMock()) return true;
-
     const timeout = options.timeout ?? 60_000;
     const namespace = options.namespace ?? this.namespace;
     const pollInterval = options.pollIntervalMs ?? 1_000;
@@ -427,10 +391,6 @@ export class KubeClient {
       headers?: Record<string, string>;
     },
   ): Promise<T> {
-    if (isMock()) {
-      return {} as T;
-    }
-
     const auth = await this.getAuthConfig();
     const url = this.buildUrl(auth.server, path);
 
@@ -645,9 +605,6 @@ function resourceCollectionPath(kind: string, namespace: string): string {
     return `/apis/networking.k8s.io/v1/namespaces/${namespace}/ingresses`;
   if (normalized === "volumesnapshot") {
     return `/apis/snapshot.storage.k8s.io/v1/namespaces/${namespace}/volumesnapshots`;
-  }
-  if (normalized === "pipe") {
-    return `/apis/sshpiper.com/v1beta1/namespaces/${namespace}/pipes`;
   }
   if (normalized === "secret") {
     return `/api/v1/namespaces/${namespace}/secrets`;

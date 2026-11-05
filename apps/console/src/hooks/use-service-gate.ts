@@ -22,7 +22,7 @@ export interface ServiceGate {
 
 /**
  * Gates an iframe behind the processes that must be running for its URL to
- * actually respond (design ui-evolution.md §4.2) — avoids landing on a blank
+ * actually respond — avoids landing on a blank
  * Bad Gateway for a lazy, not-yet-started service (vscode, browser, a
  * harness's web UI).
  *

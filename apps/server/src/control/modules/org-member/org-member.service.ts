@@ -13,8 +13,9 @@ import type { OrgMemberRepository } from "./org-member.repository.ts";
 const log = createChildLogger("org-member-service");
 
 /**
- * The RBAC guard for the whole control layer. `requireRole` is what every
- * mutating org-scoped route calls before touching a secret / policy spec.
+ * The RBAC guard for the whole control layer. Two roles: `owner` (members,
+ * secrets, rename/delete the org) and `member` (everything else in the org).
+ * `requireOwner` is what every owner-only route calls.
  */
 export class OrgMemberService {
   constructor(
@@ -40,32 +41,23 @@ export class OrgMemberService {
     return member;
   }
 
-  requireRole(
-    orgId: string,
-    userId: string,
-    minimumRoles: string[],
-  ): OrgMember {
+  /** Membership with the `owner` role, or a 403. */
+  requireOwner(orgId: string, userId: string): OrgMember {
     const member = this.requireMembership(orgId, userId);
-    if (!minimumRoles.includes(member.role)) {
-      throw new ForbiddenError("Insufficient permissions");
+    if (member.role !== "owner") {
+      throw new ForbiddenError("Only an organization owner can do this");
     }
     return member;
   }
 
-  /**
-   * Add `userId` on behalf of `actorId`: owner/admin only, and only an owner
-   * may grant `owner` (same rule as `updateRole`).
-   */
+  /** Add `userId` on behalf of `actorId` (an owner). */
   inviteMember(
     orgId: string,
     actorId: string,
     userId: string,
     role: OrgMemberRole = "member",
   ): OrgMember {
-    const actor = this.requireRole(orgId, actorId, ["owner", "admin"]);
-    if (role === "owner" && actor.role !== "owner") {
-      throw new ForbiddenError("Only an owner can add an owner");
-    }
+    this.requireOwner(orgId, actorId);
     return this.addMember(orgId, userId, role);
   }
 
@@ -98,8 +90,7 @@ export class OrgMemberService {
   }
 
   /**
-   * Change `targetId`'s role on behalf of `actorId`. Owners manage anyone;
-   * admins manage non-owners only and can't grant `owner`. An org always
+   * Change `targetId`'s role on behalf of `actorId` (an owner). An org always
    * keeps at least one owner.
    */
   updateRole(
@@ -108,15 +99,9 @@ export class OrgMemberService {
     targetId: string,
     role: OrgMemberRole,
   ): OrgMember {
-    const actor = this.requireRole(orgId, actorId, ["owner", "admin"]);
+    this.requireOwner(orgId, actorId);
     const member = this.getMembership(orgId, targetId);
     if (!member) throw new NotFoundError("OrgMember", `${orgId}/${targetId}`);
-    if (
-      actor.role !== "owner" &&
-      (member.role === "owner" || role === "owner")
-    ) {
-      throw new ForbiddenError("Only an owner can manage owners");
-    }
     if (member.role === "owner" && role !== "owner") {
       this.assertNotLastOwner(orgId);
     }
@@ -130,8 +115,8 @@ export class OrgMemberService {
 
   /**
    * Remove `targetId` from the org on behalf of `actorId`. Anyone may leave
-   * (`actorId === targetId`); otherwise owners remove anyone and admins
-   * remove non-owners. The last owner can never leave or be removed.
+   * (`actorId === targetId`); otherwise only an owner removes someone. The
+   * last owner can never leave or be removed.
    */
   removeMember(orgId: string, actorId: string, targetId: string): void {
     const member = this.getMembership(orgId, targetId);
@@ -139,12 +124,9 @@ export class OrgMemberService {
       if (!member)
         throw new ForbiddenError("Not a member of this organization");
     } else {
-      const actor = this.requireRole(orgId, actorId, ["owner", "admin"]);
+      this.requireOwner(orgId, actorId);
       if (!member) {
         throw new NotFoundError("OrgMember", `${orgId}/${targetId}`);
-      }
-      if (actor.role !== "owner" && member.role === "owner") {
-        throw new ForbiddenError("Only an owner can remove an owner");
       }
     }
     if (member.role === "owner") this.assertNotLastOwner(orgId);

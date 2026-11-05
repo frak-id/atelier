@@ -24,6 +24,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { NativeSelect } from "@/components/ui/native-select";
 import { Skeleton } from "@/components/ui/skeleton";
+import { Textarea } from "@/components/ui/textarea";
 import {
   type RepoCatalogEntry,
   useDefaultImage,
@@ -263,14 +264,14 @@ function QuickPrebuildForm({
         {detecting && !suggested ? (
           <Skeleton className="h-24 w-full" />
         ) : (
-          <textarea
+          <Textarea
             id={`${ids}-steps`}
             value={steps}
             onChange={(e) => setStepsText(e.target.value)}
             spellCheck={false}
             rows={4}
             placeholder="bun install"
-            className="w-full rounded-md border bg-muted/30 p-2 font-mono text-xs focus-visible:outline-hidden focus-visible:ring-2 focus-visible:ring-ring"
+            className="p-2 focus-visible:outline-hidden focus-visible:ring-2 focus-visible:ring-ring"
             onKeyDown={(e) => {
               // Enter adds a line here; Cmd/Ctrl+Enter submits the form.
               if (e.key === "Enter" && (e.metaKey || e.ctrlKey)) submit(e);

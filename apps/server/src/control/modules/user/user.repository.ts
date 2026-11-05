@@ -1,7 +1,31 @@
 import { asc, eq } from "drizzle-orm";
+import { createChildLogger } from "../../../shared/lib/logger.ts";
 import { getDatabase } from "../../db/client.ts";
 import { organizations, orgMembers, users } from "../../db/schema.ts";
 import type { DirectoryUser, User } from "../../types.ts";
+import {
+  decryptSecretValueSync,
+  encryptSecretValueSync,
+  isEncryptedValue,
+} from "../secret/crypto.ts";
+
+const log = createChildLogger("user-repository");
+
+/**
+ * The GitHub token is stored encrypted (`enc:` format, the secrets key). A
+ * row written before that holds the raw token: it is returned as is and
+ * re-encrypted by the next write (every login upserts).
+ */
+function readToken(stored: string | null): string | undefined {
+  if (!stored) return undefined;
+  if (!isEncryptedValue(stored)) return stored;
+  try {
+    return decryptSecretValueSync(stored);
+  } catch (err) {
+    log.warn({ err }, "stored GitHub token can't be decrypted; ignoring it");
+    return undefined;
+  }
+}
 
 function rowToUser(row: typeof users.$inferSelect): User {
   return {
@@ -9,7 +33,7 @@ function rowToUser(row: typeof users.$inferSelect): User {
     username: row.username,
     email: row.email,
     avatarUrl: row.avatarUrl ?? undefined,
-    githubAccessToken: row.githubAccessToken ?? undefined,
+    githubAccessToken: readToken(row.githubAccessToken),
     personalOrgId: row.personalOrgId ?? undefined,
     createdAt: row.createdAt,
     lastLoginAt: row.lastLoginAt,
@@ -69,7 +93,7 @@ export class UserRepository {
           id: row.orgId,
           name: row.orgName,
           slug: row.orgSlug,
-          personal: row.orgPersonal === "true",
+          personal: row.orgPersonal ?? false,
           role: row.role,
         });
       }
@@ -96,6 +120,9 @@ export class UserRepository {
   }
 
   upsert(user: User): User {
+    const storedToken = user.githubAccessToken
+      ? encryptSecretValueSync(user.githubAccessToken)
+      : undefined;
     getDatabase()
       .insert(users)
       .values({
@@ -103,7 +130,7 @@ export class UserRepository {
         username: user.username,
         email: user.email,
         avatarUrl: user.avatarUrl,
-        githubAccessToken: user.githubAccessToken,
+        githubAccessToken: storedToken,
         personalOrgId: user.personalOrgId,
         createdAt: user.createdAt,
         lastLoginAt: user.lastLoginAt,
@@ -114,7 +141,7 @@ export class UserRepository {
           username: user.username,
           email: user.email,
           avatarUrl: user.avatarUrl,
-          githubAccessToken: user.githubAccessToken,
+          githubAccessToken: storedToken,
           lastLoginAt: user.lastLoginAt,
           personalOrgId: user.personalOrgId,
         },

@@ -25,14 +25,43 @@ jobs:
       - name: Install dependencies
         run: bun install
 
-      - name: Lint
-        run: bun run lint
-
-      - name: Lint and format
-        run: bun run check
+      - name: Lint and format (read-only)
+        run: bunx biome ci .
 
       - name: Typecheck
         run: bun run typecheck
 
+      - name: Server module boundaries
+        run: bun run --filter @atelier/server check:boundary
+
       - name: Test
         run: bun run test
+
+  agent:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    defaults:
+      run:
+        working-directory: apps/agent
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7
+
+      - name: Setup Rust
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          components: clippy
+
+      - name: Cache cargo
+        uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: apps/agent
+
+      - name: Shellcheck
+        run: shellcheck -s bash scripts/*.sh
+
+      - name: Clippy
+        run: cargo clippy --all-targets --locked -- -D warnings
+
+      - name: Test
+        run: cargo test --locked

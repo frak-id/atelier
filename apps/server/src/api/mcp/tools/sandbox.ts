@@ -1,14 +1,19 @@
 /**
- * Sandbox lifecycle + live-mutation tools — the MCP mirror of `/v1/*`
- * (design.md §4: "it grows the mutation tools ... so agents drive sandboxes
- * exactly like the CLI does"). `create_sandbox` reuses the exact enrichment
- * path `POST /v1/sandboxes` uses (`createSandboxForUser`), so an MCP-spawned
- * sandbox gets the same org secrets/policy/auto-injected toolboxes as the
- * HTTP/CLI/GUI path — no more "no identity in this context" gap.
+ * Sandbox lifecycle tools: create, read, pause/resume/snapshot/fork, destroy.
+ * Every tool calls the application layer (`sandboxOps`, api/app/), the same
+ * one `/v1/*` uses: an MCP-spawned sandbox gets the same org secrets and
+ * auto-injected toolboxes as the HTTP path, and every long op runs as a job in
+ * the feed.
+ *
+ * Slow ops return at once (`create_sandbox`, `fork`) or after a bounded wait
+ * (`pause`/`resume`/`snapshot`), never holding the call for minutes: MCP
+ * clients commonly give up on a request around 60s, and a timed-out retry
+ * must not boot a second sandbox. `get_sandbox` long-polls the outcome.
  *
  * Outputs are projections for an agent, not the runtime's wire types: the
  * generated credentials (agent password, pod IP, ssh host keys), annotation
  * maps and internal hashes never leave the server through this surface.
+ * The tools that act inside a running sandbox are in `sandbox-io.ts`.
  */
 import {
   CreateSandboxRequestSchema,
@@ -20,27 +25,25 @@ import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { z } from "zod";
 import type { AuthUser } from "../../../control/index.ts";
 import { ValidationError } from "../../../shared/errors.ts";
+import { settledWithin } from "../../app/sandbox-ops.ts";
 import type { ServerContainer } from "../../container.ts";
 import {
   accessibleSandboxes,
   requireSandboxAccess,
 } from "../../sandbox-guard.ts";
-import { createSandboxForUser, forkSandboxForUser } from "../../v1.routes.ts";
-import { keepTail, rejectParams, safeTool, text } from "../format.ts";
+import { rejectParams, safeTool, text } from "../format.ts";
 import { parseSpec } from "../validate.ts";
+import { registerSandboxIoTools } from "./sandbox-io.ts";
 
-/** `exec` default: a clean agent-side timeout rather than an MCP client one
- * (clients commonly give up on a request around 60s). */
-const EXEC_DEFAULT_TIMEOUT_MS = 30_000;
-const EXEC_MAX_TIMEOUT_MS = 600_000;
-const EXEC_DEFAULT_MAX_CHARS = 16_000;
+/** MCP clients commonly time a request out at 60s; stay safely under it. */
+const MAX_WAIT_SECONDS = 50;
+/** `sandbox_lifecycle` waits this long for pause/resume/snapshot by default. */
+const LIFECYCLE_DEFAULT_WAIT_SECONDS = 30;
+const POLL_MS = 1000;
 
-const LOGS_DEFAULT_MAX_CHARS = 8_000;
-/** The agent serves logs oldest-first in chunks; the tail needs a walk. */
-const LOGS_CHUNK_BYTES = 1_000_000;
-const LOGS_MAX_CHUNKS = 20;
+const STATUSES = ["creating", "running", "paused", "stopped", "error"] as const;
 
-interface RawUrl {
+export interface RawUrl {
   name: string;
   url: string;
   ready?: boolean;
@@ -71,6 +74,7 @@ function sandboxView(
     processes: unknown[];
     metadata?: Record<string, string>;
     annotations?: Record<string, string>;
+    bootedFrom?: unknown;
   },
   verbose = false,
   idle?: SandboxIdleSummary,
@@ -84,87 +88,202 @@ function sandboxView(
     urls,
     ...(ssh ? { ssh } : {}),
     processes: state.processes,
+    ...(state.bootedFrom ? { bootedFrom: state.bootedFrom } : {}),
     ...(idle ? { idle } : {}),
     ...(verbose && state.metadata ? { metadata: state.metadata } : {}),
   };
 }
 
-/** Read a process's log tail: walk the oldest-first chunks, keep the end. */
-async function readLogTail(
-  read: (
-    offset: number,
-    limit: number,
-  ) => Promise<{ content: string; nextOffset: number }>,
-  maxChars: number,
-) {
-  let offset = 0;
-  let content = "";
-  let dropped = 0;
-  for (let i = 0; i < LOGS_MAX_CHUNKS; i++) {
-    const chunk = await read(offset, LOGS_CHUNK_BYTES);
-    content += chunk.content;
-    if (content.length > maxChars) {
-      dropped += content.length - maxChars;
-      content = content.slice(-maxChars);
-    }
-    const advanced = chunk.nextOffset > offset;
-    offset = chunk.nextOffset;
-    if (!advanced || Buffer.byteLength(chunk.content) < LOGS_CHUNK_BYTES) break;
-  }
-  return {
-    content:
-      dropped > 0
-        ? `[… ${dropped} earlier chars truncated]\n${content}`
-        : content,
-    truncated: dropped > 0,
-  };
-}
+const sleep = (ms: number) => new Promise<void>((r) => setTimeout(r, ms));
+
+const waitSecondsSchema = (what: string, fallback: string) =>
+  z
+    .number()
+    .int()
+    .min(0)
+    .max(MAX_WAIT_SECONDS)
+    .optional()
+    .describe(
+      `Block up to this many seconds (max ${MAX_WAIT_SECONDS}) ${what}. ` +
+        `Default ${fallback}.`,
+    );
 
 export function registerSandboxTools(
   server: McpServer,
   container: ServerContainer,
   user: AuthUser,
 ): void {
-  const { runtime } = container;
+  const { runtime, sandboxOps } = container;
   /** The access rule (control/sandbox-access.ts): a denied or unknown id is
    * a NOT_FOUND, like the HTTP routes. Every tool taking an id calls it. */
   const guard = (id: string) => requireSandboxAccess(container, user.id, id);
+
+  server.registerTool(
+    "get_sandbox",
+    {
+      title: "Get a sandbox, or list sandboxes",
+      description:
+        "With `id`: status, openable `urls` (`ready` = the process behind " +
+        "it is up), `ssh` command, live `processes` (`manage_process` " +
+        "takes their `name`) and `bootedFrom`. Only a `running` sandbox " +
+        "accepts commands (exec/files/prompts resume a `paused` one on " +
+        "their own). `waitSeconds` + `until` long-poll for a status, e.g. " +
+        "after `create_sandbox`. `idle`: when the server auto-pauses it " +
+        "(`pausesAt`; `mode: observe` = only would); " +
+        "`sandbox_lifecycle` action=keep_awake postpones. Without `id`: " +
+        "`{sandboxes}`, newest first (id, status, name, repos, createdAt, " +
+        "idle), optionally filtered by `status` and `metadata`.",
+      inputSchema: {
+        id: z
+          .string()
+          .optional()
+          .describe(
+            "Sandbox to read (from create_sandbox / this tool's list). " +
+              "Omit to list sandboxes.",
+          ),
+        status: z
+          .enum(STATUSES)
+          .optional()
+          .describe("List only: sandboxes in this status"),
+        metadata: z
+          .record(z.string(), z.string())
+          .optional()
+          .describe(
+            "List only: sandboxes whose metadata holds every one of " +
+              "these pairs",
+          ),
+        verbose: z
+          .boolean()
+          .optional()
+          .describe(
+            "One sandbox only: also return `metadata` and which processes " +
+              "gate each URL. Rarely needed.",
+          ),
+        waitSeconds: waitSecondsSchema(
+          "until the sandbox reaches `until` (or settles elsewhere: error, " +
+            "stopped, paused with no resume running); one sandbox only",
+          "0 (return at once)",
+        ),
+        until: z
+          .enum(STATUSES)
+          .optional()
+          .describe(
+            "With waitSeconds: the status to wait for (default running)",
+          ),
+      },
+      outputSchema: {
+        id: z.string().optional(),
+        status: z.string().optional(),
+        sandboxes: z.array(z.object({}).passthrough()).optional(),
+      },
+      annotations: { readOnlyHint: true, openWorldHint: false },
+    },
+    safeTool(
+      "get_sandbox",
+      async ({ id, status, metadata, verbose, waitSeconds, until }) => {
+        if (id !== undefined) {
+          rejectParams(
+            { status, metadata },
+            "only filters the sandbox list (omit `id` to list)",
+          );
+          // A create job that has not landed its record yet is `creating`,
+          // not "not found".
+          const pending = () => sandboxOps.pendingCreate(user.id, id);
+          if (runtime.getLabels(id) !== undefined || !pending()) guard(id);
+
+          const target = until ?? "running";
+          const deadline = Date.now() + (waitSeconds ?? 0) * 1000;
+          for (;;) {
+            const current = runtime.getStatus(id);
+            const settled =
+              current === undefined
+                ? !pending()
+                : current === target ||
+                  current === "error" ||
+                  current === "stopped" ||
+                  (current === "paused" && !sandboxOps.isResuming(id));
+            if (settled || Date.now() >= deadline) break;
+            await sleep(POLL_MS);
+          }
+          if (runtime.getStatus(id) === undefined) {
+            if (pending()) return text({ id, status: "creating" });
+            guard(id);
+          }
+          return text(
+            sandboxView(
+              await runtime.get(id),
+              verbose,
+              container.idle.summary(id),
+            ),
+          );
+        }
+
+        rejectParams(
+          { verbose, waitSeconds, until },
+          "only applies when reading one sandbox (pass `id`)",
+        );
+        const all = container.idle.decorate(
+          accessibleSandboxes(container, user.id, runtime.list(metadata)),
+        );
+        const rows = (status ? all.filter((s) => s.status === status) : all)
+          .map((s) => {
+            const name = s.annotations?.[SANDBOX_NAME_ANNOTATION];
+            return {
+              id: s.id,
+              status: s.status,
+              ...(name ? { name } : {}),
+              createdAt: s.createdAt,
+              ...(s.repos?.length ? { repos: s.repos.map((r) => r.url) } : {}),
+              ...(s.idle ? { idle: s.idle } : {}),
+            };
+          })
+          .sort((a, b) => b.createdAt.localeCompare(a.createdAt));
+        return text({ sandboxes: rows });
+      },
+    ),
+  );
 
   server.registerTool(
     "create_sandbox",
     {
       title: "Create sandbox",
       description:
-        "Boot a new sandbox and wait until it is up (can take a minute or " +
-        "more). Returns its `id` and public `urls`; use `get_sandbox` for " +
-        "process health and ssh, then `exec`, `patch_files` or " +
-        "`send_prompt`. Your org's secrets and policy and your " +
-        "auto-included toolboxes (see `list_toolboxes`) are applied " +
-        "automatically. Minimal call: " +
+        "Start booting a sandbox and return at once `{id, status: " +
+        "'creating', jobId}` (a minute or more to boot). Then `get_sandbox` " +
+        "with `waitSeconds` and `until=running`. Pass `name` to make a " +
+        "retry safe: your existing sandbox with that name is returned " +
+        "(`existing: true`) instead of a second one. Your org's secrets " +
+        "and auto-included toolboxes apply automatically; see `whoami` for " +
+        "images, toolboxes and prebuilds. Minimal: " +
         '`{"spec":{"source":{"image":"dev-base"}}}`.',
       inputSchema: {
         spec: z
           .record(z.string(), z.unknown())
           .describe(
-            "SandboxSpec. `source` is required: {image} (a base image name, " +
-              "see `manage_prebuilds` / server default `dev-base`) or " +
-              "{snapshot} (a prebuild/snapshot `ref`). Optional: " +
+            "SandboxSpec. `source` is required: {image} (a base image name) " +
+              "or {snapshot} (a prebuild/snapshot `ref`). Optional: " +
               "`resources` {vcpus, memoryMb, diskGb} (server defaults when " +
               'omitted), `env` (name → string or {"$secret":"NAME"} — the ' +
               "only way to pass a secret), `files` [{path, content, mode?, " +
               "owner?}], `processes` [{name, command, cwd?, env?, primary?, " +
               "readiness?, restart?, lazy?}], `ports` [{name, port, " +
-              "public?}], `hooks`, `caches`, `timeoutSeconds`, `metadata`, " +
-              "`annotations`. Do NOT put `toolboxes`, `prebuild`, `repo` or " +
-              "`orgId` in here; they are separate arguments.",
+              "public?, auth?}], `hooks`, `caches`, `timeoutSeconds`, " +
+              "`metadata`, `annotations`. Do NOT put `toolboxes`, `prebuild`, " +
+              "`repo` or `orgId` in here; they are separate arguments.",
           ),
+        name: z
+          .string()
+          .min(1)
+          .max(SANDBOX_NAME_MAX_LENGTH)
+          .optional()
+          .describe("Display name; also the idempotency key for retries"),
         toolboxes: z
           .array(z.string())
           .optional()
           .describe(
-            "Extra toolbox selectors to apply (`selector` from " +
-              "`list_toolboxes`, e.g. tb/org/<orgId>/<slug>). Auto-included " +
-              "toolboxes are applied without listing them.",
+            "Extra toolbox selectors to apply (`selector` from `whoami`, " +
+              "e.g. tb/<toolboxId>). Auto-included toolboxes are applied " +
+              "without listing them.",
           ),
         prebuild: z
           .record(z.string(), z.unknown())
@@ -186,120 +305,64 @@ export function registerSandboxTools(
           .optional()
           .describe(
             "Organization to run in (`orgs[].orgId` from `whoami`). " +
-              "Default: `defaultOrgId` from `whoami`.",
+              "Default: `defaultOrgId`.",
           ),
       },
-    },
-    safeTool(async ({ spec, toolboxes, prebuild, repo, orgId }) => {
-      // Same boundary validation Elysia's schema guard gives the HTTP route.
-      const body = parseSpec(
-        CreateSandboxRequestSchema,
-        {
-          ...spec,
-          ...(toolboxes ? { toolboxes } : {}),
-          ...(prebuild ? { prebuild } : {}),
-          ...(repo ? { repo } : {}),
-          ...(orgId ? { orgId } : {}),
-        },
-        "CreateSandboxRequest",
-      );
-      const created = await createSandboxForUser(container, user, body);
-      // Only what the agent acts on next: the id and the openable URLs. The
-      // generated credentials, pod IP and host keys stay server-side.
-      return text({
-        id: created.id,
-        urls: splitUrls(created.urls).urls.map(({ name, url }) => ({
-          name,
-          url,
-        })),
-      });
-    }),
-  );
-
-  server.registerTool(
-    "get_sandbox",
-    {
-      title: "Get a sandbox, or list sandboxes",
-      description:
-        "With `id`: read that sandbox's status, openable `urls` (`ready` = " +
-        "the process behind it is up), `ssh` command, and live `processes` " +
-        "(their `name` is what `manage_process` takes). Check this before " +
-        "`exec`: only a `running` sandbox accepts commands; `paused` or " +
-        "`error` ones need `sandbox_lifecycle` action=resume. `idle` " +
-        "(running sandboxes, when the server auto-pauses idle ones): " +
-        "`state`, `lastActiveAt` and `pausesAt`, when it will be paused if " +
-        "nobody uses it (`mode: observe`: only would be); " +
-        "`sandbox_lifecycle` action=keep_awake postpones that. Without " +
-        "`id`: list all sandboxes (id, status, name, repos, creation " +
-        "date, idle), newest first, optionally filtered by `status` and " +
-        "`metadata`; summaries only, call again with an `id` for URLs and " +
-        "process health.",
-      inputSchema: {
-        id: z
-          .string()
-          .optional()
-          .describe(
-            "Sandbox to read (from create_sandbox / this tool's list). " +
-              "Omit to list sandboxes.",
-          ),
-        status: z
-          .enum(["creating", "running", "paused", "error"])
-          .optional()
-          .describe("List only: sandboxes in this status"),
-        metadata: z
-          .record(z.string(), z.string())
-          .optional()
-          .describe(
-            "List only: sandboxes whose metadata holds every one of " +
-              "these pairs",
-          ),
-        verbose: z
-          .boolean()
-          .optional()
-          .describe(
-            "One sandbox only: also return `metadata` and which processes " +
-              "gate each URL. Rarely needed.",
-          ),
+      outputSchema: {
+        id: z.string(),
+        status: z.string(),
+        jobId: z.string().optional(),
+        existing: z.boolean().optional(),
+      },
+      annotations: {
+        readOnlyHint: false,
+        destructiveHint: false,
+        idempotentHint: true,
+        openWorldHint: false,
       },
     },
-    safeTool(async ({ id, status, metadata, verbose }) => {
-      if (id !== undefined) {
-        rejectParams(
-          { status, metadata },
-          "only filters the sandbox list (omit `id` to list)",
+    safeTool(
+      "create_sandbox",
+      async ({ spec, name, toolboxes, prebuild, repo, orgId }) => {
+        if (name) {
+          const existing = sandboxOps.findNamed(user.id, name);
+          if (existing) return text({ ...existing, existing: true });
+        }
+        const annotations = spec.annotations;
+        if (
+          annotations !== undefined &&
+          (typeof annotations !== "object" || annotations === null)
+        ) {
+          throw new ValidationError("`spec.annotations` must be an object");
+        }
+        // Same boundary validation Elysia's schema guard gives the HTTP route.
+        const body = parseSpec(
+          CreateSandboxRequestSchema,
+          {
+            ...spec,
+            ...(name
+              ? {
+                  annotations: {
+                    ...annotations,
+                    [SANDBOX_NAME_ANNOTATION]: name,
+                  },
+                }
+              : {}),
+            ...(toolboxes ? { toolboxes } : {}),
+            ...(prebuild ? { prebuild } : {}),
+            ...(repo ? { repo } : {}),
+            ...(orgId ? { orgId } : {}),
+          },
+          "CreateSandboxRequest",
         );
-        guard(id);
-        return text(
-          sandboxView(
-            await runtime.get(id),
-            verbose,
-            container.idle.summary(id),
-          ),
-        );
-      }
-
-      rejectParams(
-        { verbose },
-        "only applies when reading one sandbox (pass `id`)",
-      );
-      const all = container.idle.decorate(
-        accessibleSandboxes(container, user.id, runtime.list(metadata)),
-      );
-      const rows = (status ? all.filter((s) => s.status === status) : all)
-        .map((s) => {
-          const name = s.annotations?.[SANDBOX_NAME_ANNOTATION];
-          return {
-            id: s.id,
-            status: s.status,
-            ...(name ? { name } : {}),
-            createdAt: s.createdAt,
-            ...(s.repos?.length ? { repos: s.repos.map((r) => r.url) } : {}),
-            ...(s.idle ? { idle: s.idle } : {}),
-          };
-        })
-        .sort((a, b) => b.createdAt.localeCompare(a.createdAt));
-      return text(rows);
-    }),
+        const job = sandboxOps.startCreate(user, body);
+        return text({
+          id: job.metadata?.sandboxId,
+          status: "creating",
+          jobId: job.id,
+        });
+      },
+    ),
   );
 
   server.registerTool(
@@ -307,27 +370,19 @@ export function registerSandboxTools(
     {
       title: "Manage sandbox lifecycle",
       description:
-        "`pause` snapshots the sandbox and releases its compute (returns " +
-        "the `snapshot` ref); `resume` brings a paused (or errored) one " +
-        "back and returns it like `get_sandbox`; `snapshot` saves the disk " +
-        "without pausing (returns `snapshot`, usable as `spec.source." +
-        "snapshot`); `fork` snapshots it and boots an independent copy " +
-        "owned by you (your git identity), in the same org, and returns the " +
-        "copy's `id` and `urls` (waits until it is up); `destroy` deletes it " +
-        "permanently and irreversibly, with no confirmation; `keep_awake` " +
-        "exempts it from idle auto-pause for `hours` (0 clears it), within " +
-        "the server's limit, e.g. before leaving a long job running unattended. " +
-        "pause/resume/fork can take minutes.",
+        "`pause` snapshots the sandbox and releases its compute; `resume` " +
+        "brings a paused (or errored) one back; `snapshot` saves the disk " +
+        "without pausing (the ref is usable as `spec.source.snapshot`); " +
+        "`fork` snapshots it and boots an independent copy owned by you, " +
+        "same org, returning `{id, status:'creating', jobId}` at once " +
+        "(then `get_sandbox` with `waitSeconds`); `keep_awake` exempts it " +
+        "from idle auto-pause for `hours` (0 clears), within the server's " +
+        "limit. pause/resume/snapshot wait up to `waitSeconds` and return " +
+        "the result (`snapshot` ref, status); if still working you get " +
+        "`{id, status:'working', jobId}`: poll `get_sandbox` with `until`.",
       inputSchema: {
         id: z.string().describe("Sandbox id"),
-        action: z.enum([
-          "pause",
-          "resume",
-          "snapshot",
-          "fork",
-          "destroy",
-          "keep_awake",
-        ]),
+        action: z.enum(["pause", "resume", "snapshot", "fork", "keep_awake"]),
         name: z
           .string()
           .max(SANDBOX_NAME_MAX_LENGTH)
@@ -338,258 +393,99 @@ export function registerSandboxTools(
           .min(0)
           .optional()
           .describe("keep_awake only: how long, in hours (0 clears)"),
+        waitSeconds: waitSecondsSchema(
+          "for pause/resume/snapshot to finish",
+          String(LIFECYCLE_DEFAULT_WAIT_SECONDS),
+        ),
+      },
+      annotations: {
+        readOnlyHint: false,
+        destructiveHint: false,
+        idempotentHint: true,
+        openWorldHint: false,
       },
     },
-    safeTool(async ({ id, action, name, hours }) => {
-      guard(id);
-      if (action !== "fork") rejectParams({ name }, "only applies to `fork`");
-      if (action !== "keep_awake") {
-        rejectParams({ hours }, "only applies to `keep_awake`");
-      }
-      switch (action) {
-        case "keep_awake": {
-          if (hours === undefined) {
-            throw new ValidationError("keep_awake needs `hours` (0 clears)");
+    safeTool(
+      "sandbox_lifecycle",
+      async ({ id, action, name, hours, waitSeconds }) => {
+        guard(id);
+        if (action !== "fork") rejectParams({ name }, "only applies to `fork`");
+        if (action !== "keep_awake") {
+          rejectParams({ hours }, "only applies to `keep_awake`");
+        }
+        if (action === "fork" || action === "keep_awake") {
+          rejectParams(
+            { waitSeconds },
+            "only applies to pause/resume/snapshot",
+          );
+        }
+        switch (action) {
+          case "keep_awake": {
+            if (hours === undefined) {
+              throw new ValidationError("keep_awake needs `hours` (0 clears)");
+            }
+            const until =
+              hours === 0
+                ? null
+                : new Date(Date.now() + hours * 3_600_000).toISOString();
+            const stored = sandboxOps.keepAwake(id, until);
+            return text({ id, keepAwakeUntil: stored ?? null });
           }
-          const until =
-            hours === 0
-              ? null
-              : new Date(Date.now() + hours * 3_600_000).toISOString();
-          const stored = container.idle.setKeepAwake(id, until);
-          return text({ id, keepAwakeUntil: stored ?? null });
+          case "fork": {
+            const job = sandboxOps.startFork(user, id, { name });
+            return text({
+              id: job.metadata?.sandboxId,
+              status: "creating",
+              jobId: job.id,
+              forkOf: id,
+            });
+          }
+          default: {
+            const { job, done } = sandboxOps.startLifecycle(
+              action,
+              id,
+              user.id,
+            );
+            const wait = (waitSeconds ?? LIFECYCLE_DEFAULT_WAIT_SECONDS) * 1000;
+            const outcome = await settledWithin(done, wait);
+            if (!outcome.settled) {
+              return text({ id, status: "working", jobId: job.id });
+            }
+            if (action === "resume") {
+              return text(sandboxView(await runtime.get(id)));
+            }
+            const { ref } = outcome.value as { ref: string };
+            return text(
+              action === "pause"
+                ? { id, status: "paused", snapshot: ref }
+                : { id, snapshot: ref },
+            );
+          }
         }
-        case "fork": {
-          const copy = await forkSandboxForUser(container, user, id, { name });
-          return text({
-            id: copy.id,
-            urls: splitUrls(copy.urls).urls.map(({ name, url }) => ({
-              name,
-              url,
-            })),
-          });
-        }
-        case "pause": {
-          const { ref } = await runtime.pause(id);
-          return text({ id, status: "paused", snapshot: ref });
-        }
-        case "resume":
-          // No files/env overrides via MCP (unlike the HTTP route, which
-          // also refreshes the owner's git credentials from a resume body) —
-          // plain resume; the persisted spec + last-known files still apply.
-          return text(sandboxView(await runtime.resume(id)));
-        case "snapshot": {
-          const { ref } = await runtime.snapshot(id);
-          return text({ id, snapshot: ref });
-        }
-        case "destroy":
-          await runtime.destroy(id);
-          return text({ id, status: "destroyed" });
-      }
-    }),
+      },
+    ),
   );
 
   server.registerTool(
-    "exec",
+    "destroy_sandbox",
     {
-      title: "Exec",
+      title: "Destroy sandbox",
       description:
-        "Run a one-shot shell command in a running sandbox and return " +
-        "`exitCode`, `stdout` and `stderr`. A non-zero exit code is a " +
-        "normal result, not an error. Runs as the `dev` user in its home " +
-        "by default. Output is cut to its last `maxOutputChars` " +
-        "(`truncated: true` when so). For anything long-running or " +
-        "that outlives the call, use `manage_process` or `send_prompt` " +
-        "instead of a long `timeoutMs`.",
-      inputSchema: {
-        id: z.string().describe("Sandbox id"),
-        command: z.string().describe("Shell command line"),
-        cwd: z.string().optional().describe("Absolute working directory"),
-        timeoutMs: z
-          .number()
-          .int()
-          .min(1)
-          .max(EXEC_MAX_TIMEOUT_MS)
-          .optional()
-          .describe(
-            `Kill the command after this many milliseconds (default ` +
-              `${EXEC_DEFAULT_TIMEOUT_MS}, max ${EXEC_MAX_TIMEOUT_MS}). Your ` +
-              "MCP client may give up on the call sooner.",
-          ),
-        user: z
-          .enum(["dev", "root"])
-          .optional()
-          .describe("Run as this user (default dev)"),
-        maxOutputChars: z
-          .number()
-          .int()
-          .min(100)
-          .optional()
-          .describe(
-            `Keep at most this many trailing characters of each of stdout ` +
-              `and stderr (default ${EXEC_DEFAULT_MAX_CHARS}).`,
-          ),
+        "Delete a sandbox permanently and irreversibly, with no confirmation.",
+      inputSchema: { id: z.string().describe("Sandbox id") },
+      annotations: {
+        readOnlyHint: false,
+        destructiveHint: true,
+        idempotentHint: true,
+        openWorldHint: false,
       },
     },
-    safeTool(async ({ id, maxOutputChars, timeoutMs, ...req }) => {
+    safeTool("destroy_sandbox", async ({ id }) => {
       guard(id);
-      const result = await runtime.exec(id, {
-        ...req,
-        timeoutMs: timeoutMs ?? EXEC_DEFAULT_TIMEOUT_MS,
-      });
-      const max = maxOutputChars ?? EXEC_DEFAULT_MAX_CHARS;
-      const stdout = keepTail(result.stdout, max);
-      const stderr = keepTail(result.stderr, max);
-      return text({
-        exitCode: result.exitCode,
-        stdout: stdout.text,
-        stderr: stderr.text,
-        ...(stdout.truncated || stderr.truncated ? { truncated: true } : {}),
-      });
+      await sandboxOps.destroy(id, user.id);
+      return text({ id, status: "destroyed" });
     }),
   );
 
-  server.registerTool(
-    "manage_process",
-    {
-      title: "Manage process",
-      description:
-        "Start, stop, restart, or read the logs of a supervised process in " +
-        "a running sandbox. `name` comes from `get_sandbox` `processes`. " +
-        "`start` returns before the process is ready: poll `get_sandbox`. " +
-        "`logs` returns the most recent output (`truncated: true` when " +
-        "older output was cut).",
-      inputSchema: {
-        id: z.string().describe("Sandbox id"),
-        name: z.string().describe("Process name (from get_sandbox)"),
-        action: z.enum(["start", "stop", "restart", "logs"]),
-        maxChars: z
-          .number()
-          .int()
-          .min(100)
-          .optional()
-          .describe(
-            `action=logs only: trailing characters to return (default ` +
-              `${LOGS_DEFAULT_MAX_CHARS}).`,
-          ),
-      },
-    },
-    safeTool(async ({ id, name, action, maxChars }) => {
-      guard(id);
-      switch (action) {
-        case "logs":
-          return text({
-            name,
-            ...(await readLogTail(
-              (offset, limit) => runtime.processLogs(id, name, offset, limit),
-              maxChars ?? LOGS_DEFAULT_MAX_CHARS,
-            )),
-          });
-        case "start":
-          await runtime.processAction(id, name, "start");
-          return text({ name, status: "started" });
-        case "stop":
-          await runtime.processAction(id, name, "stop");
-          return text({ name, status: "stopped" });
-        case "restart":
-          await runtime.processAction(id, name, "stop");
-          await runtime.processAction(id, name, "start");
-          return text({ name, status: "restarted" });
-      }
-    }),
-  );
-
-  server.registerTool(
-    "patch_files",
-    {
-      title: "Write files",
-      description:
-        "Write (create or overwrite) files in a running sandbox. Returns " +
-        "how many were `written` and a `failed` list with the reason for " +
-        "each file that could not be written (an error result when any " +
-        "failed). Running processes are not restarted: use " +
-        "`manage_process` action=restart if they need to reload. Binary " +
-        "files (images, archives) go in as base64 with encoding=base64.",
-      inputSchema: {
-        id: z.string().describe("Sandbox id"),
-        files: z
-          .array(
-            z.object({
-              path: z.string().describe("Absolute path in the sandbox"),
-              content: z
-                .string()
-                .describe(
-                  "Full file content: its text, or its bytes as base64 " +
-                    "with encoding=base64",
-                ),
-              encoding: z
-                .enum(["utf8", "base64"])
-                .optional()
-                .describe(
-                  "utf8 (default) or base64 (binary content, e.g. an image)",
-                ),
-              mode: z
-                .string()
-                .optional()
-                .describe('Octal permission string, e.g. "644" or "755"'),
-              owner: z
-                .enum(["dev", "root"])
-                .optional()
-                .describe(
-                  "File owner (default dev), also of directories created for it",
-                ),
-            }),
-          )
-          .min(1),
-      },
-    },
-    safeTool(async ({ id, files }) => {
-      guard(id);
-      const { results } = await runtime.patchFiles(id, files);
-      const failed = results
-        .filter((r) => !r.success)
-        .map((r) => ({ path: r.path, error: r.error ?? "unknown error" }));
-      return text(
-        { written: results.length - failed.length, failed },
-        failed.length > 0,
-      );
-    }),
-  );
-
-  server.registerTool(
-    "expose_port",
-    {
-      title: "Expose port",
-      description:
-        "Expose a port of a running sandbox after boot. `public` defaults " +
-        "to true: a public https `url` (`<name>-<id>.<domain>`) is created " +
-        "that anyone with the link can open. Pass public=false to only " +
-        "record the port. On the local Docker backend nothing is exposed " +
-        "and no `url` is returned.",
-      inputSchema: {
-        id: z.string().describe("Sandbox id"),
-        name: z
-          .string()
-          .describe(
-            "Port name; becomes the hostname prefix (lowercase, a-z0-9-)",
-          ),
-        port: z.number().int().min(1).max(65535),
-        public: z
-          .boolean()
-          .optional()
-          .describe("Create a public URL (default true)"),
-      },
-    },
-    safeTool(async ({ id, name, port, public: isPublic }) => {
-      guard(id);
-      await runtime.addPort(id, { name, port, public: isPublic });
-      const state = await runtime.get(id);
-      const url = state.urls.find((u) => u.name === name)?.url;
-      return text({
-        name,
-        port,
-        public: isPublic ?? true,
-        ...(url ? { url } : {}),
-      });
-    }),
-  );
+  registerSandboxIoTools(server, container, user);
 }

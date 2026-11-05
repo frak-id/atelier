@@ -1,5 +1,5 @@
 //! Bytes the agent itself moves on its control ports (9998 config/process
-//! API, 9997 attach bridge, 7681 terminal relay): the server's traffic,
+//! API, 9997 attach bridge and terminal relay): the server's traffic,
 //! never the sandbox's activity. The interface counters (`netdev.rs`) can't
 //! tell connections apart, so the network sampler subtracts these totals.
 //!

@@ -38,7 +38,7 @@ export function runtimeSurfaceOf(from: RuntimeSurface): RuntimeSurface {
 }
 
 /**
- * Which declared processes gate a port (design ui-evolution.md §4.1): every
+ * Which declared processes gate a port: every
  * process whose `readiness.port` targets this port, plus a same-name
  * fallback (covers processes without an explicit readiness probe) —
  * deduped. A URL can depend on more than one process (e.g. `browser` needs

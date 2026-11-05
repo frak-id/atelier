@@ -256,97 +256,6 @@ describe("get with waitMs", () => {
     expect(Date.now() - started).toBeGreaterThanOrEqual(50);
     expect(view.status).toBe("running");
   });
-
-  test("returns early when the agent needs a permission decision", async () => {
-    const fake = makeFake();
-    const service = makeService(fake);
-    const { taskId } = await service.dispatchTask(OWNER, {
-      sandboxId: SANDBOX,
-      prompt: "x",
-    });
-
-    const pending = service.get(OWNER, taskId, { waitMs: 5_000 });
-    setTimeout(() => fake.askPermission(), 30);
-    const view = await pending;
-
-    expect(view.status).toBe("waiting_permission");
-    expect(view.pendingPermissions).toEqual([
-      { id: "perm-1", sessionId: SESSION, permission: "Run a command" },
-    ]);
-  });
-});
-
-describe("permissions", () => {
-  test("replyPermission answers the request and the turn resumes", async () => {
-    const fake = makeFake();
-    const service = makeService(fake);
-    const { taskId } = await service.dispatchTask(OWNER, {
-      sandboxId: SANDBOX,
-      prompt: "x",
-    });
-    fake.askPermission("perm-1");
-
-    const view = await service.replyPermission(
-      OWNER,
-      taskId,
-      "perm-1",
-      "always",
-    );
-
-    expect(fake.replies).toEqual([{ id: "perm-1", reply: "always" }]);
-    expect(view.pendingPermissions).toEqual([]);
-    expect(view.status).toBe("running");
-  });
-
-  test("cannot answer a request that belongs to another session", async () => {
-    const fake = makeFake();
-    const service = makeService(fake);
-    const { taskId } = await service.dispatchTask(OWNER, {
-      sandboxId: SANDBOX,
-      prompt: "x",
-    });
-    fake.askPermission("foreign", "someone-elses-session");
-
-    await expect(
-      service.replyPermission(OWNER, taskId, "foreign", "once"),
-    ).rejects.toBeInstanceOf(NotFoundError);
-    expect(fake.replies).toEqual([]);
-    // ...and it doesn't count toward this task's status either.
-    expect((await service.get(OWNER, taskId)).status).toBe("running");
-  });
-
-  test("an unknown request id is NotFound", async () => {
-    const fake = makeFake();
-    const service = makeService(fake);
-    const { taskId } = await service.dispatchTask(OWNER, {
-      sandboxId: SANDBOX,
-      prompt: "x",
-    });
-    await expect(
-      service.replyPermission(OWNER, taskId, "nope", "once"),
-    ).rejects.toBeInstanceOf(NotFoundError);
-  });
-
-  test("autoApprove allows each request once, only for its own session", async () => {
-    const fake = makeFake();
-    const service = makeService(fake);
-    const { taskId } = await service.dispatchTask(OWNER, {
-      sandboxId: SANDBOX,
-      prompt: "x",
-      autoApprove: true,
-    });
-
-    fake.askPermission("perm-1");
-    fake.askPermission("perm-2");
-    fake.askPermission("foreign", "someone-elses-session");
-
-    expect(fake.replies).toEqual([
-      { id: "perm-1", reply: "once" },
-      { id: "perm-2", reply: "once" },
-    ]);
-    expect(fake.permissions.map((p) => p.id)).toEqual(["foreign"]);
-    expect((await service.get(OWNER, taskId)).autoApprove).toBe(true);
-  });
 });
 
 describe("sendPrompt", () => {
@@ -454,20 +363,6 @@ describe("cancel and close", () => {
     );
   });
 
-  test("cancel rejects the task's pending permission requests", async () => {
-    const fake = makeFake();
-    const service = makeService(fake);
-    const { taskId } = await service.dispatchTask(OWNER, {
-      sandboxId: SANDBOX,
-      prompt: "x",
-    });
-    fake.askPermission("perm-1");
-
-    await service.cancel(OWNER, taskId);
-
-    expect(fake.replies).toEqual([{ id: "perm-1", reply: "reject" }]);
-  });
-
   test("cancel with nothing in flight is a conflict", async () => {
     const fake = makeFake();
     const service = makeService(fake);
@@ -489,13 +384,10 @@ describe("cancel and close", () => {
       sandboxId: SANDBOX,
       prompt: "x",
     });
-    expect(fake.listeners.size).toBe(1);
-
     await service.close(OWNER, taskId);
 
     expect(fake.state.cancelled).toBe(1);
     expect(fake.state.closed).toBe(1);
-    expect(fake.listeners.size).toBe(0);
     await expect(service.get(OWNER, taskId)).rejects.toBeInstanceOf(
       NotFoundError,
     );
@@ -541,9 +433,6 @@ describe("ownership and listing", () => {
     await expect(service.close(intruder, taskId)).rejects.toBeInstanceOf(
       NotFoundError,
     );
-    await expect(
-      service.replyPermission(intruder, taskId, "p", "once"),
-    ).rejects.toBeInstanceOf(NotFoundError);
     expect(service.list(intruder)).toEqual([]);
     // The owner's task is untouched.
     expect((await service.get(OWNER, taskId)).status).toBe("running");
@@ -716,7 +605,6 @@ describe("idle parking", () => {
 
     await Bun.sleep(150);
 
-    expect(fake.listeners.size).toBe(0);
     await expect(service.get(OWNER, taskId)).rejects.toBeInstanceOf(
       NotFoundError,
     );
@@ -774,5 +662,137 @@ describe("idle parking", () => {
     }
 
     expect(fake.state.closed).toBe(0);
+  });
+});
+
+describe("persisted tasks", () => {
+  test("a finished turn stores the reply and the sandbox's git result", async () => {
+    const fake = makeFake();
+    fake.state.gitOutput =
+      "branch=feat/x\nhead=abc123\nahead=2\ndiff=1 file changed, 3 insertions(+)\n";
+    const service = makeService(fake);
+    const { taskId } = await service.dispatchTask(OWNER, {
+      sandboxId: SANDBOX,
+      prompt: "\n  Fix the login bug\nwith details",
+      cwd: "/home/dev/app",
+      source: "mcp",
+    });
+    expect(fake.store.get(taskId)).toMatchObject({
+      status: "running",
+      title: "Fix the login bug",
+      source: "mcp",
+      turnCount: 1,
+    });
+
+    fake.say("fixed it");
+    fake.finish();
+    await tick();
+
+    expect(fake.state.execs[0]?.cwd).toBe("/home/dev/app");
+    expect(fake.store.get(taskId)).toMatchObject({
+      status: "idle",
+      lastReply: "fixed it",
+      result: {
+        branch: "feat/x",
+        headSha: "abc123",
+        commitsAhead: 2,
+        diffStat: "1 file changed, 3 insertions(+)",
+      },
+    });
+    const view = await service.get(OWNER, taskId);
+    expect(view.result?.branch).toBe("feat/x");
+  });
+
+  test("a failing git capture never fails the turn", async () => {
+    const fake = makeFake();
+    const service = makeService(fake);
+    fake.deps.runtime.exec = async () => {
+      throw new Error("sandbox unreachable");
+    };
+    const { taskId } = await service.dispatchTask(OWNER, {
+      sandboxId: SANDBOX,
+      prompt: "x",
+    });
+    fake.finish();
+    await tick();
+
+    const view = await service.get(OWNER, taskId);
+    expect(view.status).toBe("idle");
+    expect(view.result).toBeUndefined();
+  });
+
+  test("a restarted server brings the task back parked and reopens it", async () => {
+    const fake = makeFake();
+    fake.state.gitOutput = "branch=main\nhead=abc\n";
+    const before = makeService(fake);
+    const { taskId } = await before.dispatchTask(OWNER, {
+      sandboxId: SANDBOX,
+      prompt: "first",
+    });
+    fake.say("answer one");
+    fake.finish();
+    await tick();
+
+    const after = makeService(fake); // same store, empty memory
+    const view = await after.get(OWNER, taskId);
+    expect(view.status).toBe("idle");
+    expect(view.turnCount).toBe(1);
+    expect(view.turn).toMatchObject({
+      index: 0,
+      status: "completed",
+      prompt: "first",
+      reply: "answer one",
+    });
+    expect(view.result?.branch).toBe("main");
+    await expect(after.get("user-2", taskId)).rejects.toThrow(NotFoundError);
+
+    const next = await after.sendPrompt(OWNER, taskId, "second");
+    expect(fake.opened.at(-1)?.resumeSessionId).toBe(SESSION);
+    expect(next.turn.index).toBe(1);
+    expect(fake.store.get(taskId)?.turnCount).toBe(2);
+  });
+
+  test("a turn left running by a previous process is failed", async () => {
+    const fake = makeFake();
+    const before = makeService(fake);
+    const { taskId } = await before.dispatchTask(OWNER, {
+      sandboxId: SANDBOX,
+      prompt: "x",
+    });
+
+    const after = makeService(fake);
+    const view = await after.get(OWNER, taskId);
+    expect(view.status).toBe("failed");
+    expect(view.turn.error).toContain("restarted");
+  });
+
+  test("closing a task deletes its record", async () => {
+    const fake = makeFake();
+    const service = makeService(fake);
+    const { taskId } = await service.dispatchTask(OWNER, {
+      sandboxId: SANDBOX,
+      prompt: "x",
+    });
+    await service.close(OWNER, taskId);
+    expect(fake.store.get(taskId)).toBeUndefined();
+    expect(() => service.describe(taskId)).toThrow(NotFoundError);
+  });
+
+  test("lists persisted tasks by sandbox, whoever dispatched them", async () => {
+    const fake = makeFake();
+    const service = makeService(fake);
+    await service.dispatchTask(OWNER, { sandboxId: SANDBOX, prompt: "a" });
+    await service.dispatchTask("user-2", { sandboxId: SANDBOX, prompt: "b" });
+
+    expect(service.list(OWNER)).toHaveLength(1);
+    const visible = service.listForSandboxes([SANDBOX], {
+      status: "running",
+    });
+    expect(visible.map((t) => t.title).sort()).toEqual(["a", "b"]);
+    expect(service.listForSandboxes([])).toEqual([]);
+    expect(service.describe(visible[0]?.taskId ?? "")).toMatchObject({
+      status: "running",
+      reply: "",
+    });
   });
 });

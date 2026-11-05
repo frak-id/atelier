@@ -2,8 +2,7 @@ import type { ITheme } from "@xterm/xterm";
 import type { Theme } from "@/providers/theme";
 
 /**
- * xterm theme derived from the Graphite & Alabaster tokens (see
- * apps/console/design/theme-candidates.md — "Terminal Palette"). Keeps the
+ * xterm theme derived from the Graphite & Alabaster tokens. Keeps the
  * terminal visually part of the app in both light and dark mode, instead of
  * the previous hardcoded near-black chrome that clashed with a light app.
  */

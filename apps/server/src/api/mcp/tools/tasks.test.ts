@@ -27,14 +27,19 @@ afterEach(async () => {
 });
 
 /** One MCP client bound to `userId`, over a (possibly shared) task service. */
-async function connect(tasks: AgentTaskService, userId: string) {
+async function connect(
+  tasks: AgentTaskService,
+  userId: string,
+  canAccess: () => boolean = () => true,
+) {
   const server = new McpServer({ name: "test", version: "0" });
   registerTaskTools(
     server,
     {
       tasks,
+      sandboxOps: { ensureRunning: async () => undefined },
       runtime: { getLabels: () => ({ metadata: {}, annotations: {} }) },
-      control: { canAccessSandbox: () => true },
+      control: { canAccessSandbox: canAccess },
     } as unknown as ServerContainer,
     { id: userId } as AuthUser,
   );
@@ -75,6 +80,7 @@ describe("agent task tools", () => {
       server,
       {
         tasks,
+        sandboxOps: { ensureRunning: async () => undefined },
         runtime: { getLabels: () => ({ metadata: {}, annotations: {} }) },
         control: { canAccessSandbox: () => true },
       } as unknown as ServerContainer,
@@ -144,50 +150,56 @@ describe("agent task tools", () => {
     });
 
     const listed = await call("get_task", { sandboxId: SANDBOX });
-    expect(listed.data).toHaveLength(1);
-    expect(listed.data[0]).toMatchObject({
+    expect(listed.data.tasks).toHaveLength(1);
+    expect(listed.data.tasks[0]).toMatchObject({
       taskId,
       turnCount: 2,
       status: "idle",
     });
-    expect(listed.data[0]).not.toHaveProperty("sessionId");
-    expect((await call("get_task", { status: "running" })).data).toEqual([]);
+    expect(listed.data.tasks[0]).not.toHaveProperty("sessionId");
+    expect((await call("get_task", { status: "running" })).data).toEqual({
+      tasks: [],
+    });
 
     expect(await call("manage_task", { taskId, action: "close" })).toEqual({
       isError: false,
       data: { taskId, status: "closed" },
     });
     expect(fake.state.closed).toBe(1);
-    expect((await call("get_task", {})).data).toEqual([]);
+    expect((await call("get_task", {})).data).toEqual({ tasks: [] });
   });
 
-  test("a permission request surfaces and manage_task reply_permission answers it", async () => {
+  test("a task outlives its owner's access to the sandbox", async () => {
     const { fake, tasks } = setup();
-    const call = await connect(tasks, "user-1");
-    const { data } = await call("send_prompt", {
+    let access = true;
+    const call = await connect(tasks, "user-1", () => access);
+    const started = await call("send_prompt", {
       sandboxId: SANDBOX,
       prompt: "x",
     });
-    fake.askPermission("perm-1");
+    const taskId = started.data.taskId as string;
+    fake.finish();
+    expect((await call("get_task", { taskId })).isError).toBe(false);
 
-    const blocked = await call("get_task", { taskId: data.taskId });
-    expect(blocked.data.status).toBe("waiting_permission");
-    expect(blocked.data.pendingPermissions[0]).toMatchObject({
-      requestId: "perm-1",
-    });
+    // Removed from the sandbox's org: the task id no longer opens anything.
+    access = false;
+    const sent = fake.prompts.length;
+    for (const [tool, args] of [
+      ["get_task", { taskId }],
+      ["send_prompt", { taskId, prompt: "more" }],
+      ["manage_task", { taskId, action: "cancel" }],
+      ["manage_task", { taskId, action: "close" }],
+    ] as const) {
+      const res = await call(tool, args);
+      expect(res.isError).toBe(true);
+      expect(res.data.error).toBe("NOT_FOUND");
+    }
+    expect(fake.prompts.length).toBe(sent);
+    expect((await call("get_task", {})).data).toEqual({ tasks: [] });
 
-    const answered = await call("manage_task", {
-      taskId: data.taskId,
-      action: "reply_permission",
-      requestId: "perm-1",
-      decision: "once",
-    });
-    expect(answered.data).toEqual({ taskId: data.taskId, status: "running" });
-    expect(fake.replies).toEqual([{ id: "perm-1", reply: "once" }]);
-
-    // Nothing pending any more: the field is left out, not an empty list.
-    const after = await call("get_task", { taskId: data.taskId });
-    expect(after.data).not.toHaveProperty("pendingPermissions");
+    access = true;
+    expect((await call("get_task", { taskId })).data.status).toBe("idle");
+    expect((await call("get_task", {})).data.tasks).toHaveLength(1);
   });
 
   test("a running turn reports progress, not a reply", async () => {
@@ -304,8 +316,8 @@ describe("agent task tools", () => {
       (await mallory("manage_task", { taskId: data.taskId, action: "close" }))
         .isError,
     ).toBe(true);
-    expect((await mallory("get_task", {})).data).toEqual([]);
-    expect((await alice("get_task", {})).data).toHaveLength(1);
+    expect((await mallory("get_task", {})).data).toEqual({ tasks: [] });
+    expect((await alice("get_task", {})).data.tasks).toHaveLength(1);
   });
 
   test("send_prompt needs exactly one of sandboxId and taskId", async () => {
@@ -341,17 +353,13 @@ describe("agent task tools", () => {
     });
     fake.finish();
 
-    // A silently ignored autoApprove would leave the caller waiting on a
-    // permission prompt it believes is auto-answered.
     const res = await call("send_prompt", {
       taskId: data.taskId,
       prompt: "more",
-      autoApprove: true,
       cwd: "/tmp",
     });
     expect(res.isError).toBe(true);
     expect(res.data).toMatchObject({ error: "VALIDATION_ERROR" });
-    expect(res.data.message).toContain("`autoApprove`");
     expect(res.data.message).toContain("`cwd`");
     expect(tasks.list("user-1")[0]?.turns).toBe(1);
   });
@@ -378,43 +386,34 @@ describe("agent task tools", () => {
     expect(readFilter.data.message).toContain("`status`");
 
     // The valid forms still work after the rejected ones.
-    expect((await call("get_task", { status: "running" })).data).toHaveLength(
-      1,
-    );
+    expect(
+      (await call("get_task", { status: "running" })).data.tasks,
+    ).toHaveLength(1);
     expect((await call("get_task", { taskId: data.taskId })).isError).toBe(
       false,
     );
   });
 
-  test("manage_task checks the params of the chosen action", async () => {
-    const { fake, tasks } = setup();
+  test("manage_task only offers cancel and close", async () => {
+    const { tasks } = setup();
     const call = await connect(tasks, "user-1");
     const { data } = await call("send_prompt", {
       sandboxId: SANDBOX,
       prompt: "x",
     });
-    fake.askPermission("perm-1");
 
-    const missing = await call("manage_task", {
+    // Depending on SDK version an unknown enum value is an isError result
+    // or a thrown protocol error; either way the call must not succeed.
+    const outcome = await call("manage_task", {
       taskId: data.taskId,
       action: "reply_permission",
-      requestId: "perm-1",
-    });
-    expect(missing.isError).toBe(true);
-    expect(missing.data).toMatchObject({ error: "VALIDATION_ERROR" });
-    expect(missing.data.message).toContain("`decision`");
-
-    const stray = await call("manage_task", {
-      taskId: data.taskId,
-      action: "cancel",
-      decision: "reject",
-    });
-    expect(stray.isError).toBe(true);
-    expect(stray.data).toMatchObject({ error: "VALIDATION_ERROR" });
-    // Neither bad call answered the permission or cancelled the turn.
-    expect(fake.replies).toEqual([]);
+    }).then(
+      (r) => r.isError,
+      () => true,
+    );
+    expect(outcome).toBe(true);
     expect((await call("get_task", { taskId: data.taskId })).data.status).toBe(
-      "waiting_permission",
+      "running",
     );
   });
 });

@@ -1,7 +1,7 @@
 # Atelier - dev-base image
 # Minimal development environment with Bun and Git
 # code-server and opencode are materialized into ~/.local/bin by the org
-# toolbox toolset artifact (composed-prebuild-volumes.md), not /opt/shared.
+# toolbox toolset artifact (docs/archive/proposals/composed-prebuild-volumes.md), not /opt/shared.
 #
 # Build: docker build -t atelier/dev-base .
 # Export: docker export $(docker create atelier/dev-base) | tar -C ./rootfs -xf -
@@ -10,7 +10,7 @@
 # fresh operator never has to build it first. Override with
 # `--build-arg AGENT_IMAGE=<ref>` (the server passes `sandbox.agentImage`) to
 # use a private/mirrored agent — e.g. an air-gapped cluster's own registry.
-ARG AGENT_IMAGE=ghcr.io/frak-id/sandbox-agent:latest
+ARG AGENT_IMAGE=ghcr.io/frak-id/sandbox-agent:3.0.2
 FROM ${AGENT_IMAGE} AS agent
 
 # Pin the Debian codename explicitly: dev-browser installs a KasmVNC .deb built
@@ -38,12 +38,12 @@ ENV LC_ALL=C.UTF-8
 # packages toolset artifacts as a read-only blob and picks whichever format
 # the guest kernel can mount, preferring erofs (the CLH guest kernel here
 # ships erofs+overlay+loop but NOT squashfs; a QEMU guest with CONFIG_SQUASHFS
-# would use squashfs) — docs/proposals/toolset-overlay-squashfs.md §3-4.
+# would use squashfs) — docs/archive/proposals/toolset-overlay-squashfs.md §3-4.
 # Both mkfs tools are baked so one image works on either kernel. rsync: stages
 # toolset build/capture path-sets into a scratch root before packaging.
 # e2fsprogs (mkfs.ext4): the workspace PVC is attached as a raw block device;
 # sandbox-boot.sh formats it ext4 and mounts it at /data on first boot
-# (docs/plans/toolset-inplace-update-fix-options.md §3). blkid/mountpoint come
+# (docs/archive/plans/toolset-inplace-update-fix-options.md §3). blkid/mountpoint come
 # from util-linux and cmp (the mkfs guard's zero-probe) from diffutils — both
 # Essential in Debian, so present in -slim. libnss3 (+ libnspr4): headless
 # Chrome (e.g. Remotion's chrome-headless-shell) won't start without it;
@@ -65,7 +65,6 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     procps \
     iproute2 \
     iputils-ping \
-    nfs-common \
     squashfs-tools \
     erofs-utils \
     e2fsprogs \
@@ -77,9 +76,19 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     && find /usr/share/locale -mindepth 1 -maxdepth 1 ! -name 'en*' -exec rm -rf {} + \
     && rm -rf /var/cache/apt
 
+# Build-time curl retries. GitHub release downloads intermittently answer 504
+# from the cluster, including the ones install scripts make (bun.sh/install
+# fetches its zip from GitHub), so a --retry flag alone would not cover them.
+# Every curl reads $CURL_HOME/.curlrc. An ARG is set for RUN steps but not
+# kept in the image's environment, so sandboxes never read this file. Seeds
+# built on dev-base declare the same ARG.
+ARG CURL_HOME=/etc/curl-build
+RUN mkdir -p /etc/curl-build \
+    && printf 'retry = 6\nretry-connrefused\n' > /etc/curl-build/.curlrc
+
 # Layer 2: oras (OCI artifact CLI) — the guest agent shells out to it to
 # push/pull toolset artifacts to/from the in-cluster zot registry
-# (composed-prebuild-volumes.md). Static linux/amd64 binary; no runtime deps.
+# (docs/archive/proposals/composed-prebuild-volumes.md). Static linux/amd64 binary; no runtime deps.
 RUN curl -fsSL -o /tmp/oras.tar.gz "https://github.com/oras-project/oras/releases/download/v${ORAS_VERSION}/oras_${ORAS_VERSION}_linux_amd64.tar.gz" \
     && tar -xzf /tmp/oras.tar.gz -C /usr/local/bin oras \
     && chmod +x /usr/local/bin/oras \
@@ -93,8 +102,8 @@ RUN curl -fsSL -o /tmp/oras.tar.gz "https://github.com/oras-project/oras/release
 # the same host key. `sandbox-boot.sh` runs `ssh-keygen -A` fresh on every
 # boot instead (per-sandbox, per-boot keys, nothing secret distributed), and
 # the agent's `GET /ssh/host-keys` lets the server pin the real key into the
-# sshpiper `Pipe` / in-server proxy — see docs/proposals/portable-runtime-
-# backends.md §5 and apps/agent/src/ssh.rs.
+# in-server proxy — see docs/archive/proposals/portable-runtime-backends.md §5
+# and apps/agent/src/ssh.rs.
 RUN usermod -l dev -d /home/dev -m node \
     && groupmod -n dev node \
     && mkdir -p /var/run/sshd \
@@ -120,7 +129,7 @@ RUN mkdir -p /etc/sandbox/secrets /var/log/sandbox \
     && chmod 775 /etc/sandbox /etc/sandbox/secrets /var/log/sandbox /.atelier
 
 # Layer 6: Profile scripts + config files (most likely to change)
-# Toolset artifacts (composed-prebuild-volumes.md) materialize binaries into
+# Toolset artifacts (docs/archive/proposals/composed-prebuild-volumes.md) materialize binaries into
 # ~/.local/bin — the org toolbox (opencode, code-server) lands there instead
 # of the retired /opt/shared PVC. A login shell (supervisor spawns via
 # `bash -l -c`) sources this, so PATH reaches every supervised process,
@@ -142,7 +151,7 @@ COPY --from=agent /atelier-agent /usr/local/bin/sandbox-agent
 RUN chmod +x /usr/local/bin/sandbox-agent
 
 # /home/skel is the read-only overlay lower for /home/dev
-# (docs/proposals/toolset-overlay-squashfs.md §3): the PVC no longer mounts
+# (docs/archive/proposals/toolset-overlay-squashfs.md §3): the PVC no longer mounts
 # at /home/dev (it mounts at /data), and /home/dev must be an EMPTY mountpoint
 # for the overlay the entrypoint/agent assemble on top of it — so the image's
 # original home contents move to /home/skel and stay there permanently (never

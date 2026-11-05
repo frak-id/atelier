@@ -1,9 +1,9 @@
 /**
  * The runtime's backend port. `RuntimeService` keeps the backend-neutral logic
  * (op-locks, content-hash dedup, phase ordering, GC guards, snapshot/toolset
- * bookkeeping); every leaf container/disk/URL call goes through this seam, so a
- * Docker or local-process backend can replace the Kubernetes one without
- * touching policy. See docs/proposals/portable-runtime-backends.md §3.
+ * bookkeeping); every leaf container/disk/URL call goes through this seam, so
+ * the Docker backend (local mode) can replace the Kubernetes one without
+ * touching policy.
  */
 import type { PortEntry, SandboxSpec } from "@atelier/spec";
 import type { AgentClient } from "../agent/index.ts";
@@ -26,26 +26,19 @@ export interface AgentEndpoint {
   host: string;
   /** HTTP control-plane port. */
   agentPort: number;
-  /** WS attach-bridge port. */
+  /** WS port: process attach (`/attach/:name`) and terminals (`/terminal/:id`). */
   attachPort: number;
-  /** WS terminal-multiplexer port. */
-  terminalPort: number;
 }
 
 /**
- * Storage plane: disk snapshot / clone / existence. Varies independently of
- * the sandbox orchestrator (CSI VolumeSnapshot today; btrfs/zfs/reflink/copy
- * or an OCI-tar materialization later — see proposal §5-6).
+ * Storage plane: disk snapshot / clone / existence (CSI VolumeSnapshot on
+ * Kubernetes, Docker volume copies in local mode).
  */
 export interface VolumeBackend {
   /**
    * Snapshot `pvcName` into `ref` and wait until it is ready. Idempotent on
    * `ref`: a forced rebuild can resolve to a name that already exists, so any
    * prior snapshot of that name is replaced instead of colliding.
-   *
-   * NOTE (proposal §5, step 3): this returns `void` today because the ref is
-   * computed by the caller and passed in. An OCI-tar backend will need to
-   * return what it produced (a ref/locator) — expect this signature to grow.
    */
   snapshot(
     pvcName: string,
@@ -55,6 +48,12 @@ export interface VolumeBackend {
   ): Promise<void>;
   /** Best-effort delete of a snapshot artifact (an already-gone one is fine). */
   deleteSnapshot(ref: string): Promise<void>;
+  /**
+   * Hand a sandbox-scoped snapshot to another sandbox: rewrite its
+   * `atelier.dev/sandbox` owner label so the new owner's teardown sweeps it
+   * and the old owner's no longer does.
+   */
+  reownSnapshot(ref: string, ownerId: string): Promise<void>;
   /** Does the sandbox's live disk still exist? (`resume`'s PVC-reuse check). */
   volumeExists(pvcName: string): Promise<boolean>;
 }

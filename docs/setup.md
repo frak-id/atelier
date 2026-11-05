@@ -2,14 +2,14 @@
 
 Atelier runs on a bare-metal Kubernetes cluster using k3s and Kata Containers. This guide covers the full installation, from a fresh server to a working console.
 
-New to Atelier? Read [Getting Started](getting-started.md) first. Choosing hardware? See [Recommended Infrastructure](recommended-infrastructure.md).
+Choosing hardware? See [Sizing](#sizing) below.
 
 ## Requirements
 
 ### Hardware
 - Bare-metal server (KVM virtualization is required — `/dev/kvm` must exist).
 - x86_64 CPU with VT-x or AMD-V enabled.
-- Minimum 8 GB RAM and 40 GB storage (see [sizing guide](recommended-infrastructure.md#sizing-guide)).
+- Minimum 8 GB RAM and 40 GB storage (see [Sizing](#sizing)).
 
 ### Software
 - Debian 12 (Bookworm) or Ubuntu 22.04+ with systemd.
@@ -24,6 +24,31 @@ Verify virtualization before going further:
 ls /dev/kvm                      # must exist
 grep -cE 'vmx|svm' /proc/cpuinfo # must be > 0
 ```
+
+### Sizing
+
+Atelier needs **bare metal with KVM**: Kata Containers boots a real
+lightweight VM per sandbox. Most cloud VMs (AWS EC2, GCP, standard Hetzner
+Cloud) don't support nested virtualization reliably, so rent a dedicated
+server (e.g. a Hetzner AX-line box, OVH, Scaleway Elastic Metal, a homelab).
+Single-node k3s is the recommended shape: one kubeconfig to back up, and
+TopoLVM snapshots are node-local, so instant copy-on-write cloning works best
+when all sandboxes share the node's LVM thin pool.
+
+Each sandbox is a VM with its own kernel plus its workloads (code-server,
+OpenCode, Chromium, dev servers). Budget roughly **2-4 GB RAM and 1-2 vCPU per
+active sandbox**, plus ~4 GB for the system (k3s, the server, Zot). Kata adds
+a fixed per-sandbox overhead (250m CPU / 384Mi with the `kata-atelier-clh-rs`
+runtime). A sandbox's memory size is its VM's entire RAM, page cache included.
+
+| Team size | Concurrent sandboxes | RAM | CPU | Storage |
+|-----------|---------------------|-----|-----|---------|
+| Solo / trying it out | 2-4 | 16 GB | 4-6 cores | 250 GB NVMe |
+| Small team | 5-10 | 64 GB | 8 cores / 16 threads | 512 GB - 1 TB NVMe |
+| Larger team | 15-20+ | 128 GB | 16 cores / 32 threads | 2 x 1 TB NVMe |
+
+For prebuilds, leave a second NVMe drive (or a large partition) unformatted
+for the LVM thin pool ([step 5](#5-storage-and-snapshots-optional--required-for-prebuilds)).
 
 ## Prerequisites
 
@@ -174,9 +199,9 @@ pull from (e.g. [Zot](https://zotregistry.dev)); set it as
 also be declared as a mirror in `/etc/rancher/k3s/registries.yaml` so
 containerd can pull from it.
 
-Images are built with BuildKit (`imageBuilder` in `30-config.yaml`). Point
-`imageBuilder.endpoint` at an existing `buildkitd`, or leave it empty to run
-BuildKit daemonless inside the build Job.
+Images are built with BuildKit (`imageBuilder` in `30-config.yaml`): set
+`imageBuilder.kind` to `buildkit` and `imageBuilder.endpoint` to an existing
+`buildkitd`. The endpoint is required; daemonless builds were removed.
 
 ## Installation
 
@@ -190,9 +215,9 @@ Atelier authenticates users via GitHub OAuth. Create an OAuth App at <https://gi
 ### 2. Deploy the server + console app
 
 Edit `infra/k8s/30-config.yaml` for your domain and cluster settings (see
-[Advanced Configuration](advanced-configuration.md#app-configuration-infrak8sv230-configyaml--secrets)),
-create the `atelier-v2-secrets` Secret (GitHub OAuth, JWT, secrets key, MCP
-token, CLIProxy key), then apply the manifests in order — full sequence in
+[Advanced Configuration](advanced-configuration.md#config-file)),
+create the `atelier-v2-secrets` Secret (GitHub OAuth client id and secret, JWT
+secret, secrets-at-rest key), then apply the manifests in order — full sequence in
 [`infra/k8s/README.md`](../infra/k8s/README.md):
 
 ```bash
@@ -204,14 +229,33 @@ kubectl apply -f infra/k8s/40-server-pvc.yaml
 kubectl apply -f infra/k8s/50-deployment.yaml
 kubectl apply -f infra/k8s/60-service.yaml
 kubectl apply -f infra/k8s/70-ingress.yaml
+kubectl apply -f infra/k8s/80-forward-auth.yaml   # forward-auth + wake middlewares
+kubectl apply -f infra/k8s/85-network-policy.yaml # default-deny for sandbox pods
 ```
 
-### 3. Expose SSH (optional)
+Set `auth.defaultOrg` in `30-config.yaml` to the slug of your team org
+(see [Default org](#3-default-org)). `SANDBOX_SECRETS_KEY` in the Secret is
+required: the server refuses to start in production without it.
 
-The server runs its own SSH gateway (`domain.ssh.gateway: in-server`),
-exposed by `60-service.yaml` on NodePort `30222`. Open that port on the host
+### 3. Default org
+
+`auth.defaultOrg` names the team organization. Every user who passes the
+GitHub gate joins it as `member` on first login, and it is the default org for
+new sandboxes. Its **owners are the server admins**: they edit the operational
+config, build and delete images, publish toolsets, delete prebuilds and use
+`/mcp/admin`. If the org does not exist yet, the first user to sign in creates
+it and becomes its owner. Production refuses to start without `auth.defaultOrg`.
+
+### 4. Expose SSH (optional)
+
+The server runs its own SSH gateway, exposed by `60-service.yaml` on NodePort
+`30222`. Open that port on the host
 firewall. `domain.ssh.port` in `30-config.yaml` must equal the NodePort: it's
 the port advertised in each sandbox's SSH URL.
+
+Recommended hardening: restrict everything but `80`, `443` and the SSH
+NodePort (e.g. a provider firewall), and allow-list `6443` (k3s API) to your
+own IP.
 
 ## Post-install
 
@@ -233,24 +277,224 @@ Open the domain you set in `infra/k8s/30-config.yaml` (`domain.dashboard`) and l
 
 ### Build a base image
 
-Sandboxes boot from base images stored in the internal Zot registry. There is
-no build-from-UI feature — base images are built in-cluster with BuildKit,
-not from the console. See
-[`infra/k8s/README.md`](../infra/k8s/README.md#rebuild-images-in-cluster-no-local-docker)
-to build/push `dev-base` (and optionally `dev-cloud`) before spawning your
-first sandbox.
+Sandboxes boot from base images stored in the internal Zot registry. Base
+images are the embedded seeds (`dev-base`, `dev-cloud`, `dev-rust`,
+`dev-browser`) built by the server through BuildKit, or external refs you
+register. A server admin builds a seed from Library > Images in the console.
+To bootstrap a fresh registry out-of-band, see
+[`infra/k8s/README.md`](../infra/k8s/README.md#rebuild-images-in-cluster-no-local-docker).
+Custom Dockerfile and zip builds do not exist.
 
-### Create your first saved spec
+### Spawn your first sandbox
 
-From the console, define a saved spec: git repos to clone, init commands, dev
-commands, ports, and secrets. Optionally run a **prebuild** so subsequent
-sandboxes spawn instantly from a snapshot.
+Open Spawn in the console, pick a repo and a branch, and start. Optionally
+create a **prebuild** (Library > Prebuilds) so later sandboxes boot from a
+snapshot in seconds. Agents can do the same over MCP, see the
+[README](../README.md#mcp).
+
+## Network, domains and cleanup
+
+```
+Internet -> Traefik (:443, TLS) -> Ingress -> Service -> Pod:port
+```
+
+- Sandbox pods get IPs from the CNI (10.42.x.x on k3s); each sandbox has its
+  own Service and per-tool Ingress (host-based routing).
+- Domains (`domain.baseDomain`, `domain.dashboard`):
+
+  | Service | URL pattern |
+  |---------|-------------|
+  | Console | `{domain.dashboard}` (empty = `sandbox.{baseDomain}`) |
+  | VS Code | `sandbox-{id}.{baseDomain}` |
+  | OpenCode | `opencode-{id}.{baseDomain}` |
+  | Browser | `browser-{id}.{baseDomain}` |
+  | Dev command | `dev-{name}-{id}.{baseDomain}` |
+
+- The in-pod agent listens on TCP 9998 (HTTP: config, processes, exec, files)
+  and 9997 (attach bridge: process attach, ACP and terminals). Both need the
+  sandbox's bearer token. The server reaches them via the pod IP
+  (`pod.status.podIP`); its once-a-minute `GET /activity` poll for idle
+  auto-pause never counts as activity.
+- `85-network-policy.yaml` makes the sandbox namespace default-deny for
+  ingress and allows only the Atelier server pod and the ingress controller
+  (Traefik in `kube-system`). Egress is open.
+- Sandbox destruction deletes every resource labelled
+  `atelier.dev/sandbox={id}` (pods, services, configmaps, PVCs, ingresses,
+  volumesnapshots), then the database record; Kubernetes garbage collection
+  covers orphans.
+
+| Resource | Namespace |
+|----------|-----------|
+| Sandbox Pod, Service, Ingress, workspace PVC, VolumeSnapshots | `kubernetes.namespace` (e.g. `atelier-v2-sandboxes`) |
+| Server + console Deployment, SQLite PVC | system namespace (e.g. `atelier-v2-system`) |
+| OCI registry (Zot) | cluster infra, not deployed by Atelier |
+
+### Backups
+
+Back up the server's SQLite PVC, your `30-config.yaml` edits and the
+`atelier-v2-secrets` values. Zot holds rebuildable base images. Sandboxes are
+disposable: anything important belongs in git.
 
 ## Updating
 
-Rebuild the server + console images and roll the Deployment (see
+Rebuild the server and console images and roll the Deployment (see
 [`infra/k8s/README.md`](../infra/k8s/README.md#rebuild-images-in-cluster-no-local-docker)),
-and re-apply any changed manifests under `infra/k8s/`.
+and re-apply any changed manifests under `infra/k8s/`. `deploy.sh` applies
+`60-service.yaml`, `80-forward-auth.yaml`, `85-network-policy.yaml` and
+`30-config.yaml` before it rolls.
+
+## Upgrading to this release
+
+This release changes the agent protocol, the database, the config schema and
+the MCP surface. Follow this order.
+
+### Deploy order
+
+1. **Back up the SQLite PVC.** Migration 0030 cannot be undone.
+2. **Fix `30-config.yaml`** (see [Config file](#config-file-changes)). The new
+   server refuses to start on an unknown key.
+3. **Check the Secret** has `SANDBOX_SECRETS_KEY`. Production refuses to start
+   without it. If the old deployment ran without one, its secrets were
+   encrypted with the public dev key and cannot be read under a new key: re-enter
+   them after the upgrade.
+4. **Apply the manifests the new server depends on, before it rolls:**
+
+   ```bash
+   kubectl apply -f infra/k8s/80-forward-auth.yaml    # adds the atelier-wake middleware
+   kubectl apply -f infra/k8s/85-network-policy.yaml  # default-deny ingress for sandbox pods
+   kubectl apply -f infra/k8s/30-config.yaml          # wakeIngressAnnotations, defaultOrg
+   ```
+
+   The `atelier-wake` middleware must exist before an Ingress references it,
+   or Traefik disables that route. The network policy admits the server pod by
+   its labels (`app.kubernetes.io/component: server`), so applying it first is
+   safe for the running server. It assumes Traefik runs in `kube-system` with
+   the label `app.kubernetes.io/name=traefik`; if yours differs, edit both
+   selectors in `85-network-policy.yaml` or tool URLs time out.
+5. **Roll the server and the agent image together.** Build the server and
+   console, and rebuild the seed images so they bake the new agent
+   (`sandbox.agentImage` pins `ghcr.io/frak-id/sandbox-agent:<release>`; the
+   release workflow publishes that tag):
+
+   ```bash
+   infra/k8s/deploy.sh server console
+   ```
+
+   The pinned tag exists only once a `v<version>` git tag has been pushed:
+   pushes to `main` publish `nightly` tags only. If `sandbox.agentImage`
+   points at your own registry instead (the Frak cluster sets it to
+   `zot.zot.svc:5000/sandbox-agent:latest` from the console), build the agent
+   in the same run: `infra/k8s/deploy.sh agent server console`.
+
+   Then rebuild `dev-base` and the other seeds from Library > Images (or
+   `infra/k8s/deploy.sh agent dev-base`), and refresh your prebuilds.
+6. **Verify.** Open the console, check the server log for the migration, and
+   probe the network policy from one sandbox to another sandbox's agent
+   (`:9998`): it must time out.
+
+Why the order matters:
+
+- The new agent requires a bearer token on HTTP and WebSocket. An old agent
+  ignores the token, so a new server still drives old sandboxes.
+- A new server dials terminals on the agent's attach port. An old agent has
+  no terminal there, so **terminals fail on sandboxes that still run an old
+  agent**. A sandbox gets the new agent only when it boots from an image that
+  contains it. New sandboxes from rebuilt images do. Sandboxes and prebuilds
+  that boot from a recorded image or snapshot may keep their old agent until
+  you recreate them. The server logs a warning once per sandbox when the agent
+  version differs from its own.
+
+### Config file changes
+
+- Remove every removed key from `30-config.yaml` and the Deployment env:
+  `ports.terminal` / `ATELIER_TERMINAL_PORT`, `domain.ssh.gateway` /
+  `ATELIER_SSH_GATEWAY`, `storage.provider` / `ATELIER_STORAGE_PROVIDER`,
+  `domain.tls`, `server.maxSandboxes`, `server.maxActiveTasks`,
+  `kubernetes.systemNamespace`, `sandbox.git`. See
+  [Removed keys](advanced-configuration.md#removed-keys). A config file with an
+  unknown key now fails at startup.
+- Replace any `ATELIER_SERVER_MODE=mock` with `production` or `local`. Any
+  other value fails at startup.
+- Set `auth.defaultOrg` (or `ATELIER_DEFAULT_ORG`) to your team org slug.
+  Production refuses to start without it.
+- Add `kubernetes.wakeIngressAnnotations`. The shipped file points it at the
+  `atelier-wake` middleware.
+- Remove operational keys you want to keep editable from the console (idle
+  rules, retention, default image and size). A key present in the file is
+  locked. Infrastructure keys you edited in the console before are now read
+  from the file or env, and the stored override is ignored.
+- `imageBuilder.kind: buildkit` needs an `endpoint`.
+- `ATELIER_MCP_TOKEN`, `ATELIER_CLIPROXY_*` and `ATELIER_INTEGRATION_*` are no
+  longer read.
+
+### Secrets key
+
+`SANDBOX_SECRETS_KEY` encrypts stored secrets and, now, the GitHub access
+tokens of users. Keep the existing value: changing it makes stored secrets
+unreadable. Plaintext GitHub tokens already in the database are re-encrypted at
+each user's next login.
+
+### Migration 0030
+
+It runs automatically at startup, in order, and it is one-way:
+
+- Org roles: `admin` becomes `owner`, `viewer` becomes `member`.
+- Toolboxes become org-owned. A user-owned toolbox moves to its owner's
+  personal org (a clashing slug gets a short id suffix). Tables are renamed
+  (`entity_toolboxes` to `toolboxes`, `entity_toolbox_versions` to
+  `toolbox_versions`, `settings` to `server_config`).
+- Each org policy becomes an auto-inject `org-defaults` toolbox holding the
+  policy's files, processes, ports and harness. Policy hooks have no
+  equivalent and are dropped. The `org_policy_specs` table is removed.
+- The `integration_connections` table is dropped.
+- Images with `dockerfile` provenance are deleted.
+- New columns: `sandboxes.image`, `snapshots.kind` (backfilled to `prebuild`,
+  `pause`, `fork` or `manual`) and `snapshots.repo_heads`. Dropped:
+  `sandboxes.pod_name`, `sandboxes.pvc_name`, `toolsets.env`,
+  `images.dockerfile`. New table: `agent_tasks`.
+- `organizations.personal` becomes an integer flag.
+- A data step for Frak's own deployment turns the `frak` personal org into a
+  team org and gives its former owner a new personal org. It does nothing
+  elsewhere.
+
+After the migration, orphaned old pause snapshots appear as `manual` snapshots
+and age out under `snapshot.manualKeep`. They cannot be told apart from
+deliberate manual snapshots, and they are newer, so on a sandbox with many of
+them the next manual snapshot can prune an older deliberate one. List a
+sandbox's snapshots before taking new ones if that matters. Stored specs of existing sandboxes
+still hold resolved values until each one resumes; the resume replaces them
+with the unresolved merged spec.
+
+### Behaviour changes
+
+- **MCP clients must reconnect.** The surface is split and renamed:
+  `/mcp` has 13 tools and `/mcp/admin` has 4 (server admins only). `patch_files`
+  is now `write_files`. `list_toolboxes` is now `manage_toolbox` with
+  `action: "list"` on `/mcp/admin`. `destroy` is its own tool,
+  `destroy_sandbox`. `manage_prebuilds`, `manage_toolbox`, `manage_images` and
+  the new `server_config` moved to `/mcp/admin`. `create_sandbox` returns at
+  once with a `jobId`. `get_sandbox` lists as `{sandboxes}` and `get_task` as
+  `{tasks}`. `expose_port` takes `auth` instead of `public`. A session id from
+  before the deploy answers 404, which makes spec-compliant clients start a new
+  session.
+- **Agents never wait for permission.** `manage_task action=reply_permission`,
+  `send_prompt.autoApprove`, the `waiting_permission` status and the
+  `/sessions/.../agent/permissions` and `questions` routes are gone.
+- **Exec timeout.** A command with no timeout now stops after 30 s. Pass
+  `timeoutMs` for longer jobs.
+- **Roles.** Only `owner` and `member` exist. Server admins are the owners of
+  the default org.
+- **Toolboxes** are selected with `tb/<toolboxId>`. Org policy is replaced by
+  toolbox `files`.
+- **CLI.** The `atelier` CLI is removed. Use the console, MCP, or SSH. Routes
+  that only the CLI used are gone (`POST /auth/api-token`, `GET /api/me`,
+  `PATCH /v1/sandboxes/:id/env`, `POST /v1/sandboxes/:id/processes`,
+  `POST /v1/sandboxes/:id/toolsets/capture`), as are `POST /v1/images` with a
+  Dockerfile and `POST /v1/images/upload`.
+- **Paused sandboxes keep their Service and Ingresses**, so they can wake on
+  access. A sandbox paused before the upgrade has none; it recreates them on
+  its next resume.
+- **Preview Ingresses pick up `atelier-wake`** on their next resume.
 
 ## Manual TLS
 

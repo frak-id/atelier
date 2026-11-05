@@ -1,5 +1,5 @@
 //! Sandbox activity measurement for idle auto-pause
-//! (docs/proposals/sandbox-idle-autopause.md §3.1). The agent *measures*:
+//! (docs/idle-autopause.md §3.1). The agent *measures*:
 //! network bytes (interface counters), file writes under the home (where
 //! repos are cloned), CPU time, into one-minute buckets over the last hour.
 //! The server *judges* (thresholds, idle rules): `GET /activity` hands it the
@@ -20,6 +20,8 @@ mod netdev;
 use std::collections::VecDeque;
 use std::sync::{Arc, Mutex};
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
+
+use serde::Serialize;
 
 /// Bucket width. The server rebases bucket starts onto its own clock.
 pub const BUCKET_SECS: u64 = 60;
@@ -155,28 +157,52 @@ impl Activity {
     }
 
     /// The `GET /activity` body.
-    pub fn report(&self) -> serde_json::Value {
+    pub fn report(&self) -> ActivityReport {
         let inner = self.lock();
-        serde_json::json!({
-            "nowMs": now_ms(),
-            "bootedAtMs": self.booted_at_ms,
-            "bucketSeconds": BUCKET_SECS,
-            "network": inner.network,
-            "files": inner.files,
-            "cpu": inner.cpu,
-            "buckets": inner
+        ActivityReport {
+            now_ms: now_ms(),
+            booted_at_ms: self.booted_at_ms,
+            bucket_seconds: BUCKET_SECS,
+            network: inner.network,
+            files: inner.files,
+            cpu: inner.cpu,
+            buckets: inner
                 .buckets
                 .iter()
-                .map(|b| serde_json::json!({
-                    "startMs": b.minute * BUCKET_SECS * 1000,
-                    "receivedBytes": b.received_bytes,
-                    "sentBytes": b.sent_bytes,
-                    "fileWrites": b.file_writes,
-                    "cpuMs": b.cpu_ms,
-                }))
-                .collect::<Vec<_>>(),
-        })
+                .map(|b| BucketReport {
+                    start_ms: b.minute * BUCKET_SECS * 1000,
+                    received_bytes: b.received_bytes,
+                    sent_bytes: b.sent_bytes,
+                    file_writes: b.file_writes,
+                    cpu_ms: b.cpu_ms,
+                })
+                .collect(),
+        }
     }
+}
+
+/// `GET /activity` wire body (TS: `AgentActivityReport`, runtime/activity.ts;
+/// pinned by tests/fixtures/activity.json).
+#[derive(Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ActivityReport {
+    pub now_ms: u64,
+    pub booted_at_ms: u64,
+    pub bucket_seconds: u64,
+    pub network: &'static str,
+    pub files: &'static str,
+    pub cpu: &'static str,
+    pub buckets: Vec<BucketReport>,
+}
+
+#[derive(Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct BucketReport {
+    pub start_ms: u64,
+    pub received_bytes: u64,
+    pub sent_bytes: u64,
+    pub file_writes: u64,
+    pub cpu_ms: u64,
 }
 
 /// Start the samplers: network + CPU every few seconds on the runtime, the
@@ -271,12 +297,12 @@ mod tests {
         a.add_network_at(t0 + 2 * BUCKET_SECS, &NetDelta::default());
 
         let report = a.report();
-        let buckets = report["buckets"].as_array().unwrap();
+        let buckets = &report.buckets;
         assert_eq!(buckets.len(), 2);
-        assert_eq!(buckets[0]["startMs"], t0 * 1000);
-        assert_eq!(buckets[0]["receivedBytes"], 100);
-        assert_eq!(buckets[0]["sentBytes"], 50);
-        assert_eq!(buckets[1]["sentBytes"], 7);
-        assert_eq!(report["network"], "pending");
+        assert_eq!(buckets[0].start_ms, t0 * 1000);
+        assert_eq!(buckets[0].received_bytes, 100);
+        assert_eq!(buckets[0].sent_bytes, 50);
+        assert_eq!(buckets[1].sent_bytes, 7);
+        assert_eq!(report.network, "pending");
     }
 }

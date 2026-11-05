@@ -6,16 +6,24 @@
  * reuses it verbatim instead of duplicating (or drifting from) the sequence.
  */
 import type { SandboxSpec } from "@atelier/spec";
+import { customAlphabet } from "nanoid";
 import { type AgentClient, toFileWrites } from "./agent/index.ts";
 import { specToAgentConfig } from "./agent-config.ts";
 import type { BootInput } from "./boot.ts";
+
+/** A fresh per-sandbox agent bearer token (the agent refuses calls without
+ * it). */
+export const generateAgentPassword = customAlphabet(
+  "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789",
+  32,
+);
 
 export interface ProvisionAgentResult {
   /** The reachable agent host (pod IP on k8s, 127.0.0.1 on Docker). */
   podIp: string;
   /**
    * The sandbox's sshd host public key line(s) (OpenSSH format), fetched
-   * from `GET /ssh/host-keys` — SSH host-key pinning (ssh-gateway.ts /
+   * from `GET /ssh/host-keys` — SSH host-key pinning (boot.ts /
    * ssh/proxy.ts). sandbox-boot.sh runs `ssh-keygen -A` before starting the
    * agent, so a dev-base image always reports some; empty only for an image
    * without sshd host keys (a bare agent image). A gateway-fronted k8s boot

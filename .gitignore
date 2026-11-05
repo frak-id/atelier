@@ -44,7 +44,6 @@ sandbox.config.json
 values.production.yaml
 apps/agent/target/
 apps/agent/dist/
-apps/steery-adapter/target/
 
 .omo/
 

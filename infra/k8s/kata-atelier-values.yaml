@@ -42,7 +42,7 @@
 # Workspace PVC: raw block (`volumeMode: Block`), passed to the guest as
 # virtio-blk (`vdb`) and formatted/mounted ext4 at /data by sandbox-boot.sh,
 # so overlayfs gets real `trusted.overlay.*` xattrs — no virtio-fs for /data
-# (Option C, docs/plans/toolset-inplace-update-fix-options.md §3). virtio-fs
+# (Option C, docs/archive/plans/toolset-inplace-update-fix-options.md §3). virtio-fs
 # only backs Kata's own container-rootfs share. Not supported by either
 # runtime: discard/fstrim on the PVC (runtime-rs only enables discard for
 # block-plain emptyDir), so deleted workspace data is not returned to the

@@ -41,6 +41,14 @@ function mkUser(name: string): AuthUser {
     `${name}@x.test`,
     "",
   );
+  // Toolboxes created without an explicit org land in the personal org.
+  const personal = control.organizationService.create(
+    `ar-${name}`,
+    `ar-personal-${name}`,
+    true,
+  );
+  control.orgMemberService.addMember(personal.id, u.id, "owner");
+  control.userService.setPersonalOrg(u.id, personal.id);
   const user = {
     id: u.id,
     username: `ar-${name}`,
@@ -80,6 +88,7 @@ beforeAll(async () => {
 
   const track = (_: unknown, fn: () => unknown) => fn();
   const runtime = {
+    getStatus: () => "running",
     getLabels: (id: string) => labels[id],
     // pause snapshot of `owned`, one of a destroyed sandbox, a shared prebuild
     snapshotOwner: (ref: string) =>
@@ -87,17 +96,10 @@ beforeAll(async () => {
     addPort: async (id: string) => {
       calls.push(`port:${id}`);
     },
-    addProcess: async (id: string) => {
-      calls.push(`process:${id}`);
-    },
     processAction: async (id: string) => {
       calls.push(`action:${id}`);
     },
     getSandboxImage: async () => "img",
-    captureToolset: async (id: string) => {
-      calls.push(`capture:${id}`);
-      return { ref: "r" };
-    },
     list: (filter: Record<string, string> = {}) =>
       Object.entries(labels)
         .filter(([, l]) =>
@@ -132,7 +134,10 @@ beforeAll(async () => {
     },
     get: (id: string) => ({ id, status: "running" }),
   };
-  const sessions = { listSessions: async () => [] };
+  const sessions = {
+    listSessions: async () => [],
+    sessionStatuses: async () => ({}),
+  };
   const terminal = {
     listSessions: async () => [],
     getOwnedSession: async () => ({}),
@@ -153,23 +158,39 @@ beforeAll(async () => {
     },
   };
 
+  const appControl = {
+    ...realControl,
+    authService: {
+      resolveToken: async (token?: string) => {
+        const user = token ? users[token] : undefined;
+        if (!user) throw new UnauthorizedError();
+        return user;
+      },
+    },
+    canAccessSandbox: realControl.canAccessSandbox,
+  };
+  const { SandboxOps } = await import("./app/sandbox-ops.ts");
+  const { ToolboxOps } = await import("./app/toolbox-ops.ts");
+  const toolboxOps = new ToolboxOps({
+    runtime,
+    control: appControl,
+    jobs,
+  } as never);
   const container = {
     runtime,
     jobs,
     sessions,
     terminal,
     idle,
-    control: {
-      ...realControl,
-      authService: {
-        resolveToken: async (token?: string) => {
-          const user = token ? users[token] : undefined;
-          if (!user) throw new UnauthorizedError();
-          return user;
-        },
-      },
-      canAccessSandbox: realControl.canAccessSandbox,
-    },
+    control: appControl,
+    sandboxOps: new SandboxOps({
+      runtime,
+      control: appControl,
+      jobs,
+      toolboxes: toolboxOps,
+      idle,
+    } as never),
+    toolboxOps,
   } as unknown as ServerContainer;
 
   const { createV1Routes } = await import("./v1.routes.ts");
@@ -222,21 +243,14 @@ const SANDBOX_ROUTES: [string, string, unknown?][] = [
   ["POST", "/v1/sandboxes/owned/resume", {}],
   ["DELETE", "/v1/sandboxes/owned"],
   ["PATCH", "/v1/sandboxes/owned/files", []],
-  ["PATCH", "/v1/sandboxes/owned/env", {}],
   ["POST", "/v1/sandboxes/owned/exec", { command: "id" }],
   ["POST", "/v1/sandboxes/owned/snapshot"],
   ["POST", "/v1/sandboxes/owned/fork", {}],
-  [
-    "POST",
-    "/v1/sandboxes/owned/toolsets/capture",
-    { name: "t", paths: ["a"], exclude: [], overrides: [] },
-  ],
   ["GET", "/v1/sandboxes/owned/processes/web/logs"],
   ["POST", "/v1/sandboxes/owned/ports", { name: "web", port: 3000 }],
-  ["POST", "/v1/sandboxes/owned/processes", { name: "p", command: "true" }],
   ["POST", "/v1/sandboxes/owned/processes/web/start"],
   ["GET", "/sessions/sandboxes/owned/agent/sessions"],
-  ["GET", "/sessions/sandboxes/owned/agent/permissions"],
+  ["GET", "/sessions/sandboxes/owned/agent/session-statuses"],
   ["GET", "/sessions/sandboxes/owned/terminal/sessions"],
 ];
 
@@ -408,7 +422,7 @@ describe("sandbox routes", () => {
     expect(res.status).toBe(401);
   });
 
-  test("auth bypass (local/mock) lets any caller through", async () => {
+  test("auth bypass (local) lets any caller through", async () => {
     const previous = config.server.mode;
     config.server.mode = "local";
     try {
@@ -426,15 +440,21 @@ describe("sandbox routes", () => {
   });
 
   test("toolbox version capture takes the sandbox from the body: guarded", async () => {
-    const tb = control.toolboxService.create(
-      { type: "user", id: users["tok-stranger"]?.id ?? "" },
-      {
-        slug: "mine",
-        description: "d",
-        build: ["true"],
-        paths: [".local"],
-      } as never,
+    const strangerOrg = control.organizationService.create(
+      "Stranger",
+      "ar-stranger-org",
     );
+    control.orgMemberService.addMember(
+      strangerOrg.id,
+      users["tok-stranger"]?.id ?? "",
+      "owner",
+    );
+    const tb = control.toolboxService.create(strangerOrg.id, {
+      slug: "mine",
+      description: "d",
+      build: ["true"],
+      paths: [".local"],
+    } as never);
     calls.length = 0;
     const path = `/api/toolboxes/${tb.id}/versions/capture`;
     const body = { sandboxId: "owned", description: "d" };

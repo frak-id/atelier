@@ -5,8 +5,13 @@ import {
 } from "@tanstack/react-query";
 import { toast } from "sonner";
 import { api } from "@/api/client";
-import { errorMessage } from "./error";
+import { unwrap } from "./error";
 import { queryKeys } from "./keys";
+
+type ConfigResponse = NonNullable<
+  Awaited<ReturnType<typeof api.api.config.get>>["data"]
+>;
+export type ConfigEntry = ConfigResponse[number];
 
 /** Server-wide runtime config (GET /api/config) — every key with its current
  * value, type, and default, for the settings config page. */
@@ -14,9 +19,7 @@ export function serverConfigQuery() {
   return queryOptions({
     queryKey: queryKeys.config.list(),
     queryFn: async () => {
-      const { data, error } = await api.api.config.get();
-      if (error) throw new Error(errorMessage(error, "Failed to load config"));
-      return data;
+      return unwrap(await api.api.config.get(), "Failed to load config");
     },
   });
 }
@@ -32,9 +35,10 @@ export function useSetConfig() {
       key: string;
       value: boolean | number | string;
     }) => {
-      const { error } = await api.api.config({ key }).put({ value });
-      if (error)
-        throw new Error(errorMessage(error, "Failed to update config"));
+      unwrap(
+        await api.api.config({ key }).put({ value }),
+        "Failed to update config",
+      );
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: queryKeys.config.all });

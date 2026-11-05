@@ -5,9 +5,10 @@
 //! readiness as the sandbox's health.
 //!
 //! Process groups are spawned with their own pgid so a SIGTERM/SIGKILL
-//! teardown reaches the whole group, with log pumping to the shared ring
-//! buffers; reconciliation is driven by config-watch + agent-side readiness,
-//! not external polling.
+//! teardown reaches the whole group. Output is pumped to a size-capped log
+//! file (logfile.rs) and, for bridge/pty processes, to the attach replay
+//! buffer (attach.rs); reconciliation is driven by config-watch + agent-side
+//! readiness, not external polling.
 
 use std::collections::HashMap;
 use std::io::SeekFrom;
@@ -17,16 +18,18 @@ use std::sync::atomic::{AtomicU64, Ordering};
 use std::time::Duration;
 
 use serde::Serialize;
-use tokio::io::{AsyncReadExt, AsyncSeekExt, AsyncWriteExt};
+use tokio::io::{AsyncReadExt, AsyncSeekExt};
 use tokio::process::Command;
 use tokio::sync::{Mutex, Notify};
 
 use crate::attach::{self, AttachRegistry};
+use crate::command::apply_user;
 use crate::config::{AgentConfig, ProcessEntry, Readiness, StdioMode, http_probe_url};
+use crate::limits::DEFAULT_LOG_DIR;
+use crate::logfile::LogFile;
 use crate::readiness::{self, ProbeCtx};
 use crate::store::ConfigStore;
 
-const DEFAULT_LOG_DIR: &str = "/var/log/sandbox";
 const STOP_GRACE_MS: u64 = 5000;
 /// Fallback re-check cadence for an `after` wait; a `Notify` wakes it the
 /// instant any process latches ready, so this only bounds terminal/timeout
@@ -205,6 +208,11 @@ impl Supervisor {
         }
 
         self.await_after_deps(&process).await;
+        // A stop() (or newer start()) during the wait superseded this start:
+        // don't spawn at all.
+        if self.current_generation(name).await != Some(generation) {
+            return Ok(());
+        }
         match self.spawn(process, cfg, generation).await {
             Ok(()) => Ok(()),
             Err(e) => {
@@ -265,10 +273,7 @@ impl Supervisor {
     ) -> Result<(), String> {
         let log_file = self.log_file(&process.name);
         let _ = tokio::fs::create_dir_all(&self.log_dir).await;
-        let log_handle = tokio::fs::OpenOptions::new()
-            .create(true)
-            .append(true)
-            .open(&log_file)
+        let log = LogFile::open(&log_file)
             .await
             .map_err(|e| format!("open log {log_file}: {e}"))?;
 
@@ -297,7 +302,7 @@ impl Supervisor {
         }
         // PTY sets uid inside pre_exec (after TIOCSCTTY); others use CommandExt.
         if !is_pty {
-            apply_user(&mut cmd, process.user.as_deref().unwrap_or("root"));
+            apply_user(&mut cmd, process.user.as_deref());
         }
         // Pod-wide env first, then per-process env (process wins).
         for (k, v) in &cfg.env {
@@ -354,28 +359,25 @@ impl Supervisor {
         }
 
         // Wire stdio to the attach bridge (bridge/pty) or the log (none).
-        let log_wr = Arc::new(Mutex::new(log_handle));
         if let Some(master) = pty_master {
-            self.attach
-                .register_pty(&process.name, master, log_wr)
-                .await;
+            self.attach.register_pty(&process.name, master, log).await;
         } else if is_bridge {
             let stdin = child.stdin.take();
             let stdout = child.stdout.take();
             if let (Some(stdin), Some(stdout)) = (stdin, stdout) {
                 self.attach
-                    .register_bridge(&process.name, stdin, stdout, log_wr.clone())
+                    .register_bridge(&process.name, stdin, stdout, log.clone())
                     .await;
             }
             if let Some(err) = child.stderr.take() {
-                spawn_log_pump(err, log_wr);
+                spawn_log_pump(err, log);
             }
         } else {
             if let Some(out) = child.stdout.take() {
-                spawn_log_pump(out, log_wr.clone());
+                spawn_log_pump(out, log.clone());
             }
             if let Some(err) = child.stderr.take() {
-                spawn_log_pump(err, log_wr);
+                spawn_log_pump(err, log);
             }
         }
 
@@ -596,16 +598,6 @@ impl Supervisor {
     }
 }
 
-/// Apply the uid/env for a known principal. Today only `dev` (uid 1000) is
-/// special-cased; anything else runs as the agent's uid (root).
-pub(crate) fn apply_user(cmd: &mut Command, user: &str) {
-    if user == "dev" {
-        cmd.uid(1000).gid(1000);
-        cmd.env("HOME", "/home/dev");
-        cmd.env("USER", "dev");
-    }
-}
-
 fn should_restart(policy: crate::config::RestartPolicy, clean_exit: bool) -> bool {
     use crate::config::RestartPolicy::*;
     match policy {
@@ -617,7 +609,7 @@ fn should_restart(policy: crate::config::RestartPolicy, clean_exit: bool) -> boo
 
 fn spawn_log_pump<R: tokio::io::AsyncRead + Unpin + Send + 'static>(
     mut reader: R,
-    writer: Arc<Mutex<tokio::fs::File>>,
+    log: Arc<LogFile>,
 ) {
     tokio::spawn(async move {
         let mut buf = [0u8; 8192];
@@ -625,7 +617,7 @@ fn spawn_log_pump<R: tokio::io::AsyncRead + Unpin + Send + 'static>(
             match reader.read(&mut buf).await {
                 Ok(0) | Err(_) => break,
                 Ok(n) => {
-                    let _ = writer.lock().await.write_all(&buf[..n]).await;
+                    log.append(&buf[..n]).await;
                 }
             }
         }
@@ -643,7 +635,9 @@ fn is_group_alive(pgid: u32) -> bool {
     unsafe { libc::kill(-(pgid as i32), 0) == 0 }
 }
 
-fn signal_group(pgid: u32, signal: i32) {
+/// Signal a whole process group (`pgid` == the leader pid, set via
+/// `process_group(0)` at spawn). Also used by command.rs for one-shot execs.
+pub(crate) fn signal_group(pgid: u32, signal: i32) {
     if pgid <= 1 {
         return;
     }
@@ -732,10 +726,11 @@ mod tests {
         let sup = test_supervisor(cfg);
         sup.reconcile().await;
         // It exits 1, backs off (500ms), restarts through start() at least once.
-        // Poll up to ~3s so the assertion isn't wedged to a fixed sleep under
+        // Poll up to ~10s: the process runs under `bash -l`, and a developer
+        // machine's login profile alone can take ~2s per spawn under
         // parallel-test CPU contention.
         let mut restarted = false;
-        for _ in 0..30 {
+        for _ in 0..100 {
             tokio::time::sleep(Duration::from_millis(100)).await;
             if sup.get("flap").await.is_some_and(|s| s.generation >= 2) {
                 restarted = true;
@@ -785,5 +780,52 @@ mod tests {
         assert_eq!(tail.next_offset, 11);
         // Offset past EOF is clamped, not a panic.
         assert_eq!(sup.read_logs("p", 999, 100).await.content, "");
+    }
+
+    #[tokio::test]
+    async fn stop_during_after_wait_never_spawns() {
+        let mut cfg = base_cfg();
+        // `dep` stays up but never latches ready, so `late` sits in its
+        // `after` wait.
+        let mut dep = proc("dep", "sleep 30");
+        dep.readiness = Some(Readiness::Port { port: 1 });
+        let mut late = proc("late", "echo should-not-run");
+        late.after = vec!["dep".into()];
+        cfg.processes = vec![dep, late];
+        let sup = test_supervisor(cfg);
+        let _ = std::fs::remove_file(sup.log_file("late"));
+
+        sup.reconcile().await;
+        let mut waiting = false;
+        for _ in 0..50 {
+            tokio::time::sleep(Duration::from_millis(50)).await;
+            let dep_up = sup
+                .get("dep")
+                .await
+                .is_some_and(|p| p.status == ProcessStatus::Running);
+            let late_starting = sup
+                .get("late")
+                .await
+                .is_some_and(|p| p.status == ProcessStatus::Starting);
+            if dep_up && late_starting {
+                waiting = true;
+                break;
+            }
+        }
+        assert!(waiting, "late should be waiting on dep");
+
+        sup.stop("late").await.expect("stop late");
+        // Ending the dependency releases the wait (a dead dep stops it).
+        sup.stop("dep").await.expect("stop dep");
+        tokio::time::sleep(Duration::from_millis(700)).await;
+
+        let late = sup.get("late").await.expect("tracked");
+        assert_eq!(late.status, ProcessStatus::Stopped);
+        assert_eq!(late.pid, 0, "stopped during the wait: never spawned");
+        // spawn() opens the log first, so no file means spawn never ran.
+        assert!(
+            !std::path::Path::new(&sup.log_file("late")).exists(),
+            "stopped process must not have been spawned"
+        );
     }
 }

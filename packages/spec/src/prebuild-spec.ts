@@ -1,7 +1,7 @@
 /**
  * The prebuild spec. Prebuilds CHAIN: `source` may be an image OR another
  * snapshotRef, so a dev's expensive setup is a derived snapshot on top of the
- * workspace snapshot (design.md §2 "Layered prebuilds").
+ * workspace snapshot (docs/archive/design.md §2 "Layered prebuilds").
  *
  * Snapshot key = hash(source ⊕ prebuild files ⊕ build[] ⊕ repos). Runtime
  * content (files/env/processes/ports/postStart) never enters the key.
@@ -87,6 +87,8 @@ export const PrebuildRecordSchema = Type.Object(
     metadata: Type.Optional(Type.Record(Type.String(), Type.String())),
     /** The original request, so the console/checker can replay/refresh it. */
     spec: Type.Optional(PrebuildSpecSchema),
+    /** Remote HEAD of each baked repo (by clone path) at bake time. */
+    repoHeads: Type.Optional(Type.Record(Type.String(), Type.String())),
     /** True when a sandbox boots from this snapshot or a prebuild is chained
      * on it — such a snapshot cannot be deleted. */
     inUse: Type.Optional(Type.Boolean()),

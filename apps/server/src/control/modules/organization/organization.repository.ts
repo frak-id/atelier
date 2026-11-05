@@ -11,7 +11,7 @@ function rowToOrganization(
     name: row.name,
     slug: row.slug,
     avatarUrl: row.avatarUrl ?? undefined,
-    personal: row.personal === "true",
+    personal: row.personal,
     createdAt: row.createdAt,
     updatedAt: row.updatedAt,
   };
@@ -65,7 +65,7 @@ export class OrganizationRepository {
         name: org.name,
         slug: org.slug,
         avatarUrl: org.avatarUrl,
-        personal: org.personal ? "true" : "false",
+        personal: org.personal,
         createdAt: org.createdAt,
         updatedAt: org.updatedAt,
       })
@@ -91,7 +91,7 @@ export class OrganizationRepository {
         name: updated.name,
         slug: updated.slug,
         avatarUrl: updated.avatarUrl,
-        personal: updated.personal ? "true" : "false",
+        personal: updated.personal,
         updatedAt: updated.updatedAt,
       })
       .where(eq(organizations.id, id))

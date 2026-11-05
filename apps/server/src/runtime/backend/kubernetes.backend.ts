@@ -1,14 +1,12 @@
 /**
- * The Kubernetes + CSI implementation of the runtime backend port — today's
- * behavior verbatim. It delegates to the existing boot/cleanup/ports/kube
- * modules and holds no policy of its own; the mock-mode short-circuits live in
- * `kubeClient.*` (so this backend is mock-safe without an `isMock()` branch of
- * its own — see the implementation log, step 1).
+ * The Kubernetes + CSI implementation of the runtime backend port. It
+ * delegates to the existing boot/cleanup/ports/kube modules and holds no
+ * policy of its own.
  */
 import type { PortEntry, SandboxSpec } from "@atelier/spec";
 import { config } from "../../shared/lib/config.ts";
 import { createChildLogger } from "../../shared/lib/logger.ts";
-import type { AgentClient } from "../agent/index.ts";
+import { AGENT_ATTACH_PORT, type AgentClient } from "../agent/index.ts";
 import {
   type BootInput,
   type BootOutput,
@@ -18,6 +16,7 @@ import {
 import { cleanupSandboxResources } from "../cleanup.ts";
 import { buildVolumeSnapshot, kubeClient } from "../kube/index.ts";
 import { buildPortIngresses, buildPortUrls, sshUrl } from "../ports.ts";
+import { resourceName } from "../resource-name.ts";
 import type {
   AgentEndpoint,
   SandboxBackend,
@@ -27,29 +26,8 @@ import type {
 
 const log = createChildLogger("runtime-backend-kube");
 
-/** WS attach-bridge port the agent listens on (agent `attach::ATTACH_PORT`). */
-const ATTACH_PORT = 9997;
-
-/**
- * Select the volume storage plane from `config.storage.provider`. Only `csi`
- * is implemented today; the host-FS ladder (`btrfs`/`reflink`/`copy`) and the
- * OCI-tar prebuild materialization are the deferred, infra-gated pieces (see
- * docs/proposals/portable-runtime-implementation-log.md, step 3). Fail fast
- * at construction rather than silently degrading a misconfigured provider.
- */
-export function createVolumeBackend(
-  provider: (typeof config.storage)["provider"] = config.storage.provider,
-): VolumeBackend {
-  if (provider === "csi") return new CsiVolumeBackend();
-  throw new Error(
-    `storage.provider="${provider}" is not yet implemented; only "csi" is ` +
-      "available today (the btrfs/reflink/copy + OCI-tar backends are the " +
-      "deferred portability follow-up). Set storage.provider=csi.",
-  );
-}
-
 /** CSI VolumeSnapshot / PVC storage plane. */
-export class CsiVolumeBackend implements VolumeBackend {
+class CsiVolumeBackend implements VolumeBackend {
   async snapshot(
     pvcName: string,
     ref: string,
@@ -78,6 +56,19 @@ export class CsiVolumeBackend implements VolumeBackend {
       .catch((err) => log.warn({ ref, err }, "VolumeSnapshot delete failed"));
   }
 
+  async reownSnapshot(ref: string, ownerId: string): Promise<void> {
+    // A CRD: only a merge patch is accepted.
+    await kubeClient.patchResource(
+      "VolumeSnapshot",
+      ref,
+      {
+        metadata: { labels: { "atelier.dev/sandbox": ownerId } },
+      },
+      undefined,
+      "merge",
+    );
+  }
+
   volumeExists(pvcName: string): Promise<boolean> {
     return kubeClient.resourceExists("PersistentVolumeClaim", pvcName);
   }
@@ -85,7 +76,7 @@ export class CsiVolumeBackend implements VolumeBackend {
 
 /** Kubernetes sandbox orchestration plane. */
 export class KubernetesBackend implements SandboxBackend {
-  readonly volumes: VolumeBackend = createVolumeBackend();
+  readonly volumes: VolumeBackend = new CsiVolumeBackend();
 
   boot(
     id: string,
@@ -105,7 +96,7 @@ export class KubernetesBackend implements SandboxBackend {
   }
 
   computeExists(id: string): Promise<boolean> {
-    return kubeClient.resourceExists("Pod", `sandbox-${id}`);
+    return kubeClient.resourceExists("Pod", resourceName(id));
   }
 
   async exposePort(id: string, port: PortEntry): Promise<void> {
@@ -114,7 +105,7 @@ export class KubernetesBackend implements SandboxBackend {
     // doesn't exist and Traefik 404s until a pause/resume rebuilds the Service.
     // Strategic merge on `spec.ports` (merge key: `port`) appends without
     // clobbering the existing entries.
-    await kubeClient.patchResource("Service", `sandbox-${id}`, {
+    await kubeClient.patchResource("Service", resourceName(id), {
       spec: {
         ports: [{ name: port.name, port: port.port, targetPort: port.port }],
       },
@@ -136,13 +127,12 @@ export class KubernetesBackend implements SandboxBackend {
     // (same cluster network). `null` while the pod is unscheduled/has no IP so
     // the caller can poll. Fixed ports: agent = config.ports.agent, attach =
     // the well-known 9997 (the pod exposes both).
-    const host = await kubeClient.getPodIp(`sandbox-${id}`);
+    const host = await kubeClient.getPodIp(resourceName(id));
     if (!host) return null;
     return {
       host,
       agentPort: config.ports.agent,
-      attachPort: ATTACH_PORT,
-      terminalPort: config.ports.terminal,
+      attachPort: AGENT_ATTACH_PORT,
     };
   }
 }

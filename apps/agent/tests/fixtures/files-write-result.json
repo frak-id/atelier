@@ -1,0 +1,13 @@
+{
+  "results": [
+    {
+      "path": "/home/dev/a",
+      "success": true
+    },
+    {
+      "path": "/home/dev/b",
+      "success": false,
+      "error": "bad mode: zzz"
+    }
+  ]
+}

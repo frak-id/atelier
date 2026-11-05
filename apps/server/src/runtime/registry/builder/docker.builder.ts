@@ -1,16 +1,14 @@
 /**
- * Docker-daemon implementation of `ImageBuilderBackend` — the first, lowest-
- * friction builder (default `config.imageBuilder.kind`). Shells out to the
+ * Docker-daemon implementation of `ImageBuilderBackend` — the local-mode
+ * builder (default `config.imageBuilder.kind`). Shells out to the
  * `docker` CLI exactly like the sandbox Docker backend does
  * (`../../backend/docker-cli.ts`): `docker build` then `docker push`, then
  * resolve the pushed digest. Works against any local socket or a remote
  * `tcp://` daemon (`config.imageBuilder.dockerHost` \u2192 `DOCKER_HOST`).
  *
- * Security note (see the design review): a shared/remote docker daemon is a
- * root-equivalent RCE surface for whoever can submit a build — arbitrary
- * `RUN` steps execute as the daemon's own privileges. Fine as the first/dev
- * target; multi-tenant deployments should use buildkit (rootless,
- * daemonless by default).
+ * Only the embedded seed images are built (no user-supplied Dockerfile), and
+ * the daemon runs them with its own privileges: fine for the single-user
+ * local mode; cluster deployments use buildkit.
  */
 import { randomUUID } from "node:crypto";
 import { mkdtemp, rm, writeFile } from "node:fs/promises";
@@ -68,8 +66,7 @@ export class DockerImageBuilder implements ImageBuilderBackend {
     signal: AbortSignal,
   ): Promise<ImageBuildResult> {
     // A temp Dockerfile OUTSIDE `req.contextDir` — never write into a seed's
-    // own directory (it's shared, read-only build content) or an unpacked
-    // upload the caller may reuse/inspect. `-f` points `docker build` at it
+    // own directory (it's shared, read-only build content). `-f` points `docker build` at it
     // while `req.contextDir` stays the actual build context.
     const dockerfileDir = await mkdtemp(join(tmpdir(), "atelier-image-build-"));
     const dockerfilePath = join(dockerfileDir, `Dockerfile.${randomUUID()}`);

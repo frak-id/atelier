@@ -9,6 +9,7 @@ import type { ServerContainer } from "../api/container.ts";
 import {
   ensureSharedSshPipeKey,
   getSharedSshPipeKeyOpenSSH,
+  resourceName,
 } from "../runtime/index.ts";
 import { config } from "../shared/lib/config.ts";
 import { createChildLogger } from "../shared/lib/logger.ts";
@@ -23,16 +24,16 @@ export type { InServerSshGateway } from "./proxy.ts";
 
 const log = createChildLogger("ssh-gateway");
 
+/** How long an SSH connection to a paused sandbox waits for its resume. */
+const WAKE_TIMEOUT_MS = 3 * 60 * 1000;
+
 /**
- * Boot the in-server ssh2 gateway from the composition root. No-op-returns
- * `null` for any strategy other than `in-server`. Requires the shared ssh-pipe
- * key to exist (the caller ensures it before this on non-`none` strategies).
+ * Boot the in-server ssh2 gateway from the composition root (production mode
+ * only; local mode has no SSH gateway).
  */
 export async function startSshGateway(
   container: ServerContainer,
-): Promise<InServerSshGateway | null> {
-  if (config.domain.ssh.gateway !== "in-server") return null;
-
+): Promise<InServerSshGateway> {
   // The pod trusts the shared key's public half; the proxy dials the pod with
   // its private half. Ensure it exists, then read its OpenSSH material.
   await ensureSharedSshPipeKey();
@@ -40,12 +41,25 @@ export async function startSshGateway(
   const hostKey = await ensureInServerHostKey(container.control.secretService);
 
   const namespace = config.kubernetes.namespace;
-  const resolveUpstream = (sandboxId: string): UpstreamTarget | null => {
-    // Dial the sandbox's Service DNS on port 22 — the same target the sshpiper
-    // `Pipe` used (stable across pod restarts, no pod-IP race).
+  const resolveUpstream = async (
+    sandboxId: string,
+  ): Promise<UpstreamTarget | null> => {
+    // Dial the sandbox's Service DNS on port 22 (stable across pod restarts,
+    // no pod-IP race).
     if (!/^[a-z0-9-]+$/i.test(sandboxId)) return null;
+    // A paused sandbox is resumed on connect, and the connection waits for
+    // it (bounded; past that the connection is closed).
+    if (container.runtime.getStatus(sandboxId) === "paused") {
+      log.info({ sandboxId }, "ssh to a paused sandbox; resuming it");
+      try {
+        await container.sandboxOps.ensureRunning(sandboxId, WAKE_TIMEOUT_MS);
+      } catch (err) {
+        log.warn({ sandboxId, err }, "ssh wake-up did not complete");
+        return null;
+      }
+    }
     return {
-      host: `sandbox-${sandboxId}.${namespace}.svc`,
+      host: `${resourceName(sandboxId)}.${namespace}.svc`,
       port: 22,
       // Pin against the sshd host key the agent reported at this sandbox's
       // last boot/resume, when known (a cheap in-memory store read, see

@@ -1,91 +1,57 @@
 /**
- * Owner scoping + authorization for toolboxes (`/api/toolboxes`, the
- * `list_toolboxes`/`manage_toolbox` MCP tools) and ownership transfers. One
- * set of invariants, every caller.
+ * Org scoping + authorization for toolboxes (`/api/toolboxes`, the
+ * `manage_toolbox` admin MCP tool and `whoami`). Toolboxes belong to an org
+ * ("personal" means the caller's personal org); any member of the org may
+ * use, create and edit them.
  */
-import type { ToolboxOwner } from "@atelier/spec";
 import type { ControlContainer } from "../control/index.ts";
-import { ForbiddenError, ValidationError } from "../shared/errors.ts";
+import { ValidationError } from "../shared/errors.ts";
 
 /**
- * Parse + authorize the `owner=` scope for a GET/POST toolbox request.
- * Grammar: `org:<id>` | `user:<id>` | `user` | `me` (alias for the caller).
- * Absent \u2192 default to the caller (`user:<me>`) \u2014 the "My Toolboxes" home;
- * we do NOT fall back to an org, so an org's private build scripts are never
- * the implicit default (entities-toolbox.md D7).
- *
- * AuthZ per owner type: org \u2192 `requireRole(owner/admin)` (write) or
- * `requireMembership` (read); user \u2192 self-only (a user may only ever scope
- * to their own id).
+ * Parse + authorize the `owner=` scope for a toolbox request.
+ * Grammar: `org:<id>` | `me` (alias `user`, `personal`: the caller's personal
+ * org). Absent defaults to the caller's personal org, so a team org's
+ * toolboxes are never the implicit default. The caller must belong to the org.
  */
-export function resolveOwner(
+export function resolveToolboxOrg(
   control: ControlContainer,
   userId: string,
   ownerParam: string | undefined,
-  write: boolean,
-): ToolboxOwner {
-  if (!ownerParam || ownerParam === "me" || ownerParam === "user") {
-    return { type: "user", id: userId };
+): string {
+  if (
+    !ownerParam ||
+    ownerParam === "me" ||
+    ownerParam === "user" ||
+    ownerParam === "personal"
+  ) {
+    const personalOrgId = control.userService.getById(userId)?.personalOrgId;
+    if (!personalOrgId) {
+      throw new ValidationError("You have no personal organization yet");
+    }
+    return personalOrgId;
   }
   const [type, id] = ownerParam.split(":", 2);
-  if (type === "user") {
-    const targetId = !id || id === "me" ? userId : id;
-    if (targetId !== userId) {
-      throw new ForbiddenError("Cannot access another user's toolboxes");
-    }
-    return { type: "user", id: userId };
+  if (type !== "org" || !id) {
+    throw new ValidationError(`Invalid owner scope '${ownerParam}'`);
   }
-  if (type === "org") {
-    if (!id) throw new ValidationError("owner=org: requires an org id");
-    if (write) {
-      control.orgMemberService.requireRole(id, userId, ["owner", "admin"]);
-    } else {
-      control.orgMemberService.requireMembership(id, userId);
-    }
-    return { type: "org", id };
-  }
-  throw new ValidationError(`Invalid owner scope '${ownerParam}'`);
+  control.orgMemberService.requireMembership(id, userId);
+  return id;
 }
 
-/**
- * Authorize a mutation against the STORED record's owner (never a caller-
- * supplied scope) \u2014 the security-critical spot for PATCH/DELETE. Org \u2192
- * owner/admin of the record's org; user \u2192 the record's owner only (org
- * admins do NOT manage members' personal toolboxes).
- */
-export function requireToolboxOwnerAccess(
+/** Authorize a read or mutation against the STORED record's org (never a
+ * caller-supplied scope): the caller must be a member of it. */
+export function requireToolboxAccess(
   control: ControlContainer,
-  toolbox: { ownerType: ToolboxOwner["type"]; ownerId: string },
+  toolbox: { orgId: string },
   userId: string,
 ): void {
-  if (toolbox.ownerType === "org") {
-    control.orgMemberService.requireRole(toolbox.ownerId, userId, [
-      "owner",
-      "admin",
-    ]);
-    return;
-  }
-  if (toolbox.ownerType === "user") {
-    if (toolbox.ownerId !== userId) {
-      throw new ForbiddenError("Cannot manage another user's toolbox");
-    }
-    return;
-  }
-  // Fail closed on any unexpected owner type (defense-in-depth: the typed
-  // service layer should make this unreachable).
-  throw new ForbiddenError("Unknown toolbox owner");
+  control.orgMemberService.requireMembership(toolbox.orgId, userId);
 }
 
-/** Every owner scope the caller can read: themself + each org they belong
- * to. */
-export function readableOwners(
+/** Every org whose toolboxes the caller can read: the ones they belong to. */
+export function readableOrgIds(
   control: ControlContainer,
   userId: string,
-): ToolboxOwner[] {
-  return [
-    { type: "user", id: userId },
-    ...control.orgMemberService
-      .getByUserId(userId)
-      .map((m) => ({ type: "org" as const, id: m.orgId })),
-  ];
+): string[] {
+  return control.orgMemberService.getByUserId(userId).map((m) => m.orgId);
 }

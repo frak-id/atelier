@@ -5,6 +5,10 @@ import {
   type Stream,
 } from "@agentclientprotocol/sdk";
 import { safeNanoid } from "../../shared/lib/id.ts";
+import { createChildLogger } from "../../shared/lib/logger.ts";
+import { redactAgentUrl } from "../../shared/lib/redact.ts";
+
+const log = createChildLogger("acp-stream");
 
 const CANCEL_REQUEST_METHOD = "$/cancel_request";
 
@@ -72,7 +76,10 @@ export function connectAcpWebSocket(url: string): AcpTransport {
   const errorReadable = () => {
     if (settled) return;
     settled = true;
-    readableController?.error(new Error(`ACP WebSocket error: ${url}`));
+    // No URL in the message: it carries the agent token and the pod IP, and
+    // the error ends up in task records and tool results.
+    log.debug({ url: redactAgentUrl(url) }, "ACP WebSocket error");
+    readableController?.error(new Error("ACP WebSocket error"));
   };
 
   ws.addEventListener("close", closeReadable);
@@ -89,7 +96,10 @@ export function connectAcpWebSocket(url: string): AcpTransport {
     );
     ws.addEventListener(
       "error",
-      () => reject(new Error(`ACP WebSocket failed to connect: ${url}`)),
+      () => {
+        log.debug({ url: redactAgentUrl(url) }, "ACP WebSocket connect failed");
+        reject(new Error("ACP WebSocket failed to connect"));
+      },
       { once: true },
     );
   });
@@ -122,25 +132,16 @@ export function connectAcpWebSocket(url: string): AcpTransport {
 }
 
 /**
- * Scope a JSON-RPC stream to THIS connection, dropping what the attach bridge
- * replays from earlier ones.
+ * Tag this connection's request ids so a stray response from another
+ * connection is never taken for ours.
  *
- * The in-pod bridge replays its output buffer (the last 2 MiB of the harness's
- * stdout) to every new attach, and the harness process outlives our sockets.
- * So a fresh connection first receives the previous connections' traffic:
- * their responses, `session/update`s and permission requests. The SDK numbers
- * requests from 0 on every connection, so a replayed `{"id":1,...}` answered
- * THIS connection's request 1: once a `session/new` had failed, every later
- * dial got that same stale error back (and a replayed success handed out an
- * old session id), while the agent's real answer was dropped as unknown.
- *
- * Two rules fix it:
+ * The attach is dialled with `replay=0` (live output only), so there is no
+ * replay to guess at. The SDK still numbers requests from 0 on every
+ * connection, and the harness process outlives our sockets, so:
  *  - outgoing requests get ids tagged with a per-connection `tag` (restored
  *    on the way back), and an incoming response without our tag is dropped;
- *  - agent requests and notifications are dropped until our first response
- *    arrives. The bridge sends the whole replay before any live output, so
- *    everything ahead of that response is replay (an old permission request
- *    would otherwise sit pending forever and block the idle pause).
+ *  - `$/cancel_request` names the wire id.
+ * Agent requests and notifications pass through untouched.
  */
 export function scopeToConnection(inner: Stream, tag: string): Stream {
   /** Wire id (tagged) -> the SDK's id, for the requests still in flight. */
@@ -148,7 +149,6 @@ export function scopeToConnection(inner: Stream, tag: string): Stream {
   /** The SDK's id -> wire id, so `$/cancel_request` names the wire id. */
   const wireIds = new Map<JsonRpcId, string>();
   let seq = 0;
-  let synced = false;
 
   const outgoing = new TransformStream<AnyMessage, AnyMessage>({
     transform(message, controller) {
@@ -182,8 +182,7 @@ export function scopeToConnection(inner: Stream, tag: string): Stream {
   const incoming = new TransformStream<AnyMessage, AnyMessage>({
     transform(message, controller) {
       if ("method" in message) {
-        // An agent request or notification: live only once we're in sync.
-        if (synced) controller.enqueue(message);
+        controller.enqueue(message);
         return;
       }
       if (!("id" in message) || typeof message.id !== "string") return;
@@ -191,7 +190,6 @@ export function scopeToConnection(inner: Stream, tag: string): Stream {
       const sdkId = sdkIds.get(message.id) as JsonRpcId;
       sdkIds.delete(message.id);
       wireIds.delete(sdkId);
-      synced = true;
       controller.enqueue({ ...message, id: sdkId });
     },
   });

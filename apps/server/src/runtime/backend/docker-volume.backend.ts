@@ -26,6 +26,9 @@
 import type { VolumeBackend } from "./backend.types.ts";
 import { docker } from "./docker-cli.ts";
 
+/** The label that ties a snapshot volume to the sandbox that owns it. */
+const OWNER_LABEL = "atelier.dev/sandbox";
+
 export interface DockerVolumeBackendOptions {
   /** Tiny image used to copy volume contents (needs `cp`). Pulled on demand. */
   helperImage?: string;
@@ -54,8 +57,18 @@ export class DockerVolumeBackend implements VolumeBackend {
     return res.code === 0;
   }
 
-  private async create(volume: string): Promise<void> {
-    const res = await docker(["volume", "create", volume], this.bin);
+  private async create(
+    volume: string,
+    labels: Record<string, string> = {},
+  ): Promise<void> {
+    const labelArgs = Object.entries(labels).flatMap(([k, v]) => [
+      "--label",
+      `${k}=${v}`,
+    ]);
+    const res = await docker(
+      ["volume", "create", ...labelArgs, volume],
+      this.bin,
+    );
     if (res.code !== 0) {
       throw new Error(`docker volume create ${volume} failed: ${res.stderr}`);
     }
@@ -106,22 +119,64 @@ export class DockerVolumeBackend implements VolumeBackend {
   }
 
   async deleteVolume(pvcName: string): Promise<void> {
-    await docker(["volume", "rm", "-f", this.volumeName(pvcName)], this.bin);
+    await this.removeVolume(this.volumeName(pvcName));
   }
 
-  async snapshot(pvcName: string, ref: string): Promise<void> {
+  /** `docker volume rm -f` (an already-gone volume is fine); a failure
+   * (e.g. a container still uses it) throws instead of passing silently. */
+  private async removeVolume(volume: string): Promise<void> {
+    const res = await docker(["volume", "rm", "-f", volume], this.bin);
+    if (res.code !== 0) {
+      throw new Error(`docker volume rm ${volume} failed: ${res.stderr}`);
+    }
+  }
+
+  /** Remove every snapshot volume labelled as owned by `sandboxId` (the
+   * Docker analogue of the k8s label sweep over VolumeSnapshots). */
+  async deleteSnapshotsOwnedBy(sandboxId: string): Promise<void> {
+    const res = await docker(
+      ["volume", "ls", "-q", "--filter", `label=${OWNER_LABEL}=${sandboxId}`],
+      this.bin,
+    );
+    if (res.code !== 0) {
+      throw new Error(`docker volume ls failed: ${res.stderr}`);
+    }
+    for (const volume of res.stdout.split("\n").filter(Boolean)) {
+      await this.removeVolume(volume);
+    }
+  }
+
+  async snapshot(
+    pvcName: string,
+    ref: string,
+    labels: Record<string, string>,
+  ): Promise<void> {
     const volume = this.volumeName(pvcName);
     if (!(await this.exists(volume))) {
       throw new Error(`cannot snapshot missing volume ${volume}`);
     }
     // Idempotent on ref: a forced rebuild may resolve to an existing name.
-    await docker(["volume", "rm", "-f", ref], this.bin);
-    await this.create(ref);
+    await this.removeVolume(ref);
+    await this.create(ref, labels);
     await this.copyVolume(volume, ref);
   }
 
   async deleteSnapshot(ref: string): Promise<void> {
-    await docker(["volume", "rm", "-f", ref], this.bin);
+    await this.removeVolume(ref);
+  }
+
+  /** A volume's labels are immutable, so a new owner means a copy: stage the
+   * content aside, recreate the volume under the new label, copy back. */
+  async reownSnapshot(ref: string, ownerId: string): Promise<void> {
+    const staging = `${ref}-reown`;
+    await this.removeVolume(staging);
+    await this.create(staging);
+    await this.copyVolume(ref, staging);
+    await this.removeVolume(ref);
+    await this.create(ref, { [OWNER_LABEL]: ownerId });
+    await this.copyVolume(staging, ref);
+    // Kept (not removed) when a step above fails: it may hold the only copy.
+    await this.removeVolume(staging);
   }
 
   async volumeExists(pvcName: string): Promise<boolean> {

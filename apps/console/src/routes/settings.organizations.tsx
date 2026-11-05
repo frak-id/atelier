@@ -42,7 +42,7 @@ import { NativeSelect } from "@/components/ui/native-select";
 import { Skeleton } from "@/components/ui/skeleton";
 import { formatRelativeTime } from "@/lib/formatters";
 
-const ROLES: OrgMemberRole[] = ["owner", "admin", "member", "viewer"];
+const ROLES: OrgMemberRole[] = ["owner", "member"];
 const SLUG_RE = /^[a-z0-9]([a-z0-9-]{0,48}[a-z0-9])?$/;
 
 export const Route = createFileRoute("/settings/organizations")({
@@ -109,6 +109,7 @@ function OrgRow({
     slug: string;
     personal: boolean;
     mine: boolean;
+    default: boolean;
     role: OrgMemberRole;
   };
 }) {
@@ -116,7 +117,7 @@ function OrgRow({
   const [renameOpen, setRenameOpen] = useState(false);
   const [deleteOpen, setDeleteOpen] = useState(false);
   const deleteOrg = useDeleteOrganization();
-  const canManageOrg = org.role === "owner" || org.role === "admin";
+  const canManageOrg = org.role === "owner";
 
   return (
     <Card>
@@ -136,6 +137,7 @@ function OrgRow({
           </span>
           <Badge variant="secondary">{org.role}</Badge>
           {org.mine ? <Badge variant="outline">personal</Badge> : null}
+          {org.default ? <Badge variant="outline">default</Badge> : null}
           <div className="ml-auto flex shrink-0 gap-1">
             {canManageOrg ? (
               <Button
@@ -147,7 +149,7 @@ function OrgRow({
                 Rename
               </Button>
             ) : null}
-            {org.role === "owner" && !org.personal ? (
+            {canManageOrg && !org.personal ? (
               <Button
                 variant="outline"
                 size="sm"
@@ -294,16 +296,12 @@ function OrgMembers({ orgId, role }: { orgId: string; role: OrgMemberRole }) {
   const [pendingRemove, setPendingRemove] = useState<
     { userId: string; username: string } | undefined
   >();
-  const canManage = role === "owner" || role === "admin";
+  const canManage = role === "owner";
   const updateRole = useUpdateOrgMemberRole(orgId);
   const removeMember = useRemoveOrgMember(orgId);
   const ownersCount = members?.filter((m) => m.role === "owner").length ?? 0;
-  // Owners manage anyone; admins manage non-owners only (mirrors the
-  // server's `OrgMemberService.updateRole`/`removeMember`).
-  const canManageMember = (memberRole: OrgMemberRole) =>
-    role === "owner" || (role === "admin" && memberRole !== "owner");
-  const assignableRoles =
-    role === "owner" ? ROLES : ROLES.filter((r) => r !== "owner");
+  // Only owners change roles or remove members (mirrors the server's
+  // `OrgMemberService.updateRole`/`removeMember`).
   const isSoleOwner = role === "owner" && ownersCount <= 1;
 
   return (
@@ -315,7 +313,7 @@ function OrgMembers({ orgId, role }: { orgId: string; role: OrgMemberRole }) {
       ) : (
         members?.map((member) => {
           const isSelf = member.userId === currentUser?.id;
-          const manageable = canManageMember(member.role) && !isSelf;
+          const manageable = canManage && !isSelf;
           return (
             <div
               key={member.id}
@@ -340,7 +338,7 @@ function OrgMembers({ orgId, role }: { orgId: string; role: OrgMemberRole }) {
                     disabled={updateRole.isPending}
                     aria-label={`Role for ${member.username}`}
                   >
-                    {assignableRoles.map((r) => (
+                    {ROLES.map((r) => (
                       <option key={r} value={r}>
                         {r}
                       </option>
@@ -428,7 +426,6 @@ function OrgMembers({ orgId, role }: { orgId: string; role: OrgMemberRole }) {
           </Button>
           <AddMemberDialog
             orgId={orgId}
-            roles={assignableRoles}
             open={addOpen}
             onOpenChange={setAddOpen}
           />
@@ -440,13 +437,10 @@ function OrgMembers({ orgId, role }: { orgId: string; role: OrgMemberRole }) {
 
 function AddMemberDialog({
   orgId,
-  roles,
   open,
   onOpenChange,
 }: {
   orgId: string;
-  /** Roles the caller may grant (admins can't add owners). */
-  roles: OrgMemberRole[];
   open: boolean;
   onOpenChange: (open: boolean) => void;
 }) {
@@ -529,7 +523,7 @@ function AddMemberDialog({
                 value={role}
                 onChange={(e) => setRole(e.target.value as OrgMemberRole)}
               >
-                {roles.map((r) => (
+                {ROLES.map((r) => (
                   <option key={r} value={r}>
                     {r}
                   </option>

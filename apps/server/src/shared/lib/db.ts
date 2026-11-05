@@ -10,7 +10,7 @@ import { appPaths, ensureAppDirs } from "./paths.ts";
  * here (not in `control/db/client.ts`) so `runtime/` can persist without
  * importing `control/` — enforced by `scripts/check-boundaries.ts`. One file,
  * one connection; `control/` and `runtime/` each own disjoint tables in their
- * own schema module (no FK between them, design.md §3.1).
+ * own schema module (no FK between them, docs/archive/design.md §3.1).
  */
 const log = createChildLogger("db");
 
@@ -42,4 +42,9 @@ export function getDatabase(): BunSQLiteDatabase {
     throw new Error("Database not initialized. Call initDatabase() first.");
   }
   return db;
+}
+
+/** Swap the shared connection (tests run on an in-memory database). */
+export function setDatabase(next: BunSQLiteDatabase | null): void {
+  db = next;
 }

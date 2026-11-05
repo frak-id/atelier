@@ -3,23 +3,7 @@
  * (runtime/control/sessions) are wired together. Manual-wiring convention
  * (no DI framework).
  */
-import { setTimeout as sleep } from "node:timers/promises";
-import {
-  type PortEntry,
-  type ProcessEntry,
-  type RuntimeSurface,
-  SANDBOX_NAME_ANNOTATION,
-  type ToolboxConfig,
-  type ToolboxOwner,
-  type ToolsetRef,
-} from "@atelier/spec";
-import { createControlContainer, recipeFingerprint } from "../control/index.ts";
-import {
-  createIntegrationRegistry,
-  INTEGRATIONS,
-  IntegrationHub,
-  type IntegrationRegistry,
-} from "../integrations/index.ts";
+import { createControlContainer } from "../control/index.ts";
 import {
   AgentClient,
   createImageBuilder,
@@ -35,64 +19,37 @@ import {
   RuntimeService,
 } from "../runtime/index.ts";
 import {
-  AcpSessionSurface,
   AgentDispatch,
   AgentTaskService,
-  registerHarnessDispatch,
+  DrizzleTaskStore,
   SessionService,
   TerminalService,
 } from "../sessions/index.ts";
-import { OWNER_ID_METADATA } from "../shared/lib/git-attribution.ts";
-import { createChildLogger } from "../shared/lib/logger.ts";
-import { registryUrl } from "../shared/lib/runtime-config.ts";
+import {
+  bindRuntimeConfig,
+  registryUrl,
+} from "../shared/lib/runtime-config.ts";
+import { SandboxOps } from "./app/sandbox-ops.ts";
+import { ToolboxOps } from "./app/toolbox-ops.ts";
 import { IdleReaper } from "./idle-reaper.ts";
 
-/**
- * Wire the built-in harnesses. Two independent, both OPTIONAL, extension
- * points — any ACP-speaking harness works with neither (the session surface
- * is one generic ACP-over-attach view for every harness):
- *  - compose-side `registerHarness`: server-side fallback composition when a
- *    toolbox/org-policy names a harness (client-composed specs bypass it);
- *  - `registerHarnessDispatch`: only for harnesses that translate a
- *    model/agent selection into ACP `session/set_config_option` (opencode)
- *    or send status text of their own as message chunks (pi), which tasks
- *    leave out of the agent's reply; unknown harnesses dispatch as is.
- */
-async function registerBuiltinHarnesses(container: ServerContainer) {
-  const {
-    registerHarness,
-    opencodeHarness,
-    piHarness,
-    piIsNotice,
-    piStartupNotice,
-  } = await import("@atelier/compose");
-  registerHarness(opencodeHarness);
-  registerHarness(piHarness);
-  const { opencodeSessionConfig } = await import(
-    "@atelier/compose/harnesses/opencode"
-  );
-  container.registerHarnessDispatch({
-    id: "opencode",
-    sessionConfig: opencodeSessionConfig,
-  });
-  container.registerHarnessDispatch({
-    id: "pi",
-    startupNotice: piStartupNotice,
-    isNotice: piIsNotice,
-  });
-}
-
-const log = createChildLogger("container");
-
 export function createServerContainer() {
-  // The integrations the operator enabled (environment, read once at boot).
-  const integrations = createIntegrationRegistry(INTEGRATIONS);
   const control = createControlContainer();
+  // The runtime reads operational config (default image/size, agent image,
+  // snapshot retention) through the console-editable config plane. Injected
+  // here so runtime/ and shared/ never import control/.
+  bindRuntimeConfig((key) => control.serverConfigService.get(key));
   // Construct the backend once and dial its resolved endpoint from the agent
   // (pod IP on k8s, mapped host ports on Docker) — the same instance is shared
   // with RuntimeService so there is a single source of endpoint truth.
   const backend = createSandboxBackend();
-  const agent = new AgentClient((id) => backend.resolveAgentEndpoint(id));
+  // The agent requires a per-sandbox bearer token: a booting sandbox hands it
+  // to the client directly, an already-booted one is read off its record.
+  const sandboxStore = new DrizzleSandboxStore();
+  const agent = new AgentClient(
+    (id) => backend.resolveAgentEndpoint(id),
+    (id) => sandboxStore.get(id)?.generated?.agentPassword,
+  );
   // One `images` store instance shared by the runtime (which reads it in
   // resolveImage to prefer a built image's pinned digest) and the image
   // builder service (which writes it) — a single source of truth for the
@@ -101,11 +58,14 @@ export function createServerContainer() {
   const runtime = new RuntimeService({
     agent,
     backend,
-    sandboxes: new DrizzleSandboxStore(),
+    sandboxes: sandboxStore,
     snapshots: new DrizzleSnapshotStore(),
     toolsets: new DrizzleToolsetStore(),
     sandboxToolsetRefs: new DrizzleSandboxToolsetRefStore(),
     images: imageStore,
+    // Stored specs keep their `$secret` refs and carry no credentials: every
+    // boot resolves them here (control owns the secrets and the owner's token).
+    resolveBootSpec: (spec) => control.resolveBootSpec(spec),
   });
   // Durable, observable lifecycle for long runtime ops (prebuild bake,
   // toolset build/capture, sandbox lifecycle) — the api/ seam dispatches
@@ -116,35 +76,19 @@ export function createServerContainer() {
     // Lazy so a live edit to jobs.concurrency re-bounds the pool.
     concurrency: () => control.serverConfigService.get("jobs.concurrency"),
   });
-  // Permission prompts also go to the sandbox owner's connected integrations;
-  // sessions/ only sees the notifier seam.
-  const notifier = new IntegrationHub({
-    registry: integrations,
-    ownerOf: (sandboxId) =>
-      runtime.getLabels(sandboxId)?.metadata?.[OWNER_ID_METADATA],
-    sandboxName: (sandboxId) =>
-      runtime.getLabels(sandboxId)?.annotations?.[SANDBOX_NAME_ANNOTATION] ??
-      sandboxId,
-    connectionsOf: (userId) =>
-      control.integrationConnectionService.connectionsOf(userId),
-    sleep: (ms, signal) => sleep(ms, undefined, { signal }),
-    log: createChildLogger("integration-hub"),
-  });
   const dispatch = new AgentDispatch({
     agentClient: agent,
-    notifier,
     // sessions/ only sees a callback; the idle rules live in control/.
     onActivity: (sandboxId) => runtime.touch(sandboxId, "agent"),
   });
-  const sessions = new SessionService({
-    runtime,
-    // One surface for every harness: they all speak ACP over the attach
-    // bridge, so there is nothing per-harness to resolve.
-    surface: (sandboxId) => new AcpSessionSurface(dispatch, sandboxId),
-  });
+  const sessions = new SessionService({ runtime, dispatch });
   // Fire-and-forget agent prompts (MCP `send_prompt`): server-driven ACP
-  // sessions with captured replies. In-memory; see task.service.ts.
-  const tasks = new AgentTaskService({ runtime, dispatch });
+  // sessions with captured replies. Durable records, live state in memory; see task.service.ts.
+  const tasks = new AgentTaskService({
+    runtime,
+    dispatch,
+    store: new DrizzleTaskStore(),
+  });
   const terminal = new TerminalService({ agent });
   // Idle auto-pause: the operator's rule (control) over the runtime's
   // activity clocks, blocked by ACP work in flight (sessions).
@@ -153,6 +97,16 @@ export function createServerContainer() {
     jobs,
     dispatch,
     policy: control.idlePolicyService,
+  });
+  // The application layer under HTTP and MCP: the only place a request becomes
+  // runtime + control + jobs calls (routes and tools stay thin).
+  const toolboxOps = new ToolboxOps({ runtime, control, jobs });
+  const sandboxOps = new SandboxOps({
+    runtime,
+    control,
+    jobs,
+    toolboxes: toolboxOps,
+    idle,
   });
   const images = new ImageBuilderService({
     store: imageStore,
@@ -189,14 +143,14 @@ export function createServerContainer() {
     runtime,
     jobs,
     agent,
-    integrations,
     dispatch,
     sessions,
     tasks,
     terminal,
     images,
     idle,
-    registerHarnessDispatch,
+    sandboxOps,
+    toolboxOps,
   };
   return serverContainer;
 }
@@ -207,311 +161,11 @@ export interface ServerContainer {
   jobs: JobService;
   images: ImageBuilderService;
   agent: AgentClient;
-  /** The enabled integrations (environment, read once at boot). */
-  integrations: IntegrationRegistry;
   dispatch: AgentDispatch;
   sessions: SessionService;
   tasks: AgentTaskService;
   terminal: TerminalService;
   idle: IdleReaper;
-  registerHarnessDispatch: typeof registerHarnessDispatch;
-}
-
-/** Bootstrap hook: call once after `createServerContainer()`. */
-export async function wireBuiltinHarnesses(container: ServerContainer) {
-  await registerBuiltinHarnesses(container);
-}
-
-/**
- * Resolve one toolbox (for a given owner) to a `ToolsetRef`, or `undefined`
- * if it can't be resolved this spawn. Shared by `resolveToolboxRefs` (the
- * auto-inject tiers) and `resolveSelectedToolboxes` (explicit selectors) —
- * both need the same pinned-fast-path → build → lazy-record → log-and-skip
- * sequence, just over different toolbox sets.
- *
- * Pinned (docs/toolbox-versions.md §2): resolve straight to the saved ref,
- * skipping `buildToolset` entirely — no build, no content-hash lookup, just
- * the pointer. A dangling pin falls back to the recipe build (same
- * "never fail the whole spawn" resilience as the build path).
- *
- * Each build uses a STABLE registry name keyed on the immutable owner
- * (`tb/${ownerType}/${ownerId}/${slug}`), so renaming an org never churns
- * artifacts or orphans a toolbox's repo (R2). `buildToolset` is content-hash
- * idempotent + inflight-deduped, so resolving fresh on every spawn (no memo
- * cache, R5) is cheap after the first build. A single toolbox's build
- * failure is logged and skipped — never fails the whole spawn.
- */
-async function resolveToolboxToRef(
-  container: ServerContainer,
-  owner: ToolboxOwner,
-  config: ToolboxConfig,
-): Promise<ToolsetRef | undefined> {
-  const activeId = container.control.toolboxService.getActiveVersionId(
-    config.id,
-  );
-  if (activeId) {
-    const version = container.control.toolboxVersionService.find(activeId);
-    if (version) return { ref: version.ref };
-    log.warn(
-      { slug: config.slug, activeId },
-      "pinned toolbox version missing; falling back to recipe build",
-    );
-  }
-  try {
-    const { ref } = await container.runtime.buildToolset({
-      name: `tb/${owner.type}/${owner.id}/${config.slug}`,
-      source: config.source,
-      build: config.build,
-      paths: config.paths,
-    });
-    await recordBuiltVersionLazily(container, config, ref);
-    return { ref };
-  } catch (err) {
-    log.error(
-      { err, ownerType: owner.type, ownerId: owner.id, slug: config.slug },
-      "toolbox build failed; skipping for this spawn",
-    );
-    return undefined;
-  }
-}
-
-/**
- * Resolve the caller's enabled toolboxes into built `ToolsetRef`s for a spawn
- * (entities-toolbox.md §5). Injection order is `[org enabled asc] → [user
- * enabled asc]`: the org's mandated baseline first, then the caller's personal
- * overlay, so a user's own toolbox shadows an org tool on a path conflict —
- * but only in that user's own sandboxes ("personal dotfiles win"). The
- * explicit `spec.toolsets` still win last (applied by the caller).
- *
- * `orgId` is optional (`undefined` skips the org tier — spawn bare, never
- * throw, Oracle refinement R1); `userId` is always present at the seam.
- */
-export async function resolveToolboxRefs(
-  container: ServerContainer,
-  { orgId, userId }: { orgId?: string; userId: string },
-): Promise<ToolsetRef[]> {
-  const owners: ToolboxOwner[] = [];
-  if (orgId) owners.push({ type: "org", id: orgId });
-  owners.push({ type: "user", id: userId });
-
-  // Resolve everything concurrently — builds are content-hash idempotent and
-  // inflight-deduped, so parallel cold builds each get their own throwaway
-  // pod instead of queuing. `Promise.all` preserves position, so the
-  // org → user, oldest-first injection order is unchanged.
-  const resolved = await Promise.all(
-    owners.map((owner) =>
-      Promise.all(
-        container.control.toolboxService
-          .listAutoInject(owner)
-          .map((config) => resolveToolboxToRef(container, owner, config)),
-      ),
-    ),
-  );
-  return resolved.flat().filter((ref) => ref !== undefined);
-}
-
-/**
- * Build the toolsets for an explicitly-selected set of toolboxes
- * (`tb/<owner>/<slug>` selectors from the spawn UI). Mirrors
- * `resolveToolboxRefs` but for the picked set rather than the auto-inject set,
- * and only for toolboxes that carry files: a process-only toolbox (browser)
- * has no `build`/`paths`, so it produces no toolset — its surface is applied
- * separately from the selector. A single toolbox's build failure is logged
- * and skipped, never fails the spawn.
- */
-export async function resolveSelectedToolboxes(
-  container: ServerContainer,
-  selectors: string[],
-): Promise<ToolsetRef[]> {
-  const resolved = await Promise.all(
-    selectors.map((selector) => {
-      const config = toolboxForRef(container, selector);
-      if (!config || config.build.length === 0 || config.paths.length === 0) {
-        return undefined;
-      }
-      // Build under the toolbox's CURRENT owner (a stale selector may still
-      // name its previous one).
-      return resolveToolboxToRef(
-        container,
-        { type: config.ownerType, id: config.ownerId },
-        config,
-      );
-    }),
-  );
-  return resolved.filter((ref) => ref !== undefined);
-}
-
-/**
- * Lazily record a recipe-built artifact as a `built` version row, once per
- * distinct ref (docs/toolbox-versions.md §3) — so version history stays
- * complete even for toolboxes that never went through an explicit capture.
- * Gated on `existsByRef` first so the hot spawn path stays a single indexed
- * lookup once a ref has been recorded (the seam calls `buildToolset` every
- * spawn, but it's content-hash cached, so `ref` is stable until the recipe
- * changes). Recording a version row must never fail a spawn: every failure
- * is caught and logged only.
- */
-export async function recordBuiltVersionLazily(
-  container: ServerContainer,
-  config: ToolboxConfig,
-  ref: string,
-): Promise<void> {
-  try {
-    if (container.control.toolboxVersionService.existsByRef(config.id, ref)) {
-      return;
-    }
-    const fp = recipeFingerprint(config);
-    const sourceImage = await container.runtime
-      .resolveSourceImage(
-        config.source ?? { image: container.runtime.defaultImage() },
-      )
-      .catch(() => undefined);
-    container.control.toolboxVersionService.recordBuilt(config.id, {
-      ref,
-      recipeFingerprint: fp,
-      sourceImage,
-    });
-    pruneToolboxVersions(container, config.id);
-  } catch (err) {
-    log.error(
-      { err, toolboxId: config.id, ref },
-      "lazy built-version recording failed; spawn continues",
-    );
-  }
-}
-
-/**
- * Enforce the per-toolbox retention policy after a new version row is added
- * (docs/toolbox-versions.md §6) — called after both lazy `built` recording
- * and explicit capture. Also drops the runtime toolset record for any pruned
- * version (Zot retention handles the underlying blobs). Log-only: pruning
- * must never fail the caller's request. `deleteToolset` may now refuse a ref
- * still mounted by a live/paused sandbox (toolset-overlay-squashfs.md §7) —
- * the swallowing catch is exactly right for that: the version row stays
- * pruned from toolbox history, the runtime record just outlives it until the
- * last referencing sandbox destroys/resumes off it.
- */
-export function pruneToolboxVersions(
-  container: ServerContainer,
-  toolboxId: string,
-): void {
-  try {
-    const deleted = container.control.toolboxVersionService.pruneOldVersions(
-      toolboxId,
-      container.control.toolboxService.getActiveVersionId(toolboxId),
-    );
-    for (const v of deleted) {
-      try {
-        container.runtime.deleteToolset(v.ref);
-      } catch {}
-    }
-  } catch (err) {
-    log.error({ err, toolboxId }, "toolbox version retention prune failed");
-  }
-}
-
-/** Parse a toolbox toolset ref/name back to its owner+slug (the inverse of the
- * `tb/${ownerType}/${ownerId}/${slug}` naming). Returns undefined for refs
- * that aren't toolbox artifacts. */
-function parseToolboxRef(
-  ref: string,
-): { owner: ToolboxOwner; slug: string } | undefined {
-  const match = ref.match(/(?:^|\/)tb\/(org|user)\/([^/]+)\/([^/@]+)(?:@|$)/);
-  const [, ownerType, ownerId, slug] = match ?? [];
-  if (!ownerType || !ownerId || !slug) return undefined;
-  return {
-    owner: { type: ownerType as ToolboxOwner["type"], id: ownerId },
-    slug,
-  };
-}
-
-/**
- * The toolbox behind a `tb/…` selector, artifact ref or registry name.
- *
- * The owner+slug encoded in the name is the fast path, but it's the owner at
- * BUILD time: a toolbox moved to another owner (ownership transfer) keeps its
- * pinned version and older artifacts, all named after the previous owner. The
- * version table maps those back to the toolbox. A digest-pinned ref is an
- * exact artifact identity, so it's looked up there first (a new toolbox later
- * created with the same owner+slug must not claim the moved one's artifact).
- */
-export function toolboxForRef(
-  container: ServerContainer,
-  ref: string,
-): ToolboxConfig | undefined {
-  const parsed = parseToolboxRef(ref);
-  if (!parsed) return undefined;
-  const { toolboxService, toolboxVersionService } = container.control;
-  const byVersion = () => {
-    const id = toolboxVersionService.findToolboxIdByRef(ref);
-    return id ? toolboxService.find(id) : undefined;
-  };
-  const byName = () =>
-    toolboxService.getByOwnerAndSlug(parsed.owner, parsed.slug);
-  return ref.includes("@")
-    ? (byVersion() ?? byName())
-    : (byName() ?? byVersion());
-}
-
-/**
- * The harness the toolbox behind a single toolset name declares, if any.
- * Viewer-independent (unlike the compose map). Used to enrich the global
- * toolset list so the compose surface can tag any toolset.
- */
-export function harnessForToolset(
-  container: ServerContainer,
-  name: string,
-): string | undefined {
-  return toolboxForRef(container, name)?.harness;
-}
-
-/**
- * Resolve the winning harness a spawn's toolboxes declare (entities-toolbox.md).
- * Considers every toolbox whose toolset is present in this spawn — auto-
- * injected (enabled) and explicitly selected `spec.toolsets` alike. A
- * user-owned toolbox's harness wins over an org-owned one (the personal
- * overlay beats the mandated baseline). Returns undefined when no toolbox
- * declares a harness; the caller then falls back to org policy.
- */
-export function resolveToolboxHarness(
-  container: ServerContainer,
-  refs: { ref: string }[],
-): string | undefined {
-  let userHarness: string | undefined;
-  let orgHarness: string | undefined;
-  for (const { ref } of refs) {
-    const config = toolboxForRef(container, ref);
-    if (!config?.harness) continue;
-    if (config.ownerType === "user") userHarness = config.harness;
-    else orgHarness = config.harness;
-  }
-  return userHarness ?? orgHarness;
-}
-
-/**
- * Collect the processes + ports every toolbox applied to this spawn
- * contributes (entities-toolbox.md). A toolbox is not just files: it can carry
- * a tool's *runtime surface* — vscode's `code-server` process + its port, or
- * the browser stack's kasmvnc/openbox/chromium (binaries baked into the
- * dev-browser base image, so no `build`/`paths`; a browserless base like
- * dev-base won't have them). `refs` is the full applied set (auto-injected
- * + explicitly selected). Returns a spec fragment the caller merges in.
- */
-export function resolveToolboxSurface(
-  container: ServerContainer,
-  refs: { ref: string }[],
-): Required<RuntimeSurface> {
-  const processes: ProcessEntry[] = [];
-  const ports: PortEntry[] = [];
-  const seen = new Set<string>();
-  for (const { ref } of refs) {
-    const config = toolboxForRef(container, ref);
-    // A toolbox can be present twice (auto-injected + selected, or under an
-    // old and a new name after a move); apply once.
-    if (!config || seen.has(config.id)) continue;
-    seen.add(config.id);
-    if (config.processes) processes.push(...config.processes);
-    if (config.ports) ports.push(...config.ports);
-  }
-  return { processes, ports };
+  sandboxOps: SandboxOps;
+  toolboxOps: ToolboxOps;
 }

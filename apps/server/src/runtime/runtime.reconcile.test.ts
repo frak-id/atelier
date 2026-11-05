@@ -1,31 +1,16 @@
 /**
  * `reconcileOnStartup` for a `creating` fork copy: it is parked in `error`
  * with its own snapshot kept (resumable), or swept like any stuck create when
- * it owns no snapshot yet. Runs in `local` mode because the sweep is skipped
- * in mock mode.
+ * it owns no snapshot yet.
  */
-import { afterAll, beforeAll, describe, expect, test } from "bun:test";
+import { beforeEach, describe, expect, test } from "bun:test";
 import type { SandboxSpec } from "@atelier/spec";
+import { RuntimeService } from "./runtime.service.ts";
+import { FakeBackend, fakeRuntimeDeps } from "./runtime.test-support.ts";
+import * as stores from "./store.ts";
+import { useTestDatabase } from "./test-database.ts";
 
-process.env.ATELIER_SERVER_MODE = "local";
-
-let RuntimeService: typeof import("./runtime.service.ts").RuntimeService;
-let stores: typeof import("./store.ts");
-let config: typeof import("../shared/lib/config.ts").config;
-let previousMode: typeof config.server.mode;
-
-beforeAll(async () => {
-  // The env line above only counts if this file loads the config first.
-  ({ config } = await import("../shared/lib/config.ts"));
-  previousMode = config.server.mode;
-  config.server.mode = "local";
-  ({ RuntimeService } = await import("./runtime.service.ts"));
-  stores = await import("./store.ts");
-});
-
-afterAll(() => {
-  config.server.mode = previousMode;
-});
+beforeEach(() => useTestDatabase());
 
 const spec: SandboxSpec = {
   source: { snapshot: "snap-copy" },
@@ -34,24 +19,23 @@ const spec: SandboxSpec = {
 
 function setup() {
   const calls = { cleanup: [] as string[], restartable: [] as string[] };
-  const backend = {
-    cleanup: async (id: string) => {
-      calls.cleanup.push(id);
-      return true;
-    },
-    deleteRestartable: async (id: string) => {
-      calls.restartable.push(id);
-    },
+  const backend = new FakeBackend();
+  backend.cleanup = async (id: string) => {
+    calls.cleanup.push(id);
+    return true;
   };
-  const sandboxes = new stores.InMemorySandboxStore();
-  const snapshots = new stores.InMemorySnapshotStore();
+  backend.deleteRestartable = async (id: string) => {
+    calls.restartable.push(id);
+  };
+  const sandboxes = new stores.DrizzleSandboxStore();
+  const snapshots = new stores.DrizzleSnapshotStore();
   const runtime = new RuntimeService({
-    // biome-ignore lint/suspicious/noExplicitAny: only the two teardown calls are exercised
-    backend: backend as any,
+    ...fakeRuntimeDeps(),
+    backend,
     sandboxes,
     snapshots,
-    toolsets: new stores.InMemoryToolsetStore(),
-    sandboxToolsetRefs: new stores.InMemorySandboxToolsetRefStore(),
+    toolsets: new stores.DrizzleToolsetStore(),
+    sandboxToolsetRefs: new stores.DrizzleSandboxToolsetRefStore(),
   });
   const now = new Date().toISOString();
   sandboxes.create({
@@ -71,6 +55,7 @@ describe("reconcileOnStartup: stuck creating fork copy", () => {
     const { runtime, sandboxes, snapshots, calls } = setup();
     snapshots.put({
       hash: "h".repeat(64),
+      kind: "fork",
       ref: "snap-copy",
       image: "registry.test/base:1",
       sandboxId: "dst",

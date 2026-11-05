@@ -1,15 +1,16 @@
 {
   "name": "@atelier/server",
-  "description": "The Atelier server — one deployable, three internal modules (runtime/control/sessions).",
+  "description": "The Atelier server — one deployable, internal modules (runtime, control, sessions, harnesses, api).",
   "version": "3.0.2",
   "private": true,
   "type": "module",
   "scripts": {
-    "dev": "ATELIER_SERVER_MODE=mock bun run --watch src/index.ts",
+    "dev": "ATELIER_SERVER_MODE=local ATELIER_RUNTIME_BACKEND=docker bun run --watch src/index.ts",
     "start": "bun run src/index.ts",
     "build": "bun build src/index.ts --target=bun --outfile=dist/server.js --minify --external cpu-features --external '*.node'",
     "db:generate": "drizzle-kit generate",
     "db:migrate": "drizzle-kit migrate",
+    "generate-schema": "bun run scripts/generate-schema.ts",
     "check:boundary": "bun run scripts/check-boundaries.ts",
     "typecheck": "tsc --noEmit"
   },
@@ -18,11 +19,9 @@
   },
   "dependencies": {
     "@agentclientprotocol/sdk": "^2.4.0",
-    "@atelier/compose": "workspace:*",
     "@atelier/spec": "workspace:*",
     "@elysiajs/cors": "^1.4.2",
     "@elysiajs/openapi": "^1.4.16",
-    "@frak/atelier-shared": "workspace:*",
     "@modelcontextprotocol/sdk": "^1.32.2",
     "@sinclair/typebox": "^0.34.52",
     "drizzle-orm": "^0.45.4",

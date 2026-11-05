@@ -9,10 +9,12 @@ import {
   type SpecEditorApi,
   SpecEditorShell,
 } from "@/components/spec-editor-shell";
+import { ToolboxFilesField } from "@/components/toolbox-files-field";
 import { Button } from "@/components/ui/button";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { Textarea } from "@/components/ui/textarea";
 import { parseToolboxInput } from "@/lib/spec";
 
 function linesToArray(text: string): string[] {
@@ -56,7 +58,7 @@ function LinesTextarea({
     );
   }, [value]);
   return (
-    <textarea
+    <Textarea
       id={id}
       value={text}
       onChange={(e) => {
@@ -84,6 +86,9 @@ function toInput(toolbox?: ToolboxConfig): ToolboxConfigInput {
     harness: toolbox.harness,
     processes: toolbox.processes,
     ports: toolbox.ports,
+    ...(toolbox.files && toolbox.files.length > 0
+      ? { files: toolbox.files }
+      : {}),
     autoInject: toolbox.autoInject,
     ...(toolbox.refresh.length > 0 ? { refresh: toolbox.refresh } : {}),
     ...(toolbox.refreshSchedule
@@ -94,7 +99,7 @@ function toInput(toolbox?: ToolboxConfig): ToolboxConfigInput {
 
 /**
  * Visual + JSON editor for a toolbox, hosted on its own page (create at
- * `/settings/toolboxes/new`, edit at `/settings/toolboxes/$id`) rather than a
+ * `/library/toolboxes/new`, edit at `/library/toolboxes/$id`) rather than a
  * modal — the toolbox recipe has too many fields (build/paths/processes/
  * ports/harness/source) for a dialog to stay legible. `toolbox` present =>
  * update; absent => create. JSON stays the source of truth via
@@ -147,19 +152,20 @@ export function ToolboxEditor({
             harness: value.harness ? value.harness : null,
             processes: value.processes ?? [],
             ports: value.ports ?? [],
+            files: value.files ?? [],
             refresh: value.refresh ?? [],
             refreshSchedule: value.refreshSchedule || null,
           },
         },
         {
-          onSuccess: () => navigate({ to: "/settings/toolboxes" }),
+          onSuccess: () => navigate({ to: "/library/toolboxes" }),
         },
       );
       return;
     }
     createToolbox.mutate(
       { owner, input: value },
-      { onSuccess: () => navigate({ to: "/settings/toolboxes" }) },
+      { onSuccess: () => navigate({ to: "/library/toolboxes" }) },
     );
   }
 
@@ -181,7 +187,7 @@ export function ToolboxEditor({
           <Button
             type="button"
             variant="outline"
-            onClick={() => navigate({ to: "/settings/toolboxes" })}
+            onClick={() => navigate({ to: "/library/toolboxes" })}
           >
             Cancel
           </Button>
@@ -261,7 +267,7 @@ function ToolboxVisualForm({
           value={spec.build}
           onChange={(build) => onChange({ ...spec, build })}
           placeholder="curl -fsSL https://example.com/tool -o ~/.local/bin/tool"
-          className="min-h-24 w-full rounded-md border bg-muted/30 p-2 font-mono text-xs"
+          className="min-h-24 p-2"
         />
       </div>
       <div className="space-y-1">
@@ -271,7 +277,7 @@ function ToolboxVisualForm({
           value={spec.paths}
           onChange={(paths) => onChange({ ...spec, paths })}
           placeholder="~/.local/bin/tool"
-          className="min-h-16 w-full rounded-md border bg-muted/30 p-2 font-mono text-xs"
+          className="min-h-16 p-2"
         />
       </div>
       <div className="space-y-2 rounded-md border p-3">
@@ -289,7 +295,7 @@ function ToolboxVisualForm({
               })
             }
             placeholder="pi update --all"
-            className="min-h-12 w-full rounded-md border bg-muted/30 p-2 font-mono text-xs"
+            className="min-h-12 p-2"
           />
           <p className="text-xs text-muted-foreground">
             Refresh runs these on the server, on top of the current version,
@@ -344,11 +350,11 @@ function ToolboxVisualForm({
           checked={spec.autoInject ?? false}
           onChange={(e) => onChange({ ...spec, autoInject: e.target.checked })}
         />
-        Auto-inject into every spawn
+        Auto-inject into every spawn in this org
       </label>
       <p className="-mt-2 text-xs text-muted-foreground">
         Off = the toolbox is still fully usable, just opt-in (select it per
-        spawn). On = applied to all of this owner's sandboxes.
+        spawn). On = applied to every sandbox spawned in this organization.
       </p>
 
       <div className="space-y-2 border-t pt-3">
@@ -367,6 +373,24 @@ function ToolboxVisualForm({
           onValidityChange={onValidityChange}
           defaults={{ lazy: true, port: 8080 }}
           emptyText="Files only: this toolbox runs nothing."
+        />
+      </div>
+
+      <div className="space-y-2 border-t pt-3">
+        <div className="space-y-1">
+          <Label>Files (optional)</Label>
+          <p className="text-xs text-muted-foreground">
+            Written into every sandbox this toolbox applies to, e.g. a config
+            file holding an API key. Pick "Secret" to read the content from an
+            organization secret instead of storing it here. A toolbox with only
+            files is fine.
+          </p>
+        </div>
+        <ToolboxFilesField
+          value={spec.files ?? []}
+          onChange={(files) =>
+            onChange({ ...spec, files: files.length > 0 ? files : undefined })
+          }
         />
       </div>
     </div>

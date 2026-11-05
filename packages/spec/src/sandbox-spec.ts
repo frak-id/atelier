@@ -1,6 +1,6 @@
 /**
  * The `SandboxSpec` — one document, fully resolved. This is what the Atelier
- * runtime accepts and the only thing it understands (design.md §2).
+ * runtime accepts and the only thing it understands (docs/archive/design.md §2).
  *
  * The runtime knows only mechanism, never content: no `harness`, no `mcp`, no
  * `skills`, no `tools`, no `dev`. A harness is the `acp` process + its config
@@ -64,7 +64,7 @@ export type FileEntry = Static<typeof FileSchema>;
 
 /**
  * Per-process readiness probe. The one mechanism concession — typed on purpose
- * (design.md §2). Exactly one of `port` | `http` | `cmd`.
+ * (docs/archive/design.md §2). Exactly one of `port` | `http` | `cmd`.
  */
 export const ReadinessSchema = Type.Union([
   Type.Object({ port: Type.Number() }, { additionalProperties: false }),
@@ -90,7 +90,7 @@ export type RestartPolicy = Static<typeof RestartPolicySchema>;
 /**
  * A supervised process. `name` is the only identity. The process model is
  * `readiness` + `primary` + `after` + `restart` + `lazy` — each maps 1:1 to an
- * accepted industry primitive (design.md §2 "standing guard").
+ * accepted industry primitive (docs/archive/design.md §2 "standing guard").
  */
 export const ProcessSchema = Type.Object(
   {
@@ -149,7 +149,7 @@ export const HooksSchema = Type.Object(
   {
     postCreate: Type.Optional(Type.Array(Type.String())),
     postStart: Type.Optional(Type.Array(Type.String())),
-    /** Fires on every resume — the credential-rotation primitive (design.md §2). */
+    /** Fires on every resume — the credential-rotation primitive (docs/archive/design.md §2). */
     onResume: Type.Optional(Type.Array(Type.String())),
     /** Fired by `PATCH /env`; user wires it to reload/SIGHUP their processes. */
     envChanged: Type.Optional(Type.Array(Type.String())),
@@ -204,7 +204,7 @@ export const SandboxSpecSchema = Type.Object(
     caches: Type.Optional(Type.Array(CacheSchema)),
     /**
      * Toolset artifacts materialized into the home before the files/env phase
-     * (composed-prebuild-volumes.md §3). Resolved digest locators only — the
+     * (docs/archive/proposals/composed-prebuild-volumes.md §3). Resolved digest locators only — the
      * runtime never sees a name/harness/profile. Materialized in list order
      * (later wins on path conflicts, same rule as `files[]`).
      *
@@ -231,14 +231,14 @@ export type SandboxSpec = Static<typeof SandboxSpecSchema>;
 // ── create request (seam input, not the runtime spec) ────────────────────────
 
 /**
- * A selected toolbox, `tb/<ownerType>/<ownerId>/<slug>`. The high-level unit a
+ * A selected toolbox, `tb/<toolboxId>`. The high-level unit a
  * caller picks; the api/ seam resolves it into a materialized toolset ref (if
  * it carries files) and/or its process/port surface + harness. Never reaches
  * the runtime.
  */
 export const ToolboxSelectorSchema = Type.String({
-  pattern: "^tb/(org|user)/[^/]+/[a-z0-9]+(-[a-z0-9]+)*$",
-  description: "Selected toolbox: tb/<ownerType>/<ownerId>/<slug>.",
+  pattern: "^tb/[^/@]+$",
+  description: "Selected toolbox: tb/<toolboxId>.",
 });
 export type ToolboxSelector = Static<typeof ToolboxSelectorSchema>;
 

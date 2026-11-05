@@ -28,10 +28,10 @@ afterAll(async () => {
 });
 
 describe("ToolboxService", () => {
-  test("slug uniqueness is per-owner, not global", () => {
+  test("slug uniqueness is per-org, not global", () => {
     const service = new ToolboxService(new ToolboxRepository());
-    const orgA = { type: "org", id: "org-slug-a" } as const;
-    const orgB = { type: "org", id: "org-slug-b" } as const;
+    const orgA = "org-slug-a";
+    const orgB = "org-slug-b";
     const input = {
       slug: "shared-slug",
       description: "d",
@@ -44,28 +44,35 @@ describe("ToolboxService", () => {
     expect(() => service.create(orgB, input)).not.toThrow();
   });
 
-  test("a user and an org may share a slug (owner axis is distinct)", () => {
+  test("files are stored and updated; files-only toolboxes are valid", () => {
     const service = new ToolboxService(new ToolboxRepository());
-    const input = {
-      slug: "my-tools",
+    const files = [
+      {
+        path: "/home/dev/.config/x/key",
+        content: { $secret: "X_KEY" },
+        mode: "600",
+        owner: "dev",
+      },
+    ];
+    const created = service.create("org-files", {
+      slug: "files-only",
       description: "d",
-      build: ["echo hi"],
-      paths: ["~/x"],
-    };
-    const org = { type: "org", id: "org-shared-axis" } as const;
-    const user = { type: "user", id: "user-shared-axis" } as const;
-    const orgTb = service.create(org, input);
-    const userTb = service.create(user, input);
-    expect(orgTb.ownerType).toBe("org");
-    expect(userTb.ownerType).toBe("user");
-    expect(service.list(user).map((c) => c.slug)).toEqual(["my-tools"]);
-    expect(service.list(org).map((c) => c.slug)).toEqual(["my-tools"]);
+      build: [],
+      paths: [],
+      files,
+    });
+    expect(created.files).toEqual(files);
+    expect(service.get(created.id).files).toEqual(files);
+
+    const kept = service.update(created.id, { description: "d2" });
+    expect(kept.files).toEqual(files);
+    const cleared = service.update(created.id, { files: [] });
+    expect(cleared.files).toEqual([]);
   });
 
   test("update clears source with null but keeps it when the key is absent", () => {
     const service = new ToolboxService(new ToolboxRepository());
-    const owner = { type: "org", id: "org-clear-source" } as const;
-    const created = service.create(owner, {
+    const created = service.create("org-clear-source", {
       slug: "with-source",
       description: "d",
       build: [],
@@ -85,14 +92,13 @@ describe("ToolboxService", () => {
 
   test("listAutoInject orders oldest-first and excludes non-auto-inject", () => {
     const repository = new ToolboxRepository();
-    const owner = { type: "org", id: "org-order" } as const;
+    const orgId = "org-order";
     const base = Date.now();
     const at = (offsetMs: number) => new Date(base + offsetMs).toISOString();
 
     repository.create({
       id: "t-third",
-      ownerType: owner.type,
-      ownerId: owner.id,
+      orgId,
       slug: "c",
       description: "d",
       build: [],
@@ -104,8 +110,7 @@ describe("ToolboxService", () => {
     });
     repository.create({
       id: "t-first",
-      ownerType: owner.type,
-      ownerId: owner.id,
+      orgId,
       slug: "a",
       description: "d",
       build: [],
@@ -117,8 +122,7 @@ describe("ToolboxService", () => {
     });
     repository.create({
       id: "t-disabled",
-      ownerType: owner.type,
-      ownerId: owner.id,
+      orgId,
       slug: "b",
       description: "d",
       build: [],
@@ -130,7 +134,7 @@ describe("ToolboxService", () => {
     });
 
     const service = new ToolboxService(repository);
-    expect(service.listAutoInject(owner).map((c) => c.id)).toEqual([
+    expect(service.listAutoInject(orgId).map((c) => c.id)).toEqual([
       "t-first",
       "t-third",
     ]);
@@ -146,15 +150,12 @@ describe("ToolboxService refresh schedule", () => {
 
   test("a schedule with update commands plans the next run", () => {
     const service = new ToolboxService(new ToolboxRepository());
-    const tb = service.create(
-      { type: "user", id: "user-sched-plan" },
-      {
-        ...base,
-        slug: "pi",
-        refresh: ["pi update --all"],
-        refreshSchedule: "0 4 * * *",
-      },
-    );
+    const tb = service.create("user-sched-plan", {
+      ...base,
+      slug: "pi",
+      refresh: ["pi update --all"],
+      refreshSchedule: "0 4 * * *",
+    });
     expect(tb.refresh).toEqual(["pi update --all"]);
     expect(tb.refreshSchedule).toBe("0 4 * * *");
     const next = new Date(tb.nextRefreshAt ?? "");
@@ -165,10 +166,11 @@ describe("ToolboxService refresh schedule", () => {
 
   test("no update commands: the schedule is kept but nothing is planned", () => {
     const service = new ToolboxService(new ToolboxRepository());
-    const tb = service.create(
-      { type: "user", id: "user-sched-dormant" },
-      { ...base, slug: "pi", refreshSchedule: "@daily" },
-    );
+    const tb = service.create("user-sched-dormant", {
+      ...base,
+      slug: "pi",
+      refreshSchedule: "@daily",
+    });
     expect(tb.refresh).toEqual([]);
     expect(tb.refreshSchedule).toBe("@daily");
     expect(tb.nextRefreshAt).toBeUndefined();
@@ -181,15 +183,12 @@ describe("ToolboxService refresh schedule", () => {
 
   test("null clears the schedule; an unrelated edit keeps the plan", () => {
     const service = new ToolboxService(new ToolboxRepository());
-    const tb = service.create(
-      { type: "user", id: "user-sched-clear" },
-      {
-        ...base,
-        slug: "pi",
-        refresh: ["pi update --all"],
-        refreshSchedule: "@weekly",
-      },
-    );
+    const tb = service.create("user-sched-clear", {
+      ...base,
+      slug: "pi",
+      refresh: ["pi update --all"],
+      refreshSchedule: "@weekly",
+    });
     const kept = service.update(tb.id, { description: "d2" });
     expect(kept.refreshSchedule).toBe("@weekly");
     expect(kept.nextRefreshAt).toBe(tb.nextRefreshAt);
@@ -202,7 +201,7 @@ describe("ToolboxService refresh schedule", () => {
 
   test("rejects invalid and too-frequent schedules", () => {
     const service = new ToolboxService(new ToolboxRepository());
-    const owner = { type: "user", id: "user-sched-invalid" } as const;
+    const owner = "user-sched-invalid" as const;
     for (const refreshSchedule of ["nope", "* * * * *", "*/30 * * * *"]) {
       expect(() =>
         service.create(owner, {
@@ -221,15 +220,12 @@ describe("ToolboxService refresh schedule", () => {
 
   test("due toolboxes are listed, then advanced past now", () => {
     const service = new ToolboxService(new ToolboxRepository());
-    const tb = service.create(
-      { type: "user", id: "user-sched-due" },
-      {
-        ...base,
-        slug: "pi",
-        refresh: ["pi update --all"],
-        refreshSchedule: "@daily",
-      },
-    );
+    const tb = service.create("user-sched-due", {
+      ...base,
+      slug: "pi",
+      refresh: ["pi update --all"],
+      refreshSchedule: "@daily",
+    });
     const planned = new Date(tb.nextRefreshAt ?? "");
     const before = new Date(planned.getTime() - 1000);
     const after = new Date(planned.getTime() + 1000);
@@ -246,10 +242,11 @@ describe("ToolboxService refresh schedule", () => {
 
   test("recordRefresh stores the outcome without touching updatedAt", () => {
     const service = new ToolboxService(new ToolboxRepository());
-    const tb = service.create(
-      { type: "user", id: "user-sched-record" },
-      { ...base, slug: "pi", refresh: ["pi update --all"] },
-    );
+    const tb = service.create("user-sched-record", {
+      ...base,
+      slug: "pi",
+      refresh: ["pi update --all"],
+    });
     service.recordRefresh(tb.id, {
       at: new Date().toISOString(),
       trigger: "manual",

@@ -1,8 +1,8 @@
 /**
- * Sandbox activity + idle auto-pause contract (docs/proposals/
- * sandbox-idle-autopause.md). The rules are operator config; this file is
- * only the wire shapes a client reads (`GET /v1/sandboxes/:id/activity`, the
- * `idle` decoration on list rows) and the annotations the server sets.
+ * Sandbox activity + idle auto-pause contract (docs/idle-autopause.md). The
+ * rules are operator config; this file is only the wire shapes a client
+ * reads (`GET /v1/sandboxes/:id/activity`, the `idle` decoration on list
+ * rows) and the annotations the server sets.
  */
 import { type Static, Type } from "@sinclair/typebox";
 
@@ -56,8 +56,6 @@ export const IdleBlockerSchema = Type.Union([
   Type.Literal("keep-awake"),
   /** A server-driven ACP turn is in flight. */
   Type.Literal("agent-turn"),
-  /** The agent waits on a person to answer a permission request. */
-  Type.Literal("permission-pending"),
   /** A job targets the sandbox (snapshot, toolset capture, fork). */
   Type.Literal("job"),
   /** A create/pause/resume/snapshot/destroy is in progress. */

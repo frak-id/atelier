@@ -1,9 +1,9 @@
-import { type AgentEvent, AgentEventSchema } from "@frak/atelier-shared";
+import { type AgentEvent, AgentEventSchema } from "@atelier/spec";
 import { Check } from "@sinclair/typebox/value";
 import { type QueryClient, useQueryClient } from "@tanstack/react-query";
 import { useEffect, useState } from "react";
 import { queryKeys } from "@/api/queries/keys";
-import { httpUrl, isCrossOrigin } from "@/lib/api-base";
+import { httpUrl } from "@/lib/api-base";
 
 /**
  * Subscribe to a sandbox's agent SSE stream and turn each event into a
@@ -21,9 +21,6 @@ export function useAgentEvents(sandboxId: string): { connected: boolean } {
   useEffect(() => {
     const source = new EventSource(
       httpUrl(`/sessions/sandboxes/${sandboxId}/agent/events`),
-      // Cross-origin (Tauri) needs credentialed SSE to send the auth cookie;
-      // a no-op same-origin.
-      { withCredentials: isCrossOrigin },
     );
 
     source.addEventListener("open", () => setConnected(true));
@@ -61,16 +58,6 @@ function invalidateForResource(
       break;
     case "sessionStatuses":
       queryClient.invalidateQueries({ queryKey: sessions.statuses(sandboxId) });
-      break;
-    case "permissions":
-      queryClient.invalidateQueries({
-        queryKey: sessions.permissions(sandboxId),
-      });
-      break;
-    case "questions":
-      queryClient.invalidateQueries({
-        queryKey: sessions.questions(sandboxId),
-      });
       break;
     case "todos":
       queryClient.invalidateQueries({

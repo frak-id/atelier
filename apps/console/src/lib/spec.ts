@@ -81,7 +81,7 @@ export function parseSpecJsonc(
 }
 
 interface ComposeSpecOptions {
-  image: string;
+  source: SandboxSpec["source"];
   vcpus: number;
   memoryMb: number;
 }
@@ -91,7 +91,7 @@ interface ComposeSpecOptions {
  * toolboxes/toolsets applied to the spawn, never hardcoded UI toggles. */
 export function composeSpec(opts: ComposeSpecOptions): SandboxSpec {
   return {
-    source: { image: opts.image },
+    source: opts.source,
     resources: { vcpus: opts.vcpus, memoryMb: opts.memoryMb },
   } as SandboxSpec;
 }

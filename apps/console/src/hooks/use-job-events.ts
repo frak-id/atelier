@@ -1,9 +1,9 @@
 import { type QueryClient, useQueryClient } from "@tanstack/react-query";
 import { useEffect, useRef } from "react";
 import { toast } from "sonner";
-import { type Job, jobKindLabel } from "@/api/queries/jobs";
+import { isJob, type Job, jobKindLabel } from "@/api/queries/jobs";
 import { queryKeys } from "@/api/queries/keys";
-import { httpUrl, isCrossOrigin } from "@/lib/api-base";
+import { httpUrl } from "@/lib/api-base";
 
 /**
  * Subscribe to the global job queue SSE feed (`/v1/jobs/events`) once, at
@@ -43,9 +43,7 @@ export function useJobEvents(enabled = true): void {
     const refetch = () =>
       queryClient.refetchQueries({ queryKey: queryKeys.jobs.list() });
 
-    const source = new EventSource(httpUrl("/v1/jobs/events"), {
-      withCredentials: isCrossOrigin,
-    });
+    const source = new EventSource(httpUrl("/v1/jobs/events"));
 
     source.addEventListener("open", () => {
       stopPolling();
@@ -62,12 +60,14 @@ export function useJobEvents(enabled = true): void {
     });
 
     source.addEventListener("job", (event) => {
-      let job: Job;
+      let parsed: unknown;
       try {
-        job = JSON.parse(event.data) as Job;
+        parsed = JSON.parse(event.data);
       } catch {
         return;
       }
+      if (!isJob(parsed)) return;
+      const job = parsed;
       queryClient.setQueryData<Job[]>(queryKeys.jobs.list(), (prev) =>
         mergeJob(prev, job),
       );
@@ -129,6 +129,15 @@ function onJobSettled(queryClient: QueryClient, job: Job): void {
   // A refresh records its outcome on the toolbox, failures included.
   if (job.kind === "toolbox-refresh") {
     queryClient.invalidateQueries({ queryKey: queryKeys.toolboxes.all });
+  }
+  // A spawn can succeed with non-fatal notes (e.g. it booted from the last
+  // good prebuild because the rebuild failed): the job's result is the
+  // `CreateSandboxResponse`.
+  if (job.kind === "sandbox-create" && job.status === "succeeded") {
+    const { warnings } = (job.result ?? {}) as { warnings?: string[] };
+    for (const warning of warnings ?? []) {
+      toast.warning(warning, { duration: 15_000 });
+    }
   }
   if (SELF_TOASTING_KINDS.has(job.kind)) return;
   const kindLabel = jobKindLabel(job.kind);

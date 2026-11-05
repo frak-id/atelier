@@ -1,6 +1,9 @@
-import { describe, expect, test } from "bun:test";
+import { beforeEach, describe, expect, test } from "bun:test";
 import { JobService } from "./jobs.service.ts";
 import type { JobRecord } from "./store.ts";
+import { useTestDatabase } from "./test-database.ts";
+
+beforeEach(() => useTestDatabase());
 
 const sandbox = {
   id: "sbx_1",
@@ -58,5 +61,48 @@ describe("JobService results never carry `generated`", () => {
     const jobs = new JobService();
     const job = jobs.dispatch({ kind: "prebuild" }, async () => "ref-1");
     expect((await settled(jobs, job.id)).result).toBe("ref-1");
+  });
+});
+
+describe("dispatchAndWait", () => {
+  test("is a pooled job in the feed whose result comes back inline", async () => {
+    const jobs = new JobService({ concurrency: 1 });
+    const release: Array<() => void> = [];
+    const gate = () =>
+      new Promise<void>((resolve) => {
+        release.push(resolve);
+      });
+    const first = jobs.dispatchAndWait({ kind: "prebuild" }, async () => {
+      await gate();
+      return "one";
+    });
+    const second = jobs.dispatchAndWait(
+      { kind: "prebuild" },
+      async () => "two",
+    );
+
+    // Bounded by the pool: the second waits for the first's slot.
+    expect(
+      jobs
+        .list()
+        .map((j) => j.status)
+        .sort(),
+    ).toEqual(["queued", "running"]);
+    release[0]?.();
+    expect(await first).toBe("one");
+    expect(await second).toBe("two");
+    expect(jobs.list().every((j) => j.status === "succeeded")).toBe(true);
+  });
+
+  test("a failure rejects the caller and fails the job", async () => {
+    const jobs = new JobService();
+    await expect(
+      jobs.dispatchAndWait({ kind: "prebuild" }, async () => {
+        throw new Error("bake failed");
+      }),
+    ).rejects.toThrow("bake failed");
+    const [job] = jobs.list();
+    expect(job?.status).toBe("failed");
+    expect(job?.error).toBe("bake failed");
   });
 });

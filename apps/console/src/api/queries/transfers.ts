@@ -5,10 +5,10 @@ import {
 } from "@tanstack/react-query";
 import { toast } from "sonner";
 import { api } from "@/api/client";
-import { errorMessage } from "./error";
+import { unwrap } from "./error";
 import { queryKeys } from "./keys";
 
-export const TRANSFER_KINDS = ["secrets", "policy", "toolboxes"] as const;
+export const TRANSFER_KINDS = ["secrets", "toolboxes"] as const;
 export type TransferKind = (typeof TRANSFER_KINDS)[number];
 
 export interface TransferItem {
@@ -22,20 +22,19 @@ type TransferPreview = Record<TransferKind, TransferItem[]>;
 export type TransferSelection = Record<TransferKind, string[]>;
 
 /**
- * `from` is `user` (the caller's personal scope) or `org:<id>`; `to` is a
- * destination org id. Only fetched once both are chosen (see `enabled` at
- * the call site).
+ * `from` and `to` are org ids (the source is usually the caller's personal
+ * org). Only fetched once both are chosen (see `enabled` at the call site).
  */
 export function transferPreviewQuery(from: string, to: string) {
   return queryOptions({
     queryKey: queryKeys.transfers.preview(from, to),
     queryFn: async () => {
-      const { data, error } = await api.api.transfers.preview.get({
-        query: { from, to },
-      });
-      if (error)
-        throw new Error(errorMessage(error, "Failed to load the preview"));
-      return data as TransferPreview;
+      return unwrap(
+        await api.api.transfers.preview.get({
+          query: { from, to },
+        }),
+        "Failed to load the preview",
+      ) as TransferPreview;
     },
     enabled: from.length > 0 && to.length > 0,
   });
@@ -43,7 +42,6 @@ export function transferPreviewQuery(from: string, to: string) {
 
 const KIND_NOUN: Record<TransferKind, [string, string]> = {
   secrets: ["secret", "secrets"],
-  policy: ["org policy", "org policies"],
   toolboxes: ["toolbox", "toolboxes"],
 };
 
@@ -64,14 +62,11 @@ export function useMoveResources() {
       to: string;
       selection: TransferSelection;
     }) => {
-      const { data, error } = await api.api.transfers.post(body);
-      if (error) throw new Error(errorMessage(error, "Failed to move"));
-      return data;
+      return unwrap(await api.api.transfers.post(body), "Failed to move");
     },
     onSuccess: (result) => {
       queryClient.invalidateQueries({ queryKey: queryKeys.organizations.all });
       queryClient.invalidateQueries({ queryKey: queryKeys.secrets.all });
-      queryClient.invalidateQueries({ queryKey: queryKeys.orgPolicy.all });
       queryClient.invalidateQueries({ queryKey: queryKeys.toolboxes.all });
       queryClient.invalidateQueries({ queryKey: queryKeys.toolsets.all });
       queryClient.invalidateQueries({ queryKey: queryKeys.transfers.all });

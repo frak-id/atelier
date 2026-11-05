@@ -2,24 +2,23 @@
  * Agent task tools — hand a prompt to the coding agent running inside a
  * sandbox and check back for the result. Thin binding over
  * `AgentTaskService` (`sessions/task.service.ts`), which owns the mechanism:
- * background turns, reply capture, permission handling, eviction. The service
- * keeps its full view types; this binding projects them into what an agent
- * needs (`taskView`), so the transcript never floods the caller's context.
+ * background turns, reply capture, eviction. Agents auto-approve every
+ * permission request inside their sandbox, so a task never waits on one.
+ * The service keeps its full view types; this binding projects them into
+ * what an agent needs (`taskView`), so the transcript never floods the
+ * caller's context.
  *
  * Three tools, each covering a family of calls:
  *   - `send_prompt`: `sandboxId` starts a task, `taskId` continues one.
  *   - `get_task`:    `taskId` reads one task, no `taskId` lists them.
- *   - `manage_task`: cancel, close, or answer a permission request.
+ *   - `manage_task`: cancel or close.
  * Params that only make sense in one mode are rejected in the other (a
- * `ValidationError` naming them) rather than silently ignored: an agent that
- * believes `autoApprove` is on when it is not would stall.
+ * `ValidationError` naming them) rather than silently ignored.
  *
  * Typical flow for a caller:
  *   1. `create_sandbox` (a spec with an agent harness) — or reuse one.
  *   2. `send_prompt` with `sandboxId` — returns at once with a `taskId`.
  *   3. `get_task` with `waitSeconds` until `status` leaves `running`.
- *      `waiting_permission` means answer with `manage_task`
- *      action=reply_permission (or start the task with `autoApprove`);
  *      `idle` means the turn finished and `turn.reply` holds the answer.
  *   4. `send_prompt` with `taskId` for follow-ups (same agent context).
  *   5. `manage_task` to cancel a runaway turn or close the task when done.
@@ -51,17 +50,11 @@ const waitSecondsSchema = z
   .optional()
   .describe(
     `Block up to this many seconds (max ${MAX_WAIT_SECONDS}) while the ` +
-      "turn runs; returns early when it finishes or needs a permission " +
-      "decision. Default 0 (return immediately).",
+      "turn runs; returns early when it finishes. Default 0 (return " +
+      "immediately).",
   );
 
-const statusSchema = z.enum([
-  "running",
-  "waiting_permission",
-  "idle",
-  "failed",
-  "cancelled",
-]);
+const statusSchema = z.enum(["running", "idle", "failed", "cancelled"]);
 
 function clip(value: string, max: number): string {
   return value.length > max ? `${value.slice(0, max)}…` : value;
@@ -69,7 +62,7 @@ function clip(value: string, max: number): string {
 
 /**
  * The agent-facing task view. Default ("summary"): status, the selected
- * turn's outcome and anything awaiting you. `full` swaps the concluding
+ * turn's outcome and the agent's todos. `full` swaps the concluding
  * `reply` for every message `segments` and adds the prompt, ids and
  * timestamps.
  */
@@ -122,17 +115,11 @@ function taskView(
   return {
     taskId: v.taskId,
     sandboxId: v.sandboxId,
+    title: v.title,
     status: v.status,
-    turnCount: v.turns.length,
+    turnCount: v.turnCount,
+    ...(v.result ? { result: v.result } : {}),
     turn: turnOut,
-    ...(v.pendingPermissions.length > 0
-      ? {
-          pendingPermissions: v.pendingPermissions.map((p) => ({
-            requestId: p.id,
-            title: clip(p.permission, TITLE_CHARS),
-          })),
-        }
-      : {}),
     ...(v.todos.length > 0
       ? {
           todos: v.todos.map((t) => ({
@@ -145,7 +132,6 @@ function taskView(
       ? {
           sessionId: v.sessionId,
           cwd: v.cwd,
-          autoApprove: v.autoApprove,
           createdAt: v.createdAt,
           updatedAt: v.updatedAt,
           turns: v.turns.map((t) => ({
@@ -165,6 +151,16 @@ export function registerTaskTools(
 ): void {
   const { tasks } = container;
 
+  /** The task's own view, once the caller still has access to its sandbox: a
+   * task outlives a membership (it survives restarts for a week), so the
+   * task owner is re-checked against the sandbox access rule on every use.
+   * Looked up without waiting, so a denied caller never blocks. */
+  const accessibleTask = async (taskId: string): Promise<TaskViewData> => {
+    const found = await tasks.get(user.id, taskId);
+    requireSandboxAccess(container, user.id, found.sandboxId);
+    return found;
+  };
+
   server.registerTool(
     "send_prompt",
     {
@@ -173,19 +169,18 @@ export function registerTaskTools(
         "Give the coding agent inside a sandbox an instruction; the agent " +
         "works in the background and this returns at once with the task " +
         "(`taskId`). Pass `sandboxId` to START a new task (the sandbox " +
-        "must be `running` — check `get_sandbox` — and have an agent " +
+        "must have an agent " +
         "harness), or `taskId` to CONTINUE one with a follow-up turn that " +
         "keeps the agent's earlier context (only when the task is not " +
         "mid-turn: `idle`, `failed` or `cancelled`; otherwise wait, or " +
         "`manage_task` action=cancel first; a task holds at most 100 " +
         "turns). Then `get_task` with `waitSeconds` for the answer, or set " +
-        "`waitSeconds` here. If the agent asks for a permission the task " +
-        "shows `waiting_permission` until you answer with `manage_task` " +
-        "action=reply_permission — or start it with `autoApprove`. A " +
-        "follow-up keeps the context even days later: if the sandbox was " +
-        "paused meanwhile, `sandbox_lifecycle` action=resume it first. " +
-        "Tasks live in server memory (lost on restart) and are forgotten " +
-        "after a week without a prompt; at most 20 at once are active " +
+        "`waitSeconds` here. The agent runs unattended: it never stops to " +
+        "ask for a permission (the sandbox is its boundary). A follow-up " +
+        "keeps the context even days later (a paused sandbox is resumed " +
+        "first). " +
+        "Tasks survive server restarts and are forgotten after a week " +
+        "without a prompt; at most 20 at once are active " +
         "(older idle ones make room): `manage_task` action=close the ones " +
         "you are done with.",
       inputSchema: {
@@ -214,19 +209,18 @@ export function registerTaskTools(
           .describe(
             "New task only: absolute working directory (default: /home/dev)",
           ),
-        autoApprove: z
-          .boolean()
-          .optional()
-          .describe(
-            "New task only. DANGEROUS: answer every permission request " +
-              "(shell commands, file writes, ...) with allow-once without " +
-              "asking you. Only for disposable sandboxes. Default false.",
-          ),
         waitSeconds: waitSecondsSchema,
+      },
+      annotations: {
+        readOnlyHint: false,
+        destructiveHint: false,
+        idempotentHint: false,
+        openWorldHint: true,
       },
     },
     safeTool(
-      async ({ sandboxId, taskId, prompt, cwd, autoApprove, waitSeconds }) => {
+      "send_prompt",
+      async ({ sandboxId, taskId, prompt, cwd, waitSeconds }) => {
         if (sandboxId !== undefined && taskId !== undefined) {
           throw new ValidationError(
             "Pass `sandboxId` to start a task or `taskId` to continue one, " +
@@ -236,9 +230,12 @@ export function registerTaskTools(
 
         if (taskId !== undefined) {
           rejectParams(
-            { cwd, autoApprove },
+            { cwd },
             "only apply when starting a task (pass `sandboxId`, not `taskId`)",
           );
+          // The task's sandbox may have been paused since the last turn.
+          const { sandboxId: taskSandboxId } = await accessibleTask(taskId);
+          await container.sandboxOps.ensureRunning(taskSandboxId);
           await tasks.sendPrompt(user.id, taskId, prompt);
           return text(
             taskView(
@@ -255,11 +252,12 @@ export function registerTaskTools(
           );
         }
         requireSandboxAccess(container, user.id, sandboxId);
+        await container.sandboxOps.ensureRunning(sandboxId);
         const started = await tasks.dispatchTask(user.id, {
           sandboxId,
           prompt,
           cwd,
-          autoApprove,
+          source: "mcp",
         });
         return text(
           taskView(
@@ -280,9 +278,8 @@ export function registerTaskTools(
       title: "Get a task, or list tasks",
       description:
         "With `taskId`: read that task. `status`: `running` (turn in " +
-        "progress), `waiting_permission` (answer `pendingPermissions` with " +
-        "`manage_task` action=reply_permission), `idle` (turn finished), " +
-        "`failed`/`cancelled`, `closed`. `idle`, `failed` and `cancelled` " +
+        "progress), `idle` (turn finished), `failed`/`cancelled`, " +
+        "`closed`. `idle`, `failed` and `cancelled` " +
         "all accept another `send_prompt`. `turn.reply` is the agent's " +
         "concluding message and only appears once the turn has ended; " +
         "while it runs you get `turn.progress` (latest narration) and " +
@@ -290,10 +287,10 @@ export function registerTaskTools(
         "looping. Defaults to the latest turn (`turnCount` says how many " +
         "exist). view=full returns every message `segments` (instead of " +
         "`reply`), the prompt, timestamps and ids; it can be large. " +
-        "Without `taskId`: list your tasks, newest first, optionally for " +
-        "one `sandboxId` or `status`; tasks lost to a server restart or " +
-        "forgotten after a week no longer appear (a `NOT_FOUND` for a " +
-        "`taskId` means the same).",
+        "Without `taskId`: `{tasks}`, your tasks newest first, optionally for " +
+        "one `sandboxId` or `status`; tasks closed or forgotten after a " +
+        "week no longer appear (a `NOT_FOUND` for a `taskId` means the " +
+        "same).",
       inputSchema: {
         taskId: z
           .string()
@@ -331,8 +328,20 @@ export function registerTaskTools(
           ),
         waitSeconds: waitSecondsSchema,
       },
+      outputSchema: {
+        tasks: z.array(z.object({}).passthrough()).optional(),
+        taskId: z.string().optional(),
+        sandboxId: z.string().optional(),
+        status: z.string().optional(),
+        turn: z.object({}).passthrough().optional(),
+      },
+      annotations: {
+        readOnlyHint: true,
+        openWorldHint: false,
+      },
     },
     safeTool(
+      "get_task",
       async ({
         taskId,
         sandboxId,
@@ -347,25 +356,34 @@ export function registerTaskTools(
             { turn, view, maxChars, waitSeconds },
             "only apply when reading one task (pass `taskId`)",
           );
-          return text(
-            tasks
+          return text({
+            tasks: tasks
               .list(user.id, sandboxId)
               .filter((t) => !status || t.status === status)
+              .filter((t) => {
+                const labels = container.runtime.getLabels(t.sandboxId);
+                return (
+                  labels && container.control.canAccessSandbox(user.id, labels)
+                );
+              })
               .map((t) => ({
                 taskId: t.taskId,
                 sandboxId: t.sandboxId,
+                title: t.title,
                 status: t.status,
+                ...(t.result ? { result: t.result } : {}),
                 turnCount: t.turns,
                 lastPrompt: t.lastPrompt,
                 updatedAt: t.updatedAt,
               })),
-          );
+          });
         }
 
         rejectParams(
           { sandboxId, status },
           "only filter the task list (omit `taskId` to list)",
         );
+        await accessibleTask(taskId);
         const full = view === "full";
         return text(
           taskView(
@@ -384,54 +402,25 @@ export function registerTaskTools(
   server.registerTool(
     "manage_task",
     {
-      title: "Cancel, close or answer a task",
+      title: "Cancel or close a task",
       description:
         "`cancel` stops the turn in flight (the task stays open for more " +
         "prompts) and returns the settled `status`. `close` cancels any " +
         "running turn, ends the agent session and forgets the task and " +
-        "its replies — read what you need first. `reply_permission` " +
-        "answers a permission request the agent raised (`pendingPermissions` " +
-        "on `get_task`, status `waiting_permission`); needs `requestId` " +
-        "and `decision`: `once` allows this request, `always` allows it " +
-        "for the rest of the session when the agent supports that " +
-        "(otherwise it acts as `once`), `reject` denies it. Returns the " +
-        "task's new `status`; follow with `get_task`.",
+        "its replies — read what you need first.",
       inputSchema: {
         taskId: z.string().describe("Task id from send_prompt / get_task"),
-        action: z.enum(["cancel", "close", "reply_permission"]),
-        requestId: z
-          .string()
-          .optional()
-          .describe(
-            "reply_permission only: `requestId` of the entry in " +
-              "`pendingPermissions`",
-          ),
-        decision: z
-          .enum(["once", "always", "reject"])
-          .optional()
-          .describe("reply_permission only"),
+        action: z.enum(["cancel", "close"]),
+      },
+      annotations: {
+        readOnlyHint: false,
+        destructiveHint: true,
+        idempotentHint: true,
+        openWorldHint: false,
       },
     },
-    safeTool(async ({ taskId, action, requestId, decision }) => {
-      if (action === "reply_permission") {
-        if (requestId === undefined || decision === undefined) {
-          throw new ValidationError(
-            "action=reply_permission requires `requestId` and `decision`",
-          );
-        }
-        const view = await tasks.replyPermission(
-          user.id,
-          taskId,
-          requestId,
-          decision,
-        );
-        return text({ taskId, status: view.status });
-      }
-
-      rejectParams(
-        { requestId, decision },
-        "only apply to action=reply_permission",
-      );
+    safeTool("manage_task", async ({ taskId, action }) => {
+      await accessibleTask(taskId);
       if (action === "cancel") {
         const view = await tasks.cancel(user.id, taskId);
         return text({ taskId, status: view.status });

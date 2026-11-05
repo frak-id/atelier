@@ -41,7 +41,7 @@
   --color-elevated: hsl(var(--elevated));
 
   /* Semantic status colours — carry all the "meaning" hue since --primary is
-     an inverse mono accent (see IMPLEMENTATION_PLAN.md §0.1). */
+     an inverse mono accent. */
   --color-success: hsl(var(--success));
   --color-warning: hsl(var(--warning));
   --color-danger: hsl(var(--danger));
@@ -105,8 +105,7 @@
 }
 
 /*
-  Graphite & Alabaster — warm-neutral editorial theme (see
-  apps/console/design/theme-candidates.md for the full exploration).
+  Graphite & Alabaster — warm-neutral editorial theme.
   `--primary` is an inverse mono accent (light-on-dark / dark-on-light);
   status tokens below carry all the hue. Dark is the default surface.
 */

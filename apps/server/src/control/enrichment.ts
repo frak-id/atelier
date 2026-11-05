@@ -1,19 +1,25 @@
 /**
  * Bounded spec enrichment — the mutations control performs on a spec as it
- * crosses the seam (design.md §3.2):
- *   (a) secret resolution — replace `{"$secret": name}` references with values;
- *   (b) org-policy injection — append operator-mandated entries (an audit
- *       process, a compliance file) from the org's policy spec;
- *   plus the harness composition, the owner's git attribution, and the
- *   sandbox domain for dev servers' host checks (`injectDevServerHosts`).
+ * crosses the seam (docs/archive/design.md §3.2), in two steps:
+ *   - `enrichSpec`, at create: the harness composition, the owner stamp and
+ *     the sandbox domain for dev servers' host checks. Its output is what the
+ *     runtime STORES: `$secret` refs stay refs, and no credential is in it.
+ *   - `resolveBootSpec`, at EVERY boot (create, resume, fork): replace
+ *     `{"$secret": name}` references with values and add the owner's git
+ *     files with their current token. Its output only goes to the backend.
  *
- * No merger, no catalog, no fragment resolution — append/substitute steps,
- * deterministic, tiny. A dev hand-crafting a spec against the raw API still
- * gets the mandated pieces, because this runs server-side on every crossing,
- * before `runtime.create(spec)`.
+ * No merger, no catalog, no fragment resolution — substitute/append steps,
+ * deterministic, tiny. The api/ seam merges the spawn's toolboxes (their
+ * `files` included) into the spec BEFORE this runs, so a toolbox file's
+ * `$secret` refs are resolved at boot like any other.
  */
-import { mergeSpecs, resolveHarness } from "@atelier/compose";
-import { isSecretRef, type SandboxSpec } from "@atelier/spec";
+import {
+  isSecretRef,
+  SANDBOX_ORG_ANNOTATION,
+  type SandboxSpec,
+} from "@atelier/spec";
+import { findHarness } from "../harnesses/index.ts";
+import { mergeSpecs } from "../harnesses/spec-merge.ts";
 import { config, dashboardUrl } from "../shared/lib/config.ts";
 import {
   buildGitAttributionFiles,
@@ -28,77 +34,60 @@ import { createChildLogger } from "../shared/lib/logger.ts";
 /** Display/routing annotation a composed harness stamps onto the spec. */
 const HARNESS_ANNOTATION = "atelier.dev/harness";
 
-import type { OrgPolicyService } from "./modules/org-policy/index.ts";
 import type { SecretService } from "./modules/secret/index.ts";
+import type { UserService } from "./modules/user/index.ts";
 
 const log = createChildLogger("enrichment");
 
-export interface EnrichmentDeps {
+/** What `resolveBootSpec` reads: secret values and the owner's identity/token. */
+export interface BootSpecDeps {
   secrets: SecretService;
-  orgPolicy: OrgPolicyService;
+  users: Pick<UserService, "getById" | "resolveGitHubToken">;
 }
 
 /**
- * The resolved sandbox owner (the git user). Carries the identity displayed on
- * the console and the GitHub token injected as a credential. Resolved by the
- * `api/` seam (control owns `UserService`); the runtime never sees it.
+ * The sandbox owner (the git user): the identity displayed on the console and
+ * stamped on the stored spec. Resolved by the `api/` seam (control owns
+ * `UserService`); the runtime never sees it.
  */
 export interface OwnerContext {
   id: string;
   username: string;
   email: string;
-  githubToken?: string;
 }
 
 /** Options carrying pre-resolved, per-request enrichment hints. */
 export interface EnrichmentOptions {
   /** The harness id resolved from the spawn's toolboxes (see `api/` seam). */
   toolboxHarnessId?: string;
-  /** The sandbox owner — injects git identity/credentials + owner display. */
+  /** The sandbox owner — stamps the owner annotations and owner-id. */
   owner?: OwnerContext;
 }
 
 /**
- * Compose the winning harness into the spec when it doesn't already declare
- * one. Precedence: the spec's own harness (a `atelier.dev/harness` annotation,
- * composed client-side) > a toolbox-declared harness > the org policy's
- * `harness`. Composition only happens for the two lower tiers; a spec that
- * already carries a harness is returned untouched (it wins).
+ * Compose the toolbox-declared harness into the spec when it doesn't already
+ * declare one: a spec that carries its own harness (a `atelier.dev/harness`
+ * annotation, composed client-side) is returned untouched (it wins).
  */
 function injectHarness(
   spec: SandboxSpec,
-  orgId: string | undefined,
-  orgPolicy: OrgPolicyService,
-  toolboxHarnessId: string | undefined,
+  harnessId: string | undefined,
 ): SandboxSpec {
-  if (spec.annotations?.[HARNESS_ANNOTATION]) return spec;
+  if (spec.annotations?.[HARNESS_ANNOTATION] || !harnessId) return spec;
 
-  const orgFragment = orgId
-    ? (orgPolicy.getByOrgId(orgId)?.fragment as
-        | { harness?: unknown }
-        | undefined)
-    : undefined;
-  const orgHarness =
-    typeof orgFragment?.harness === "string" ? orgFragment.harness : undefined;
-
-  const harnessId = toolboxHarnessId ?? orgHarness;
-  if (!harnessId) return spec;
-
-  try {
-    // Web-UI options are per-harness and ignored when unknown (`compose()`
-    // options aren't validated by this seam — see `resolveHarness`):
-    // opencode reads `webUiCorsOrigin` (the console origin, for its `serve`
-    // `--cors`); pi reads `webUiAllowedHosts` (the sandbox base domain, for
-    // PI WEB's host-check).
-    const fragment = resolveHarness(harnessId).compose({
-      webUiCorsOrigin: dashboardUrl,
-      webUiAllowedHosts: config.domain.baseDomain,
-    });
-    return mergeSpecs(spec, fragment) as SandboxSpec;
-  } catch (err) {
-    log.warn({ harnessId, err }, "unknown harness; leaving spec unharnessed");
+  const harness = findHarness(harnessId);
+  if (!harness) {
+    log.warn({ harnessId }, "unknown harness; leaving spec unharnessed");
     return spec;
   }
+  // Web-UI options are per-harness and ignored when unknown: opencode reads
+  // `webUiCorsOrigin` (the console origin, for its `serve` `--cors`); pi reads
+  // `webUiAllowedHosts` (the sandbox base domain, for PI WEB's host-check).
+  const fragment = harness.compose({
+    webUiCorsOrigin: dashboardUrl,
+    webUiAllowedHosts: config.domain.baseDomain,
+  });
+  return mergeSpecs(spec, fragment) as SandboxSpec;
 }
 
 /** Vite's documented env hook for extra `server.allowedHosts` entries. */
@@ -178,22 +167,17 @@ async function resolveSecrets(
 }
 
 /**
- * Inject sandbox git attribution: the owner's git identity + GitHub credential
- * as guest files, plus owner display annotations and an owner-id metadata tag
- * (so resume can re-resolve the token). No-op without an owner.
+ * Stamp the owner on the spec: display annotations and an owner-id metadata
+ * tag (so every boot can re-resolve the owner's git files and token). No-op
+ * without an owner.
  */
-function injectGitAttribution(
+function stampOwner(
   spec: SandboxSpec,
   owner: OwnerContext | undefined,
 ): SandboxSpec {
   if (!owner) return spec;
-  const gitFiles = buildGitAttributionFiles({
-    identity: { name: owner.username, email: owner.email },
-    githubToken: owner.githubToken,
-  });
   return {
     ...spec,
-    files: [...(spec.files ?? []), ...gitFiles],
     annotations: {
       ...spec.annotations,
       [OWNER_ANNOTATION]: owner.username,
@@ -208,10 +192,10 @@ function injectGitAttribution(
 
 /**
  * Re-attribute a stored (already enriched) spec to a new owner: drop the
- * previous owner's git identity/credential files, owner annotations and
- * metadata, then inject `owner`'s. `metadata` is the copy's own metadata
- * (the previous owner-id never carries over). Everything else, incl. secret
- * values resolved at the source's creation, is kept as stored.
+ * previous owner's owner annotations and metadata, then stamp `owner`'s.
+ * `metadata` is the copy's own metadata (the previous owner-id never carries
+ * over). Git files of specs stored before they were added at boot are dropped
+ * too. Everything else, `$secret` refs included, is kept as stored.
  */
 export function reattributeSpec(
   spec: SandboxSpec,
@@ -224,7 +208,7 @@ export function reattributeSpec(
     [OWNER_EMAIL_ANNOTATION]: _ownerEmail,
     ...annotations
   } = spec.annotations ?? {};
-  return injectGitAttribution(
+  return stampOwner(
     {
       ...spec,
       files: spec.files?.filter((f) => !gitPaths.has(f.path)),
@@ -235,60 +219,46 @@ export function reattributeSpec(
   );
 }
 
-/** Append the org's mandated fragment (never overrides the caller's fields). */
-function injectOrgPolicy(
+/** The enrichment applied once, when a spec is created. */
+export function enrichSpec(
   spec: SandboxSpec,
-  orgId: string | undefined,
-  orgPolicy: OrgPolicyService,
+  opts: EnrichmentOptions = {},
 ): SandboxSpec {
-  if (!orgId) return spec;
-  const policy = orgPolicy.getByOrgId(orgId);
-  if (!policy) return spec;
-  const fragment = policy.fragment as Partial<SandboxSpec>;
-
-  return {
-    ...spec,
-    files: [...(spec.files ?? []), ...(fragment.files ?? [])],
-    processes: [...(spec.processes ?? []), ...(fragment.processes ?? [])],
-    ports: [...(spec.ports ?? []), ...(fragment.ports ?? [])],
-    hooks: {
-      postCreate: [
-        ...(spec.hooks?.postCreate ?? []),
-        ...(fragment.hooks?.postCreate ?? []),
-      ],
-      postStart: [
-        ...(spec.hooks?.postStart ?? []),
-        ...(fragment.hooks?.postStart ?? []),
-      ],
-      onResume: [
-        ...(spec.hooks?.onResume ?? []),
-        ...(fragment.hooks?.onResume ?? []),
-      ],
-      envChanged: [
-        ...(spec.hooks?.envChanged ?? []),
-        ...(fragment.hooks?.envChanged ?? []),
-      ],
-    },
-  };
+  const withHarness = injectHarness(spec, opts.toolboxHarnessId);
+  const withHosts = injectDevServerHosts(withHarness, config.domain.baseDomain);
+  return stampOwner(withHosts, opts.owner);
 }
 
-/** The full enrichment pipeline applied at every seam crossing. */
-export async function enrichSpec(
+/**
+ * The spec a boot runs with, from the stored one: secrets resolved in the
+ * sandbox's org (its org annotation) and the owner's git files rebuilt from
+ * their CURRENT token, so a rotated secret or token applies on the next boot.
+ * The owner is the owner-id metadata, stable whoever triggers the boot; a
+ * sandbox without one gets no git files (never someone else's). Throws when a
+ * secret no longer exists.
+ */
+export async function resolveBootSpec(
   spec: SandboxSpec,
-  orgId: string | undefined,
-  deps: EnrichmentDeps,
-  opts: EnrichmentOptions = {},
+  { secrets, users }: BootSpecDeps,
 ): Promise<SandboxSpec> {
-  const withPolicy = injectOrgPolicy(spec, orgId, deps.orgPolicy);
-  const withHarness = injectHarness(
-    withPolicy,
-    orgId,
-    deps.orgPolicy,
-    opts.toolboxHarnessId,
+  const resolved = await resolveSecrets(
+    spec,
+    spec.annotations?.[SANDBOX_ORG_ANNOTATION],
+    secrets,
   );
-  const withHosts = injectDevServerHosts(withHarness, config.domain.baseDomain);
-  const resolved = await resolveSecrets(withHosts, orgId, deps.secrets);
-  // Injected last: the credential file carries a GitHub token (not a `$secret`
-  // ref), so it must skip the secret-resolution pass entirely.
-  return injectGitAttribution(resolved, opts.owner);
+  const ownerId = spec.metadata?.[OWNER_ID_METADATA];
+  const owner = ownerId ? users.getById(ownerId) : undefined;
+  const gitFiles = buildGitAttributionFiles({
+    identity: owner ? { name: owner.username, email: owner.email } : undefined,
+    githubToken: ownerId ? users.resolveGitHubToken(ownerId) : undefined,
+  });
+  const files = [
+    // Stale git files from a spec stored before they were added at boot are
+    // dropped even when no fresh one replaces them.
+    ...(resolved.files ?? []).filter(
+      (f) => f.path !== GITCONFIG_PATH && f.path !== GIT_CREDENTIALS_PATH,
+    ),
+    ...gitFiles,
+  ];
+  return files.length > 0 ? { ...resolved, files } : resolved;
 }

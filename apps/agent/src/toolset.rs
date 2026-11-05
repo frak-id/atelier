@@ -1,4 +1,4 @@
-//! Toolset artifact build/push (docs/proposals/toolset-overlay-squashfs.md).
+//! Toolset artifact build/push (docs/archive/proposals/toolset-overlay-squashfs.md).
 //! The agent packages declared home path-sets as a single read-only erofs
 //! blob and pushes it as an OCI artifact to the in-cluster registry by
 //! shelling out to the baked `oras` + `mkfs.erofs` CLIs. Materialize is the
@@ -18,17 +18,18 @@
 //! extension, and materialize mounts each blob by its own recorded format —
 //! so a build and its consumers only need to agree per-blob, not globally.
 
+use std::collections::HashMap;
 use std::sync::OnceLock;
 
 use serde::{Deserialize, Serialize};
 use tokio::sync::Mutex;
 
-use crate::command::{self, MAX_COMMAND_OUTPUT_BYTES};
+use crate::command;
 
 const HOME: &str = "/home/dev";
 const SKEL: &str = "/home/skel";
 /// Overlay upperdir/workdir/blob-store — all on the PVC (mounted at `/data`,
-/// see docs/proposals/toolset-overlay-squashfs.md §3). Blobs living here
+/// see docs/archive/proposals/toolset-overlay-squashfs.md §3). Blobs living here
 /// (not in a per-sandbox tmpfs) is what makes resume registry-independent —
 /// a pause `VolumeSnapshot` of `/data` carries them.
 const DATA_UPPER: &str = "/data/upper";
@@ -41,7 +42,7 @@ const RUN_TOOLSETS: &str = "/run/toolsets";
 /// Written by `materialize` as its last step, once `/home/dev` is fully
 /// assembled. `sandbox-boot.sh` waits for this file before starting sshd —
 /// the race-free handshake that replaces the old base-overlay-then-remount
-/// design (docs/proposals/toolset-overlay-squashfs.md §5): nothing can hold
+/// design (docs/archive/proposals/toolset-overlay-squashfs.md §5): nothing can hold
 /// `/home/dev` busy before this point, because nothing touches it before
 /// this point.
 pub(crate) const HOME_READY_MARKER: &str = "/run/home-ready";
@@ -49,7 +50,7 @@ pub(crate) const HOME_READY_MARKER: &str = "/run/home-ready";
 /// either this or HOME_READY_MARKER, so a genuine failure starts sshd (onto a
 /// degraded home, for diagnosis) immediately instead of burning the full pull
 /// budget waiting for a `/run/home-ready` that will never appear
-/// (toolset-overlay-squashfs.md §5).
+/// (docs/archive/proposals/toolset-overlay-squashfs.md §5).
 const HOME_FAILED_MARKER: &str = "/run/home-failed";
 /// The last successful materialize's toolset selection, persisted on the PVC
 /// (so it rides the pause snapshot). Read by `self_heal_home` to re-assemble
@@ -65,6 +66,36 @@ const MATERIALIZE_REQUEST_PATH: &str = "/data/toolsets/.materialize.json";
 /// `metacopy` stay off (see toolset-inplace-update-fix-options.md §5).
 const OVERLAY_MOUNT_OPTS: &str = "redirect_dir=on,index=off,metacopy=off";
 const ARTIFACT_TYPE: &str = "application/vnd.atelier.toolset.v1";
+
+// The shell the agent drives lives in apps/agent/scripts (one file per step,
+// see its README). Each runs as `bash -c <script> bash <args...>`: paths,
+// globs and references go in as positional args, fixed settings as env.
+const SWEEP_STAGE_SCRATCH_SH: &str = include_str!("../scripts/sweep-stage-scratch.sh");
+const SQUASH_AND_PUSH_SH: &str = include_str!("../scripts/squash-and-push.sh");
+const SCAN_SECRETS_SH: &str = include_str!("../scripts/scan-secrets.sh");
+const PULL_BLOB_SH: &str = include_str!("../scripts/pull-blob.sh");
+const MOUNT_BLOB_SH: &str = include_str!("../scripts/mount-blob.sh");
+const ASSEMBLE_HOME_SH: &str = include_str!("../scripts/assemble-home.sh");
+const SWEEP_STALE_BLOBS_SH: &str = include_str!("../scripts/sweep-stale-blobs.sh");
+
+fn env_map(pairs: &[(&str, &str)]) -> HashMap<String, String> {
+    pairs
+        .iter()
+        .map(|(k, v)| (k.to_string(), v.to_string()))
+        .collect()
+}
+
+/// Run a script with the agent's usual bounds; `user: None` is root.
+async fn run_script(
+    script: &str,
+    args: &[String],
+    timeout_ms: u64,
+    user: Option<&str>,
+    env: &HashMap<String, String>,
+    login: bool,
+) -> command::ExecResult {
+    command::run_script(script, args, timeout_ms, user, env, login).await
+}
 
 /// A read-only, loop-mountable blob filesystem. The agent builds with the
 /// preferred format the guest kernel supports and mounts each blob by the
@@ -121,27 +152,13 @@ impl BlobFormat {
         }
     }
 
-    /// The mkfs command that turns staged dir `$stage` into blob `$name`.
-    /// erofs: `-zlz4hc` (bookworm erofs-utils 1.5 lacks zstd; the kernel's
-    /// built-in LZ4 decompresses lz4hc), `-T0` pins timestamps. squashfs:
-    /// zstd + the reproducibility/ownership-normalizing flags. Note the
-    /// argument order differs (`mkfs.erofs <img> <dir>` vs `mksquashfs <dir>
-    /// <img>`). tar: a `--zstd` archive of the stage's contents, with the same
-    /// uid/gid-1000 + epoch-mtime normalization (the stage is rsynced as
-    /// `dev`, so it is already 1000; the flags pin it for reproducibility).
-    /// Both erofs/squashfs normalize to uid/gid 1000 — erofs implicitly (the
-    /// stage is rsynced as `dev`), squashfs via `-force-uid/-force-gid`.
-    fn mkfs_cmd(self, name_var: &str, stage_var: &str) -> String {
+    /// The `BLOB_FORMAT` value squash-and-push.sh switches on to pick the
+    /// packer (mkfs.erofs / mksquashfs / tar).
+    fn name(self) -> &'static str {
         match self {
-            BlobFormat::Erofs => format!("mkfs.erofs -zlz4hc -T0 {name_var} {stage_var}"),
-            BlobFormat::Squashfs => format!(
-                "mksquashfs {stage_var} {name_var} -comp zstd -noappend -no-exports \
-                 -all-time 0 -mkfs-time 0 -force-uid 1000 -force-gid 1000"
-            ),
-            BlobFormat::Tar => format!(
-                "tar --zstd --numeric-owner --owner=1000 --group=1000 --mtime=@0 \
-                 --sort=name -cf {name_var} -C {stage_var} ."
-            ),
+            BlobFormat::Erofs => "erofs",
+            BlobFormat::Squashfs => "squashfs",
+            BlobFormat::Tar => "tar",
         }
     }
 }
@@ -168,25 +185,14 @@ async fn detect_build_format() -> BlobFormat {
         .unwrap_or_default();
     select_build_format(|fs| listed.split_whitespace().any(|w| w == fs))
 }
-/// Packaging stages the selected path-sets into a scratch tree before
-/// packaging. Stage on the PVC-backed home (the overlay's `/data/upper`),
-/// NOT the pod's ephemeral rootfs `/tmp`: a node_modules-heavy toolset's
-/// uncompressed staged copy can be many hundreds of MB, and the pod declares
-/// no `ephemeral-storage` budget — staging on the small rootfs risks ENOSPC
-/// mid-capture (toolset-overlay-squashfs.md §11). The home is dev-owned
-/// (build/capture run as `dev`) and sized for the sandbox.
-///
-/// Dot-prefixed and NOT bare `/home/dev`: a random `mktemp` name never
-/// collides with a declared path, and is normally removed by the EXIT trap
-/// in `squash_and_push_script` — but that cleanup is best-effort (see the
-/// trap's own comment) and can fail. For `build()` that's harmless (the
-/// throwaway build pod is torn down right after). For `capture()` it is NOT:
-/// the sandbox stays live, so leftover debris under here would otherwise sit
-/// directly in `~` forever, riding every future pause snapshot and prebuild
-/// clone. Keeping it under one well-known scratch dir lets `build()`/
-/// `capture()` sweep it at the START of every call (mirroring the
-/// `atelier-toolset-pull.*` sweep in `materialize_inner`), so a prior call's
-/// debris never survives past the next one.
+/// Packaging stages the selected path-sets into a scratch tree here, on the
+/// PVC-backed home (the overlay's `/data/upper`), NOT the pod's small
+/// ephemeral rootfs `/tmp`: a node_modules-heavy staged copy can be many
+/// hundreds of MB and the pod declares no ephemeral-storage budget.
+/// Dot-prefixed and not bare `/home/dev`, so build/capture can sweep it at the
+/// start of every call (sweep-stage-scratch.sh) without touching user files:
+/// the scripts' EXIT-trap cleanup is best-effort and a live capture sandbox
+/// would otherwise keep the debris in `~` forever.
 const STAGE_DIR: &str = "/home/dev/.atelier-toolset-scratch";
 /// Build/push can move hundreds of MB; give it well past the exec default.
 const BUILD_TIMEOUT_MS: u64 = 600_000;
@@ -241,7 +247,7 @@ pub struct MaterializeResult {
 }
 
 /// Capture a live sandbox's declared path-sets into a toolset artifact
-/// (composed-prebuild-volumes.md §2 "captured (result-keyed)"). NOT a
+/// (docs/archive/proposals/composed-prebuild-volumes.md §2 "captured (result-keyed)"). NOT a
 /// baseline diff (there is no prior snapshot to diff against at capture
 /// time) — the mechanism is path-set selection: squash exactly `paths` MINUS
 /// `exclude` globs (compose-declared additions to the built-in secret-file
@@ -323,11 +329,6 @@ fn rel_to_home(p: &str) -> Result<String, String> {
     Ok(rel.to_string())
 }
 
-/// POSIX single-quote a shell argument.
-fn sh_quote(arg: &str) -> String {
-    format!("'{}'", arg.replace('\'', "'\\''"))
-}
-
 /// A `sha256:<64 lowercase-hex>` digest token, or `None`. Normalizes case:
 /// `ToolsetRefSchema` pins `[0-9a-f]`, but oras/registries may echo mixed hex.
 fn valid_sha256(token: &str) -> Option<String> {
@@ -356,34 +357,17 @@ fn parse_digest(output: &str) -> Option<String> {
         .or_else(|| output.split_whitespace().find_map(valid_sha256))
 }
 
-/// Sweep `STAGE_DIR` of any `atelier-toolset-stage.*`/`atelier-toolset.*`
-/// debris left behind by a previous `build()`/`capture()` whose EXIT-trap
-/// cleanup failed (ESTALE on virtio-fs — see `squash_and_push_script`'s
-/// trap comment — or the agent being killed mid-call, which skips the trap
-/// entirely). Mirrors the `atelier-toolset-pull.*` sweep at the start of
-/// `materialize_inner`. Run at the START of `build()`/`capture()`, not the
-/// end: sweeping only after a successful run would never fire on the run
-/// whose OWN trap just failed; sweeping first means the NEXT call always
-/// cleans up after the previous one. Best-effort (mirrors the pull-scratch
-/// sweep) — a failed sweep degrades disk usage, not correctness, so it must
-/// not fail the build/capture itself. `rm -rf` on a non-matching glob is a
-/// silent no-op (the `-f` flag), so this is safe to run on a first-ever call
-/// before `STAGE_DIR` exists.
-fn sweep_stage_scratch_script() -> String {
-    format!(
-        "mkdir -p {dir}\nrm -rf {dir}/atelier-toolset-stage.* {dir}/atelier-toolset.*",
-        dir = sh_quote(STAGE_DIR),
-    )
-}
-
+/// Sweep `STAGE_DIR` of debris from an earlier build/capture (see
+/// sweep-stage-scratch.sh). Best-effort: a failed sweep costs disk, not
+/// correctness, so it never fails the call. Run at the START of each call.
 async fn sweep_stage_scratch(caller: &str) {
-    let res = command::run(
-        &sweep_stage_scratch_script(),
+    let res = run_script(
+        SWEEP_STAGE_SCRATCH_SH,
+        &[],
         BUILD_TIMEOUT_MS,
         Some("dev"),
-        None,
-        &std::collections::HashMap::new(),
-        MAX_COMMAND_OUTPUT_BYTES,
+        &env_map(&[("STAGE_DIR", STAGE_DIR)]),
+        true,
     )
     .await;
     if res.exit_code != 0 {
@@ -415,20 +399,9 @@ pub async fn build(req: BuildRequest) -> Result<BuildResult, String> {
     // Apply the same secret-file/`.git` exclude floor as `capture` — a built
     // toolset's declared paths can contain a `.git` dir or stray dotfile too.
     let excludes = merged_excludes(&[]);
-    let fmt = detect_build_format().await;
-    let script = squash_and_push_script(&rels, &excludes, &req.target, fmt);
-
     // Run as `dev` so the staged copy's ownership/readability matches how the
     // build steps installed the files (consistent with `capture`).
-    let res = command::run(
-        &script,
-        BUILD_TIMEOUT_MS,
-        Some("dev"),
-        None,
-        &std::collections::HashMap::new(),
-        MAX_COMMAND_OUTPUT_BYTES,
-    )
-    .await;
+    let res = squash_and_push(&rels, &excludes, &req.target).await;
     if res.exit_code != 0 {
         return Err(format!(
             "toolset push failed (exit {}): {}",
@@ -439,94 +412,46 @@ pub async fn build(req: BuildRequest) -> Result<BuildResult, String> {
     digest_from_push(&res)
 }
 
-/// Build the shared "stage selected paths, mkfs, oras push" script used by
-/// both `build` and `capture`, for the given `fmt` (erofs/squashfs). Staging
-/// (rsync'ing the selected home-relative paths into a scratch dir) rather
-/// than pointing the mkfs tool directly at `/home/dev` with per-path args
-/// keeps the exclude/selection semantics identical to the old tar invocation
-/// (`-C {home} {paths}` selected an exact rel-path set) without fighting the
-/// mkfs tool's own multi-source-root argument handling. `rsync -a --exclude` is used over
-/// plain `cp -a` because it supports the same glob-exclude semantics as
-/// `tar --exclude` (matches at every path depth, not just the top level).
-/// `-H` preserves hardlinks (tar's default behavior) — without it, a
-/// pnpm-style content-addressable store hardlinked into `node_modules` would
-/// get independently duplicated per link into the staged tree and thus into
-/// the blob, inflating its size for exactly the toolsets `SCAN_
-/// EXCLUDE_DIRS` already calls out as needing their `node_modules` intact.
-///
-/// `mkfs.erofs -zlz4hc -T0` builds the blob: `-zlz4hc` is high-compression
-/// LZ4 (kernel decompresses it with built-in LZ4; bookworm's erofs-utils 1.5
-/// has no zstd), `-T0` pins every file timestamp to epoch 0 so the blob's
-/// bytes track its *content*, not the build step's clock. Ownership needs no
-/// `-force-uid`: the staging rsync runs as `dev`, so the tree is already
-/// uid/gid 1000. Note the argument order is OUTPUT then SOURCE
-/// (`mkfs.erofs <img> <dir>`) — the reverse of `mksquashfs <dir> <img>`.
-///
-/// NOTE: `-T0` is reproducibility hygiene (equal *content* should produce
-/// equal bytes), not currently load-bearing for dedup — the `built` path's
-/// dedup key (`hashToolset`, computed by the runtime) hashes the *build
-/// request* (name/build steps/paths), not this blob's bytes, and gates
-/// before any build/push runs. If a future content-addressed-by-blob path is
-/// added, verify actual byte-reproducibility before relying on it
-/// (toolset-overlay-squashfs.md §11).
-fn squash_and_push_script(
+/// Stage the selected home-relative paths minus `excludes`, pack them into
+/// one blob in the format this guest kernel can mount, and `oras push` it to
+/// `target` (squash-and-push.sh). Shared by `build` and `capture`; runs as
+/// `dev`. Staging with rsync rather than pointing the packer at `/home/dev`
+/// keeps the glob-exclude semantics at every depth and the exact rel-path set.
+/// Positional args for the scripts that take an exclude list and a path list:
+/// `LEAD... EXCLUDE_COUNT EXCLUDE... PATH...`. The count lets a script split
+/// the two lists without any quoting or separator that a glob could contain.
+fn exclude_path_args(lead: &[String], excludes: &[String], rels: &[String]) -> Vec<String> {
+    let mut args = lead.to_vec();
+    args.push(excludes.len().to_string());
+    args.extend(excludes.iter().cloned());
+    args.extend(rels.iter().cloned());
+    args
+}
+
+async fn squash_and_push(
     rels: &[String],
     excludes: &[String],
     target: &str,
-    fmt: BlobFormat,
-) -> String {
-    // A `--files-from=-`-style bulk copy can't apply tar-style per-glob
-    // excludes uniformly across an arbitrary set of top-level rel paths, so
-    // stage each declared path individually (mirrors the old `tar -C {home}
-    // {paths}` explicit rel-path list). `$(dirname "$p")` recreates the
-    // parent dir under `$stage` first (bare top-level names dirname to `.`,
-    // which `mkdir -p`/the rsync destination both accept) so nested paths
-    // like `.config/pi` land at the same depth they have under `/home/dev`.
-    let quoted_paths = rels
-        .iter()
-        .map(|r| sh_quote(r))
-        .collect::<Vec<_>>()
-        .join(" ");
-    let rsync_excludes = rsync_exclude_flags(excludes);
-    // EXIT-trap cleanup is best-effort (`||:`): the stage lives on the
-    // virtio-fs home and native `.node` files under heavy install churn can
-    // return ESTALE ("Stale file handle") on unlink. The blob is already
-    // built + pushed by the time the trap runs, so a failed cleanup must not
-    // fail the build/capture either way — but the two callers differ in what
-    // a failed cleanup COSTS: `build()`'s pod/PVC is torn down right after,
-    // so leftover debris there is truly harmless, while `capture()`'s
-    // sandbox stays live, so debris would otherwise be visible in `~`
-    // indefinitely. That's why staging happens under the dot-prefixed
-    // `STAGE_DIR` scratch dir rather than bare `/home/dev`: both callers
-    // sweep `STAGE_DIR` at the START of their next invocation (see
-    // `sweep_stage_scratch_script`), so a failed trap's leftovers are always
-    // cleaned up before they can accumulate — this trap remains the fast
-    // path, the start-of-call sweep is the backstop.
-    format!(
-        "set -euo pipefail\n\
-         mkdir -p {dir}\n\
-         cd {dir}\n\
-         stage=$(mktemp -d atelier-toolset-stage.XXXXXX)\n\
-         name=$(mktemp -u atelier-toolset.XXXXXX.{ext})\n\
-         trap 'rm -rf \"$stage\" 2>/dev/null||:; rm -f \"$name\" 2>/dev/null||:' EXIT\n\
-         for p in {paths}; do\n\
-         parent=\"$stage/$(dirname \"$p\")\"\n\
-         mkdir -p \"$parent\"\n\
-         rsync -aH{excludes} \"{home}/$p\" \"$parent/\"\n\
-         done\n\
-         {mkfs}\n\
-         oras push --plain-http {target} \
-           --artifact-type {at} \"$name\":{lt}",
-        dir = STAGE_DIR,
-        ext = fmt.ext(),
-        excludes = rsync_excludes,
-        paths = quoted_paths,
-        mkfs = fmt.mkfs_cmd("\"$name\"", "\"$stage\""),
-        home = HOME,
-        target = sh_quote(target),
-        at = ARTIFACT_TYPE,
-        lt = fmt.media_type(),
+) -> command::ExecResult {
+    let fmt = detect_build_format().await;
+    let args = exclude_path_args(&[target.to_string()], excludes, rels);
+    let env = env_map(&[
+        ("HOME_DIR", HOME),
+        ("STAGE_DIR", STAGE_DIR),
+        ("BLOB_FORMAT", fmt.name()),
+        ("BLOB_EXT", fmt.ext()),
+        ("BLOB_MEDIA_TYPE", fmt.media_type()),
+        ("ARTIFACT_TYPE", ARTIFACT_TYPE),
+    ]);
+    run_script(
+        SQUASH_AND_PUSH_SH,
+        &args,
+        BUILD_TIMEOUT_MS,
+        Some("dev"),
+        &env,
+        true,
     )
+    .await
 }
 
 /// Extract the pushed digest from an `oras push` result, or an error carrying
@@ -543,25 +468,6 @@ fn digest_from_push(res: &command::ExecResult) -> Result<BuildResult, String> {
         })
 }
 
-/// Build the `rsync --exclude=<glob>` flags for a merged (default + request)
-/// exclude list, deduplicated and shell-quoted. A bare glob (no `/`) already
-/// matches at every path depth — rsync's `--exclude` matches path components
-/// like tar's did, not just basenames — so one `--exclude=<glob>` per glob
-/// covers both top-level and nested files. Slash-bearing user globs (which
-/// rsync would anchor differently than tar) are rejected upstream in
-/// `capture`, so every glob reaching here is a depth-agnostic basename glob.
-fn rsync_exclude_flags(excludes: &[String]) -> String {
-    let mut seen = std::collections::HashSet::new();
-    let mut flags = String::new();
-    for glob in excludes {
-        if !seen.insert(glob.clone()) {
-            continue;
-        }
-        flags.push_str(&format!(" --exclude={}", sh_quote(glob)));
-    }
-    flags
-}
-
 /// Directories skipped by the secret SCAN only — still squashed into the blob
 /// (a toolset that installs npm tools NEEDS its `node_modules`). `.git` holds
 /// no user config; `node_modules` is vendored third-party code — never where a
@@ -572,20 +478,16 @@ fn rsync_exclude_flags(excludes: &[String]) -> String {
 /// SECRET_PATTERNS).
 const SCAN_EXCLUDE_DIRS: &[&str] = &[".git", "node_modules"];
 
-/// `grep --exclude-dir=<dir>` flags for the scan-only directory excludes.
-fn scan_exclude_dir_flags() -> String {
-    SCAN_EXCLUDE_DIRS
-        .iter()
-        .map(|d| format!(" --exclude-dir={}", sh_quote(d)))
-        .collect()
-}
-
-/// Merge the built-in secret-file excludes with the request's own, as owned
-/// `String`s ready for `rsync_exclude_flags` / grep-exclude construction.
+/// The built-in secret-file excludes plus the request's own, deduplicated
+/// in order. Basename globs only (see `capture`), matched at every depth.
 fn merged_excludes(request_exclude: &[String]) -> Vec<String> {
-    let mut merged: Vec<String> = DEFAULT_EXCLUDES.iter().map(|s| s.to_string()).collect();
-    merged.extend(request_exclude.iter().cloned());
-    merged
+    let mut seen = std::collections::HashSet::new();
+    DEFAULT_EXCLUDES
+        .iter()
+        .map(|s| s.to_string())
+        .chain(request_exclude.iter().cloned())
+        .filter(|glob| seen.insert(glob.clone()))
+        .collect()
 }
 
 /// Does `offender` (an absolute path under `/home/dev` reported by the scan)
@@ -633,44 +535,21 @@ pub async fn capture(req: CaptureRequest) -> Result<BuildResult, String> {
     }
 
     let excludes = merged_excludes(&req.exclude);
-    let quoted_paths = rels
-        .iter()
-        .map(|r| sh_quote(r))
-        .collect::<Vec<_>>()
-        .join(" ");
-    let grep_excludes = excludes
-        .iter()
-        .map(|g| format!(" --exclude={}", sh_quote(g)))
-        .collect::<String>();
-    let pattern = sh_quote(&SECRET_PATTERNS.join("|"));
 
-    // Scan first (read-only), independent of the squash step: `grep -rIlE` lists
-    // matching files (`-I` skips binaries, `-l` = names only), never fails the
-    // command itself (`|| true`) so an empty result is a clean pass, not an
-    // error exit this script would otherwise abort on under `set -e`.
-    // Accepted limitation: `-I` means secrets embedded in BINARY files (e.g. a
-    // sqlite keystore) are not scanned though they would still be tarred. This
-    // is tolerated because captures default to `private: true` and publishing
-    // is an explicit, separate user action — the scan gates the common
-    // plaintext-dotfile case, not every conceivable blob.
-    let scan_script = format!(
-        "set -euo pipefail\n\
-         cd {home}\n\
-         grep -rIlE {pattern}{excludes}{dir_excludes} -- {paths} 2>/dev/null \
-           || {{ rc=$?; [ \"$rc\" -le 1 ] || exit \"$rc\"; }}",
-        home = HOME,
-        pattern = pattern,
-        excludes = grep_excludes,
-        dir_excludes = scan_exclude_dir_flags(),
-        paths = quoted_paths,
-    );
-    let scan = command::run(
-        &scan_script,
+    // Scan first (read-only), independent of the packing step (see
+    // scan-secrets.sh): lists matching files, empty output is a clean pass.
+    let scan_args = exclude_path_args(&[], &excludes, &rels);
+    let scan = run_script(
+        SCAN_SECRETS_SH,
+        &scan_args,
         BUILD_TIMEOUT_MS,
         Some("dev"),
-        None,
-        &std::collections::HashMap::new(),
-        MAX_COMMAND_OUTPUT_BYTES,
+        &env_map(&[
+            ("HOME_DIR", HOME),
+            ("SECRET_PATTERN", &SECRET_PATTERNS.join("|")),
+            ("SCAN_EXCLUDE_DIRS", &SCAN_EXCLUDE_DIRS.join("\n")),
+        ]),
+        true,
     )
     .await;
     if scan.exit_code != 0 {
@@ -694,17 +573,7 @@ pub async fn capture(req: CaptureRequest) -> Result<BuildResult, String> {
         ));
     }
 
-    let fmt = detect_build_format().await;
-    let script = squash_and_push_script(&rels, &excludes, &req.target, fmt);
-    let res = command::run(
-        &script,
-        BUILD_TIMEOUT_MS,
-        Some("dev"),
-        None,
-        &std::collections::HashMap::new(),
-        MAX_COMMAND_OUTPUT_BYTES,
-    )
-    .await;
+    let res = squash_and_push(&rels, &excludes, &req.target).await;
     if res.exit_code != 0 {
         return Err(format!(
             "toolset capture push failed (exit {}): {}",
@@ -750,6 +619,32 @@ const MIN_COMMAND_TIMEOUT_MS: u64 = 3_000;
 /// actually overlaps.
 const MAX_CONCURRENT_PULLS: usize = 4;
 
+/// Remove pull scratch dirs left by a previous boot that was SIGKILLed
+/// mid-pull (pull-blob.sh's EXIT trap is skipped on kill/VM death). Left
+/// unswept they ride every pause snapshot and prebuild clone, and the stale
+/// blob sweep never matches them. Safe: materialize is the single writer on
+/// this PVC and runs before any mount. Best-effort.
+async fn sweep_pull_scratch() {
+    let Ok(mut dir) = tokio::fs::read_dir(DATA_TOOLSETS).await else {
+        return;
+    };
+    while let Ok(Some(entry)) = dir.next_entry().await {
+        if !entry
+            .file_name()
+            .to_string_lossy()
+            .starts_with("atelier-toolset-pull.")
+        {
+            continue;
+        }
+        if let Err(e) = tokio::fs::remove_dir_all(entry.path()).await {
+            eprintln!(
+                "toolset materialize: pull-scratch cleanup of {} failed: {e}",
+                entry.path().display()
+            );
+        }
+    }
+}
+
 /// Milliseconds remaining until `deadline`, saturating at 0 — never negative,
 /// never panics against an already-past deadline (C3's global materialize
 /// budget: every root-run command in `materialize_inner` is timed off this
@@ -769,76 +664,35 @@ struct PullEntry {
     reference: String,
 }
 
-/// Build the pull-only half of the old combined pull+mount script: ensure a
-/// blob for `digest` exists at `/data/toolsets/<digest>.<ext>`, pulling it
-/// via `oras` only if not already present. No mount here — mounting is a
-/// fast, local, ordering-sensitive step done by `mount_blob_script` after
-/// every pull in the batch has landed (see `pull_blobs_concurrently`'s doc
-/// comment for why the split is safe to parallelize on this half only).
-///
-/// Pull is skipped when a blob for this digest already exists on the PVC
-/// (fresh boot after a warm pull, or a resume where the blob rode the pause
-/// VolumeSnapshot). The blob's format (erofs/squashfs) is not known ahead of
-/// time (the builder picked whatever this guest kernel supports — see
-/// `BlobFormat`), so the filename carries it: `<digest>.erofs` or
-/// `<digest>.sqfs`. Discover an existing blob by globbing `<digest>.*` (a
-/// real wildcard, so `nullglob` correctly yields an EMPTY array when absent —
-/// listing the literal `<digest>.erofs`/`.sqfs`/`.tzst` names instead never
-/// drops under nullglob and would make the pull always skip onto a missing
-/// blob); on a fresh pull, `oras pull` writes the layer under its pushed
-/// filename (a random `mktemp` name, NOT `<digest>.*`), so move the single
-/// `*.erofs`/`*.sqfs`/`*.tzst` layer it contains to the digest-named path,
-/// preserving the extension.
-///
-/// The scratch dir is created UNDER `/data/toolsets` (same filesystem as the
-/// blob, both on the PVC) rather than under `/tmp` (the pod's ephemeral
-/// rootfs): different filesystems would make the scratch-to-blob `mv` a
-/// copy+unlink, not an atomic `rename(2)` — a kill mid-copy (OOM, eviction,
-/// timeout) would leave a truncated file at the final blob path that the
-/// next boot's existence check would trust forever. Same-filesystem staging
-/// makes the final `mv` a true rename: atomic. The per-call random scratch
-/// dir name also means concurrent pulls for different digests never collide.
-fn pull_blob_script(digest: &str, reference: &str) -> String {
-    format!(
-        "set -euo pipefail\n\
-         shopt -s nullglob\n\
-         mkdir -p {toolsets_dir}\n\
-         existing=({toolsets_dir}/{digest}.*)\n\
-         if [ \"${{#existing[@]}}\" -ge 1 ]; then exit 0; fi\n\
-         scratch=$(mktemp -d -p {toolsets_dir} atelier-toolset-pull.XXXXXX)\n\
-         trap 'rm -rf \"$scratch\"' EXIT\n\
-         oras pull --plain-http {reference} -o \"$scratch\"\n\
-         layers=(\"$scratch\"/*.erofs \"$scratch\"/*.sqfs \"$scratch\"/*.tzst)\n\
-         [ \"${{#layers[@]}}\" -eq 1 ] || {{ echo \"expected exactly one .erofs/.sqfs/.tzst layer for {reference}, found ${{#layers[@]}}\" >&2; exit 1; }}\n\
-         blob={toolsets_dir}/{digest}.\"${{layers[0]##*.}}\"\n\
-         mv \"${{layers[0]}}\" \"$blob\"",
-        toolsets_dir = sh_quote(DATA_TOOLSETS),
-        digest = digest,
-        reference = sh_quote(reference),
+/// Ensure `entry`'s blob exists on the PVC, pulling it only if absent
+/// (pull-blob.sh). No mount here — mounting is a fast, local, ordering-
+/// sensitive step (`mount_blob`) done after every pull in the batch has
+/// landed (see `pull_blobs_concurrently`). Non-login: root plumbing needs no
+/// profile PATH and this runs once per toolset per boot.
+async fn pull_blob(entry: &PullEntry, timeout_ms: u64) -> command::ExecResult {
+    run_script(
+        PULL_BLOB_SH,
+        &[entry.digest.clone(), entry.reference.clone()],
+        timeout_ms,
+        None,
+        &env_map(&[("TOOLSETS_DIR", DATA_TOOLSETS)]),
+        false,
     )
+    .await
 }
 
-/// Build the mount-only half: `digest`'s blob (already pulled by
-/// `pull_blob_script`) is loop-mounted read-only at `mount_point` (or
-/// extracted, for a `.tzst` tarball blob). `mountpoint -q` guards make a
-/// retry within the same pod a no-op instead of a double-mount error.
-fn mount_blob_script(digest: &str, mount_point: &str) -> String {
-    format!(
-        "set -euo pipefail\n\
-         shopt -s nullglob\n\
-         mkdir -p {mount_point}\n\
-         existing=({toolsets_dir}/{digest}.*)\n\
-         [ \"${{#existing[@]}}\" -ge 1 ] || {{ echo \"blob for digest {digest} missing after pull\" >&2; exit 1; }}\n\
-         blob=\"${{existing[0]}}\"\n\
-         case \"$blob\" in\n\
-         *.erofs) mountpoint -q {mount_point} || mount -t erofs -o ro,loop \"$blob\" {mount_point};;\n\
-         *.sqfs) mountpoint -q {mount_point} || mount -t squashfs -o ro,loop \"$blob\" {mount_point};;\n\
-         *.tzst) [ -n \"$(ls -A {mount_point} 2>/dev/null)\" ] || tar --zstd -xf \"$blob\" -C {mount_point};;\n\
-         *) echo \"unknown blob format: $blob\" >&2; exit 1;; esac",
-        toolsets_dir = sh_quote(DATA_TOOLSETS),
-        mount_point = sh_quote(mount_point),
-        digest = digest,
+/// Loop-mount (or, for a tarball blob, extract) `digest`'s blob read-only at
+/// `mount_point` (mount-blob.sh).
+async fn mount_blob(digest: &str, mount_point: &str, timeout_ms: u64) -> command::ExecResult {
+    run_script(
+        MOUNT_BLOB_SH,
+        &[digest.to_string(), mount_point.to_string()],
+        timeout_ms,
+        None,
+        &env_map(&[("TOOLSETS_DIR", DATA_TOOLSETS)]),
+        false,
     )
+    .await
 }
 
 /// Pull every entry's blob with bounded concurrency (P2a). Independent per
@@ -872,18 +726,7 @@ async fn pull_blobs_concurrently(
                     entry.reference
                 ));
             }
-            // Non-login (P2c): pure root mkdir/mktemp/oras/mv, no profile PATH
-            // needed, and this runs once per toolset per boot.
-            let res = command::run_with_login(
-                &pull_blob_script(&entry.digest, &entry.reference),
-                timeout,
-                None,
-                None,
-                &std::collections::HashMap::new(),
-                MAX_COMMAND_OUTPUT_BYTES,
-                false,
-            )
-            .await;
+            let res = pull_blob(&entry, timeout).await;
             if res.exit_code != 0 {
                 return Err(format!(
                     "toolset pull failed for {} (exit {}): {}",
@@ -917,7 +760,7 @@ async fn pull_blobs_concurrently(
 }
 
 /// Materialize toolset artifacts into the home as a **mount, not a copy**
-/// (docs/proposals/toolset-overlay-squashfs.md §5). Digest-pinned refs are
+/// (docs/archive/proposals/toolset-overlay-squashfs.md §5). Digest-pinned refs are
 /// deduplicated, then pulled to `/data/toolsets/<digest>.<ext>` (`.erofs`,
 /// `.sqfs`, or `.tzst`, whichever format the builder used — the last is a
 /// zstd tarball, extracted into a plain lowerdir instead of loop-mounted, for
@@ -982,23 +825,7 @@ async fn materialize_inner(req: &MaterializeRequest) -> Result<MaterializeResult
     // unswept they ride every pause snapshot and prebuild clone, and the
     // blob sweep below (`*.erofs`/`*.sqfs` only) never matches them. Safe:
     // materialize is the single writer on this PVC and runs before any mount.
-    let cleanup = command::run_with_login(
-        &format!("rm -rf {}/atelier-toolset-pull.*", sh_quote(DATA_TOOLSETS)),
-        remaining_ms(deadline).max(MIN_COMMAND_TIMEOUT_MS),
-        None,
-        None,
-        &std::collections::HashMap::new(),
-        MAX_COMMAND_OUTPUT_BYTES,
-        false,
-    )
-    .await;
-    if cleanup.exit_code != 0 {
-        eprintln!(
-            "toolset materialize: pull-scratch cleanup failed (exit {}): {}",
-            cleanup.exit_code,
-            cleanup.stderr.trim()
-        );
-    }
+    sweep_pull_scratch().await;
 
     // Dedupe by digest, preserving `req.toolsets`' order: the same ref listed
     // twice would otherwise push the same mount point into `lowerdir=X:X:…`,
@@ -1036,16 +863,7 @@ async fn materialize_inner(req: &MaterializeRequest) -> Result<MaterializeResult
                 entries.len()
             ));
         }
-        let res = command::run_with_login(
-            &mount_blob_script(&entry.digest, &mount_point),
-            timeout,
-            None,
-            None,
-            &std::collections::HashMap::new(),
-            MAX_COMMAND_OUTPUT_BYTES,
-            false,
-        )
-        .await;
+        let res = mount_blob(&entry.digest, &mount_point, timeout).await;
         if res.exit_code != 0 {
             return Err(format!(
                 "toolset mount failed for {} (exit {}): {}",
@@ -1065,63 +883,20 @@ async fn materialize_inner(req: &MaterializeRequest) -> Result<MaterializeResult
     lowerdir_parts.push(SKEL.to_string());
     let lowerdir = lowerdir_parts.join(":");
 
-    // Single assembly, no swallowed failure: `/home/dev` is guaranteed bare
-    // (the entrypoint never mounts it — see the doc comment above), so
-    // `mountpoint -q` is expected to be false on every normal boot and the
-    // `umount` branch only exists to make an agent retry within the same pod
-    // safe. If `/home/dev` IS mounted and the `umount` fails (e.g. something
-    // holds it busy), `set -e` aborts the script here instead of silently
-    // falling through to a second overlay instance stacked on the same
-    // upper/workdir (which overlayfs itself may refuse, or — worse — allow
-    // with undefined concurrent-write behavior).
-    //
-    // `chown 1000:1000 {upper}` (the upper root only, NOT `-R`) fixes the
-    // merged home's ownership: overlayfs surfaces the upperdir's own uid/gid
-    // as the `/home/dev` root (the upper IS the merged root's inode). A fresh
-    // `/data/upper` is `root:root`, so without this `dev` cannot create
-    // top-level entries in its own home — a prebuild's repo clone,
-    // `~/.bash_history`, any new dotfile → EACCES. `-R` would be wrong: it
-    // would clobber the ownership of files copied up from the lowers.
-    //
-    // The upper (`/data`) is a NATIVE ext4 filesystem on a virtio-blk block
-    // device (the PVC is `volumeMode: Block`; `sandbox-boot.sh` formats and
-    // mounts it), NOT a virtio-fs share — so overlayfs gets real
-    // `trusted.overlay.*` xattrs and we mount WITHOUT `userxattr`. That is the
-    // whole point of Option C (docs/plans/toolset-inplace-update-fix-options.md
-    // §3): `userxattr` forced `redirect_dir=nofollow`, which broke npm's atomic
-    // rename-then-mkdir on the first in-place replace of a lower-only toolset
-    // dir. With trusted xattrs we pass `redirect_dir=on` explicitly (don't rely
-    // on the guest kernel's CONFIG_OVERLAY_FS_REDIRECT_DIR default) so that
-    // rename works first try.
-    //
-    // Keep `index=off` and `metacopy=off`: we only need `redirect_dir` for npm.
-    // `index=on` wants file-handle export, which our squashfs lowers are built
-    // without (`-no-exports`); `metacopy=on` drags in copied-up-symlink
-    // origin-xattr paths we don't need. (§5 of the fix-options doc.)
-    let overlay_script = format!(
-        "set -euo pipefail\n\
-         mkdir -p {upper} {work}\n\
-         chown 1000:1000 {upper}\n\
-         if mountpoint -q {home}; then umount {home}; fi\n\
-         mount -t overlay overlay {home} \
-           -o lowerdir={lowerdir},upperdir={upper},workdir={work},{opts}\n\
-         : > {ready}\n\
-         rm -f {failed}",
-        opts = OVERLAY_MOUNT_OPTS,
-        upper = sh_quote(DATA_UPPER),
-        work = sh_quote(DATA_WORK),
-        home = sh_quote(HOME),
-        lowerdir = lowerdir,
-        ready = sh_quote(HOME_READY_MARKER),
-        failed = sh_quote(HOME_FAILED_MARKER),
-    );
-    let res = command::run_with_login(
-        &overlay_script,
+    // Single overlay assembly (assemble-home.sh); writes the ready marker.
+    let res = run_script(
+        ASSEMBLE_HOME_SH,
+        &[lowerdir],
         remaining_ms(deadline).max(MIN_COMMAND_TIMEOUT_MS),
         None,
-        None,
-        &std::collections::HashMap::new(),
-        MAX_COMMAND_OUTPUT_BYTES,
+        &env_map(&[
+            ("HOME_DIR", HOME),
+            ("OVERLAY_UPPER", DATA_UPPER),
+            ("OVERLAY_WORK", DATA_WORK),
+            ("OVERLAY_OPTS", OVERLAY_MOUNT_OPTS),
+            ("READY_MARKER", HOME_READY_MARKER),
+            ("FAILED_MARKER", HOME_FAILED_MARKER),
+        ]),
         false,
     )
     .await;
@@ -1133,26 +908,17 @@ async fn materialize_inner(req: &MaterializeRequest) -> Result<MaterializeResult
         ));
     }
 
-    // Sweep stale blobs — only after a successful assembly (a failed boot
-    // must never delete a blob it might still need on retry). Any
-    // `/data/toolsets/*` blob whose digest-named basename isn't in this
-    // boot's `keep_blobs` is left over from a previous boot whose toolset
-    // set has since drifted (a toolbox update, a different resume
-    // selection…) — left unswept it rides every future pause snapshot and
-    // prebuild clone forever (toolset-overlay-squashfs.md §11). `find
-    // -maxdepth 1` scopes to exactly this directory; the keep-set is matched
-    // by digest via a `-name '<digest>.*'` OR chain (extension-agnostic, so
-    // it keeps the blob whatever format it was built in). An empty keep-set
-    // — zero toolsets — correctly deletes every blob, since the `-not \(
-    // ... \)` clause is simply absent).
-    let sweep_script = sweep_stale_blobs_script(&keep_digests);
-    let sweep = command::run_with_login(
-        &sweep_script,
+    // Sweep stale blobs (sweep-stale-blobs.sh) — only after a successful
+    // assembly (a failed boot must never delete a blob it might still need on
+    // retry). Anything not in this boot's keep-set is left over from a
+    // previous toolset selection and would ride every pause snapshot and
+    // prebuild clone forever.
+    let sweep = run_script(
+        SWEEP_STALE_BLOBS_SH,
+        &keep_digests,
         remaining_ms(deadline).max(MIN_COMMAND_TIMEOUT_MS),
         None,
-        None,
-        &std::collections::HashMap::new(),
-        MAX_COMMAND_OUTPUT_BYTES,
+        &env_map(&[("TOOLSETS_DIR", DATA_TOOLSETS)]),
         false,
     )
     .await;
@@ -1280,30 +1046,6 @@ pub async fn self_heal_home() {
     }
 }
 
-/// Build the `find /data/toolsets -maxdepth 1 ( -name '*.erofs' -o -name
-/// '*.sqfs' ) ...` script that deletes every blob whose digest is NOT in
-/// `keep_digests` (matched extension-agnostically as `<digest>.*`). An empty
-/// keep-set (zero toolsets this boot) deletes every blob — correct: nothing
-/// references any blob.
-fn sweep_stale_blobs_script(keep_digests: &[String]) -> String {
-    let blob_glob = "\\( -name '*.erofs' -o -name '*.sqfs' -o -name '*.tzst' \\)";
-    if keep_digests.is_empty() {
-        return format!(
-            "find {dir} -maxdepth 1 {blob_glob} -exec rm -f {{}} +",
-            dir = sh_quote(DATA_TOOLSETS),
-        );
-    }
-    let keep_clauses = keep_digests
-        .iter()
-        .map(|digest| format!("-name {}", sh_quote(&format!("{digest}.*"))))
-        .collect::<Vec<_>>()
-        .join(" -o ");
-    format!(
-        "find {dir} -maxdepth 1 {blob_glob} -not \\( {keep_clauses} \\) -exec rm -f {{}} +",
-        dir = sh_quote(DATA_TOOLSETS),
-    )
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -1316,36 +1058,6 @@ mod tests {
         // Allow scheduling jitter: should be close to but not over 60_000ms.
         let r = remaining_ms(future);
         assert!(r > 0 && r <= 60_000, "remaining_ms out of range: {r}");
-    }
-
-    #[test]
-    fn pull_blob_script_has_no_mount_step() {
-        // P2a split: the pull half only ensures the blob file exists, never
-        // mounts it — mounting is `mount_blob_script`'s job, run after every
-        // pull in the batch has landed.
-        let script = pull_blob_script("deadbeef", "zot.zot.svc:5000/toolsets/x@sha256:deadbeef");
-        assert!(script.contains("oras pull"));
-        assert!(!script.contains("mount -t"));
-        assert!(script.contains("atelier-toolset-pull.XXXXXX"));
-    }
-
-    #[test]
-    fn mount_blob_script_has_no_pull_step() {
-        let script = mount_blob_script("deadbeef", "/run/toolsets/deadbeef");
-        assert!(!script.contains("oras pull"));
-        assert!(script.contains("mount -t erofs"));
-        assert!(script.contains("mount -t squashfs"));
-        assert!(script.contains("tar --zstd"));
-    }
-
-    #[test]
-    fn sweep_stage_scratch_script_targets_the_dot_prefixed_scratch_dir() {
-        // C2: staging must not sweep bare /home/dev — only the dot-prefixed
-        // scratch dir both build() and capture() stage under.
-        let script = sweep_stage_scratch_script();
-        assert!(script.contains(STAGE_DIR));
-        assert!(STAGE_DIR.starts_with("/home/dev/."));
-        assert!(script.contains("atelier-toolset-stage.*"));
     }
 
     #[test]
@@ -1382,29 +1094,32 @@ mod tests {
     }
 
     #[test]
-    fn mkfs_cmd_argument_order_differs_by_format() {
-        // mkfs.erofs is <img> <dir>; mksquashfs is <dir> <img> — a swap here
-        // silently produces an empty/garbage blob.
-        let e = BlobFormat::Erofs.mkfs_cmd("OUT", "SRC");
-        assert!(e.starts_with("mkfs.erofs"));
-        assert!(e.contains("OUT SRC"), "erofs is output-then-source: {e}");
-        let s = BlobFormat::Squashfs.mkfs_cmd("OUT", "SRC");
-        assert!(
-            s.starts_with("mksquashfs SRC OUT"),
-            "squashfs is source-then-output: {s}"
+    fn blob_format_names_match_the_packer_switch_in_squash_and_push() {
+        // squash-and-push.sh switches on exactly these values.
+        for (fmt, name) in [
+            (BlobFormat::Erofs, "erofs"),
+            (BlobFormat::Squashfs, "squashfs"),
+            (BlobFormat::Tar, "tar"),
+        ] {
+            assert_eq!(fmt.name(), name);
+            assert!(
+                SQUASH_AND_PUSH_SH.contains(&format!("\n{name})\n")),
+                "squash-and-push.sh has no `{name})` case"
+            );
+        }
+    }
+
+    #[test]
+    fn exclude_path_args_counts_excludes_so_the_lists_split_cleanly() {
+        let args = exclude_path_args(
+            &["target".to_string()],
+            &["*.pem".to_string(), ".env".to_string()],
+            &[".config/pi".to_string()],
         );
-        // tar archives the stage's contents into the blob, zstd-compressed,
-        // with ownership/mtime normalized (stage is `dev`; flags pin it).
-        let t = BlobFormat::Tar.mkfs_cmd("OUT", "SRC");
-        assert!(
-            t.starts_with("tar --zstd"),
-            "tar blob is a zstd archive: {t}"
-        );
-        assert!(
-            t.contains("-cf OUT -C SRC ."),
-            "tar is create-file OUT from SRC: {t}"
-        );
-        assert!(t.contains("--owner=1000") && t.contains("--group=1000"));
+        assert_eq!(args, ["target", "2", "*.pem", ".env", ".config/pi"]);
+        // No excludes: just the zero count, then paths.
+        let args = exclude_path_args(&[], &[], &["a".to_string(), "b".to_string()]);
+        assert_eq!(args, ["0", "a", "b"]);
     }
 
     #[test]
@@ -1426,19 +1141,6 @@ mod tests {
             select_build_format(|fs| fs == "ext4" || fs == "overlay"),
             BlobFormat::Tar
         );
-    }
-
-    #[test]
-    fn sweep_keeps_blobs_by_digest_across_extensions() {
-        let d = "a".repeat(64);
-        let script = sweep_stale_blobs_script(std::slice::from_ref(&d));
-        assert!(script.contains("*.erofs"));
-        assert!(script.contains("*.sqfs"));
-        assert!(script.contains("*.tzst"));
-        // keeps the digest regardless of extension
-        assert!(script.contains(&format!("'{d}.*'")));
-        // empty keep-set deletes everything
-        assert!(!sweep_stale_blobs_script(&[]).contains("-not"));
     }
 
     #[test]
@@ -1513,17 +1215,11 @@ mod tests {
     fn node_modules_is_scan_excluded_but_still_captured() {
         // The scan skips node_modules (vendored deps trip patterns on example
         // keys, e.g. AWS's AKIAIOSFODNN7EXAMPLE) …
-        let flags = scan_exclude_dir_flags();
-        assert!(flags.contains("--exclude-dir='node_modules'"));
-        assert!(flags.contains("--exclude-dir='.git'"));
-        // … but it must NOT be an rsync/squash exclude, or an npm toolset
-        // would ship without its dependencies.
+        assert!(SCAN_EXCLUDE_DIRS.contains(&"node_modules"));
+        assert!(SCAN_EXCLUDE_DIRS.contains(&".git"));
+        // … but it must NOT be a pack exclude, or an npm toolset would ship
+        // without its dependencies.
         assert!(!merged_excludes(&[]).iter().any(|g| g == "node_modules"));
-    }
-
-    #[test]
-    fn sh_quote_escapes_embedded_single_quote() {
-        assert_eq!(sh_quote("a'b"), "'a'\\''b'");
     }
 
     #[test]
@@ -1535,11 +1231,10 @@ mod tests {
     }
 
     #[test]
-    fn rsync_exclude_flags_quotes_and_dedupes() {
-        let excludes = vec!["auth.json".to_string(), "auth.json".to_string()];
-        let flags = rsync_exclude_flags(&excludes);
-        assert_eq!(flags.matches("--exclude=").count(), 1);
-        assert!(flags.contains("'auth.json'"));
+    fn merged_excludes_dedupes_in_order() {
+        let merged = merged_excludes(&["auth.json".to_string(), "mine".to_string()]);
+        assert_eq!(merged.iter().filter(|g| *g == "auth.json").count(), 1);
+        assert_eq!(merged.last().map(String::as_str), Some("mine"));
     }
 
     #[test]
@@ -1610,5 +1305,134 @@ mod tests {
     #[test]
     fn is_overridden_false_when_no_overrides() {
         assert!(!is_overridden("/home/dev/.env", &[]));
+    }
+
+    const ALL_SCRIPTS: [(&str, &str); 7] = [
+        ("sweep-stage-scratch.sh", SWEEP_STAGE_SCRATCH_SH),
+        ("squash-and-push.sh", SQUASH_AND_PUSH_SH),
+        ("scan-secrets.sh", SCAN_SECRETS_SH),
+        ("pull-blob.sh", PULL_BLOB_SH),
+        ("mount-blob.sh", MOUNT_BLOB_SH),
+        ("assemble-home.sh", ASSEMBLE_HOME_SH),
+        ("sweep-stale-blobs.sh", SWEEP_STALE_BLOBS_SH),
+    ];
+
+    fn scratch(name: &str) -> std::path::PathBuf {
+        let dir =
+            std::env::temp_dir().join(format!("atelier-toolset-{}-{name}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(&dir).unwrap();
+        dir
+    }
+
+    #[tokio::test]
+    async fn every_embedded_script_parses() {
+        // A syntax slip would otherwise only surface on a real boot. (CI also
+        // runs `shellcheck -s bash apps/agent/scripts/*.sh` where available.)
+        let dir = scratch("syntax");
+        for (name, body) in ALL_SCRIPTS {
+            let path = dir.join(name);
+            std::fs::write(&path, body).unwrap();
+            let res = run_script(
+                "bash -n \"$1\"",
+                &[path.to_string_lossy().into_owned()],
+                10_000,
+                None,
+                &HashMap::new(),
+                false,
+            )
+            .await;
+            assert_eq!(res.exit_code, 0, "{name}: {}", res.stderr);
+        }
+    }
+
+    #[tokio::test]
+    async fn sweep_stale_blobs_keeps_only_listed_digests_in_any_format() {
+        let dir = scratch("sweep");
+        let (keep, drop_a, drop_b) = ("a".repeat(64), "b".repeat(64), "c".repeat(64));
+        for f in [
+            format!("{keep}.sqfs"),
+            format!("{drop_a}.erofs"),
+            format!("{drop_b}.tzst"),
+            ".materialize.json".to_string(),
+        ] {
+            std::fs::write(dir.join(f), b"x").unwrap();
+        }
+        let env = env_map(&[("TOOLSETS_DIR", dir.to_str().unwrap())]);
+        let res = run_script(
+            SWEEP_STALE_BLOBS_SH,
+            std::slice::from_ref(&keep),
+            10_000,
+            None,
+            &env,
+            false,
+        )
+        .await;
+        assert_eq!(res.exit_code, 0, "{}", res.stderr);
+        let mut left: Vec<String> = std::fs::read_dir(&dir)
+            .unwrap()
+            .map(|e| e.unwrap().file_name().to_string_lossy().into_owned())
+            .collect();
+        left.sort();
+        assert_eq!(
+            left,
+            [".materialize.json".to_string(), format!("{keep}.sqfs")]
+        );
+
+        // No keep list: every blob goes, the non-blob state file stays.
+        let res = run_script(SWEEP_STALE_BLOBS_SH, &[], 10_000, None, &env, false).await;
+        assert_eq!(res.exit_code, 0, "{}", res.stderr);
+        assert!(!dir.join(format!("{keep}.sqfs")).exists());
+        assert!(dir.join(".materialize.json").exists());
+    }
+
+    #[tokio::test]
+    async fn pull_blob_skips_the_pull_when_the_blob_is_already_there() {
+        // No `oras` involved: an existing `<digest>.*` short-circuits.
+        let dir = scratch("pull-skip");
+        let digest = "d".repeat(64);
+        std::fs::write(dir.join(format!("{digest}.erofs")), b"blob").unwrap();
+        let env = env_map(&[("TOOLSETS_DIR", dir.to_str().unwrap())]);
+        let args = [digest.clone(), "never-pulled/x@sha256:0".to_string()];
+        let res = run_script(PULL_BLOB_SH, &args, 10_000, None, &env, false).await;
+        assert_eq!(res.exit_code, 0, "{}", res.stderr);
+    }
+
+    #[tokio::test]
+    async fn mount_blob_fails_clearly_when_the_blob_is_missing() {
+        let dir = scratch("mount-missing");
+        let mount = dir.join("mnt");
+        let env = env_map(&[("TOOLSETS_DIR", dir.to_str().unwrap())]);
+        let args = ["e".repeat(64), mount.to_string_lossy().into_owned()];
+        let res = run_script(MOUNT_BLOB_SH, &args, 10_000, None, &env, false).await;
+        assert_ne!(res.exit_code, 0);
+        assert!(res.stderr.contains("missing after pull"), "{}", res.stderr);
+    }
+
+    #[tokio::test]
+    async fn scan_secrets_reports_matches_and_honours_excludes() {
+        let home = scratch("scan");
+        std::fs::create_dir_all(home.join(".config/x")).unwrap();
+        std::fs::create_dir_all(home.join(".config/node_modules/m")).unwrap();
+        let key = format!("ghp_{}", "A".repeat(36));
+        std::fs::write(home.join(".config/x/leak.txt"), &key).unwrap();
+        std::fs::write(home.join(".config/x/skipped.pem"), &key).unwrap();
+        std::fs::write(home.join(".config/node_modules/m/vendored.js"), &key).unwrap();
+        std::fs::write(home.join(".config/x/clean.txt"), "nothing here").unwrap();
+        let env = env_map(&[
+            ("HOME_DIR", home.to_str().unwrap()),
+            ("SECRET_PATTERN", &SECRET_PATTERNS.join("|")),
+            ("SCAN_EXCLUDE_DIRS", &SCAN_EXCLUDE_DIRS.join("\n")),
+        ]);
+        let args = exclude_path_args(&[], &["*.pem".to_string()], &[".config".to_string()]);
+        let res = run_script(SCAN_SECRETS_SH, &args, 10_000, None, &env, false).await;
+        assert_eq!(res.exit_code, 0, "{}", res.stderr);
+        assert_eq!(res.stdout.trim(), ".config/x/leak.txt");
+
+        // A clean tree is an empty, successful scan.
+        let args = exclude_path_args(&[], &[], &[".config/x/clean.txt".to_string()]);
+        let res = run_script(SCAN_SECRETS_SH, &args, 10_000, None, &env, false).await;
+        assert_eq!(res.exit_code, 0, "{}", res.stderr);
+        assert_eq!(res.stdout.trim(), "");
     }
 }

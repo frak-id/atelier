@@ -2,7 +2,5 @@ node_modules
 .git
 .deploy-staging
 *.tar.gz
-apps/cli
-!apps/cli/package.json
 sandbox.config.json
 values.production.yaml
