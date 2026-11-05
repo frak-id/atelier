@@ -1,6 +1,8 @@
 FROM atelier/dev-base:latest
 
 USER root
+# Build-time curl retries, set up in dev-base.
+ARG CURL_HOME=/etc/curl-build
 
 # Install to /opt (rootfs), NOT $HOME. /home/dev is rebuilt at boot as an
 # overlay over /home/skel (see dev-base's /home/skel mv), so anything

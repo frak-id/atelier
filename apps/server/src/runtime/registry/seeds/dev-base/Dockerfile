@@ -76,6 +76,16 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     && find /usr/share/locale -mindepth 1 -maxdepth 1 ! -name 'en*' -exec rm -rf {} + \
     && rm -rf /var/cache/apt
 
+# Build-time curl retries. GitHub release downloads intermittently answer 504
+# from the cluster, including the ones install scripts make (bun.sh/install
+# fetches its zip from GitHub), so a --retry flag alone would not cover them.
+# Every curl reads $CURL_HOME/.curlrc. An ARG is set for RUN steps but not
+# kept in the image's environment, so sandboxes never read this file. Seeds
+# built on dev-base declare the same ARG.
+ARG CURL_HOME=/etc/curl-build
+RUN mkdir -p /etc/curl-build \
+    && printf 'retry = 6\nretry-connrefused\n' > /etc/curl-build/.curlrc
+
 # Layer 2: oras (OCI artifact CLI) — the guest agent shells out to it to
 # push/pull toolset artifacts to/from the in-cluster zot registry
 # (docs/archive/proposals/composed-prebuild-volumes.md). Static linux/amd64 binary; no runtime deps.

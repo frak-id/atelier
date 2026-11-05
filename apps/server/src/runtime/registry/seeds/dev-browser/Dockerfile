@@ -19,6 +19,8 @@ ARG KASMVNC_VERSION=1.5.0
 ENV DEBIAN_FRONTEND=noninteractive
 
 USER root
+# Build-time curl retries, set up in dev-base.
+ARG CURL_HOME=/etc/curl-build
 
 # Browser stack packages: chromium (the browser the desktop serves), openbox
 # (a minimal window manager), libegl1 (GL for chromium), and fonts-liberation
