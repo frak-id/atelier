@@ -34,7 +34,7 @@ import {
   otherReposNote,
   repoBranchLabel,
 } from "@/lib/formatters";
-import { activeJobForBranch } from "@/lib/repo-catalog";
+import { activeJobForBranch, latestBranch } from "@/lib/repo-catalog";
 import { cn } from "@/lib/utils";
 import { RepoIdentity } from "./repo-identity";
 
@@ -120,7 +120,14 @@ export function RepoSpawnCard({
             ) : null}
             <RepoPicker
               entries={catalog.entries}
-              onSelect={(e) => onSelectionChange({ repo: e.repo.fullName })}
+              // Preselect the prebuilt branch, so a repo prebuilt only on a
+              // feature branch still boots instantly by default.
+              onSelect={(e) =>
+                onSelectionChange({
+                  repo: e.repo.fullName,
+                  branch: latestBranch(e),
+                })
+              }
             />
           </>
         )}

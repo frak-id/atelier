@@ -8,6 +8,7 @@ import {
   catalogCounts,
   catalogOwners,
   filterCatalog,
+  latestBranch,
 } from "./repo-catalog.ts";
 
 function repo(fullName: string, extra: Partial<CatalogRepo> = {}) {
@@ -194,6 +195,27 @@ describe("buildRepoCatalog", () => {
       [],
     );
     expect(onlyFeat[0]?.latest?.ref).toBe("snap-feat");
+  });
+
+  test("latestBranch is the prebuilt branch, undefined for the default", () => {
+    const branchOf = (prebuilds: PrebuildRecord[]) => {
+      const entry = buildRepoCatalog([atelier], prebuilds, [])[0];
+      if (!entry) throw new Error("missing entry");
+      return latestBranch(entry);
+    };
+    expect(
+      branchOf([prebuild("snap-feat", atelier.cloneUrl, "2", "feat")]),
+    ).toBe("feat");
+    // An explicit `main` is the default branch: no `?branch=` needed
+    expect(
+      branchOf([prebuild("snap-main", atelier.cloneUrl, "1", "main")]),
+    ).toBeUndefined();
+    expect(
+      branchOf([
+        multiRepoPrebuild("snap-dev", [wallet.cloneUrl, atelier.cloneUrl], "1"),
+      ]),
+    ).toBeUndefined();
+    expect(branchOf([])).toBeUndefined();
   });
 });
 

@@ -18,7 +18,7 @@ import {
   rebuildTitle,
   repoBranchLabel,
 } from "@/lib/formatters";
-import { activeJobForBranch } from "@/lib/repo-catalog";
+import { activeJobForBranch, latestBranch } from "@/lib/repo-catalog";
 import { RepoIdentity } from "./repo-identity";
 
 /** The list box shows at most this many rows; the rest scroll. A row is
@@ -93,16 +93,11 @@ export function RepoRow({
   // Each button acts on one branch, so it only waits for THAT branch's job:
   // create/retry bakes the default branch, rebuild re-bakes `latest`'s.
   const defaultJob = activeJobForBranch(entry, undefined);
-  // The branch THIS repo is cloned at in `latest`, which may be a multi-repo
-  // prebuild where it isn't the first repo.
-  const latestBranch = latest
-    ? prebuildRepoFor(latest, repo.cloneUrl)?.branch
-    : undefined;
+  const branchSuffix = latestBranch(entry);
   const rebuildJob = latest
-    ? activeJobForBranch(entry, latestBranch)
+    ? activeJobForBranch(entry, branchSuffix)
     : undefined;
   const createBusy = preparing || defaultJob !== undefined;
-  const branchSuffix = normalizeBranch(latestBranch, repo.defaultBranch);
 
   return (
     <li className="group flex flex-col gap-2 px-3 py-2.5 transition-colors hover:bg-muted/30 sm:flex-row sm:items-center sm:gap-4">
