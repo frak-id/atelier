@@ -173,10 +173,10 @@ export const SANDBOX_NAME_ANNOTATION = "atelier.dev/name";
  * happens once, at create. */
 export const SANDBOX_ORG_ANNOTATION = "atelier.dev/org-id";
 
-/** Annotation recording the branch a sandbox switched one of its repos to
- * after booting from that repo's default-branch prebuild, as
- * `<repo url>#<branch>` (see `withCheckedOutBranch`). Display only: set by
- * the server once the checkout succeeded. */
+/** Annotation recording the repo a sandbox prepared at boot: switched to
+ * another branch than its prebuild's, or cloned into a bare image, as
+ * `<repo url>` or `<repo url>#<branch>` (see `withCheckout`). Display only:
+ * set by the server once the checkout or clone succeeded. */
 export const SANDBOX_CHECKOUT_ANNOTATION = "atelier.dev/checkout";
 
 /** Longest accepted sandbox display name, in characters. */

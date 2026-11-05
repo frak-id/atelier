@@ -1,19 +1,25 @@
 /**
- * Spawning a repo on a branch nobody baked: boot from another prebuild of
- * the repo (its default branch's when there is one, `findRepoBasePrebuild`)
- * instead of baking a new one, switch its clone to the branch before any
- * process starts, then re-run the prebuild's build steps in the live sandbox
- * (a `sandbox-setup` job) while the caller already works in it. The snapshot
- * holds the clone and the installed dependencies, so the checkout is one
- * shallow fetch and the re-run is incremental.
+ * Preparing a spawn's repo in the live sandbox instead of baking a prebuild
+ * for it. Two plans:
+ *  - switch: the branch has no bake, but the repo does (its default branch's
+ *    first, `findRepoBasePrebuild`). Boot that one and move its clone to the
+ *    branch; its build steps then re-run on the dependencies it holds.
+ *  - clone: the repo has no bake at all and the caller asked for none
+ *    (`repo.bake: false`). Boot the bare image and clone the repo into the
+ *    home; the caller's setup steps then run in the clone.
+ * Either way the repo is ready before any process starts (`prepareRepo`, the
+ * create's `beforeProcesses`), so neither a dev server nor an agent sees the
+ * wrong tree, and the steps run as a `sandbox-setup` job once the sandbox is
+ * up (`runRepoSetup`), while the caller already works in it.
  *
- * Every failure is a warning, never a failed spawn: a failed checkout leaves
- * the sandbox on the default branch, a failed step leaves its dependencies as
- * the prebuild baked them. The steps run as `dev` from the home like a bake,
- * but with the sandbox's env: the prebuild's build-only `env` may hold values
- * the spawning user must not read, so it never enters their sandbox.
+ * Every failure is a warning, never a failed spawn: a failed switch leaves
+ * the prebuild's branch, a failed clone an empty home, a failed step the
+ * dependencies as they were. The steps run as `dev` from the home like a
+ * bake, but with the sandbox's env: a prebuild's build-only `env` may hold
+ * values the spawning user must not read, so it never enters their sandbox.
  */
 import {
+  buildRepoPrebuildSpec,
   type PrebuildRecord,
   prebuildRepoFor,
   repoShortName,
@@ -24,7 +30,7 @@ import type { RuntimeService } from "../../runtime/index.ts";
 
 /** One build step's budget, the same as in a bake (`BuildPods.execStep`). */
 const BUILD_STEP_TIMEOUT_MS = 600_000;
-/** The checkout's budget: one shallow fetch of one branch. */
+/** The checkout's or clone's budget: one shallow fetch of one branch. */
 const CHECKOUT_TIMEOUT_MS = 120_000;
 
 type SetupRuntime = Pick<
@@ -32,9 +38,9 @@ type SetupRuntime = Pick<
   "exec" | "get" | "processAction" | "setAnnotation"
 >;
 
-/** What a spawn boots from and does to land on `branch` (see the module
- * doc). */
+/** Boot `baseRef` and move its clone of `url` to `branch`. */
 export interface BranchSwitch {
+  mode: "switch";
   /** The prebuild the sandbox boots from. */
   baseRef: string;
   url: string;
@@ -44,9 +50,22 @@ export interface BranchSwitch {
   /** The prebuild's whole `build[]`, re-run once the branch is checked out. */
   build: string[];
   /** Its dev servers (process names), restarted after the steps succeed:
-   * they started on the default branch's dependencies. */
+   * they started on the dependencies of the prebuild's branch. */
   devServers: string[];
 }
+
+/** Clone `url` (on `branch`, else its default branch) into the bare image. */
+interface RepoClone {
+  mode: "clone";
+  url: string;
+  branch?: string;
+  clonePath: string;
+  /** The caller's setup steps, each scoped to the clone (`cd` into it). */
+  build: string[];
+  devServers: [];
+}
+
+export type RepoSetup = BranchSwitch | RepoClone;
 
 /**
  * The switch of `base`'s clone of `url` to `branch`, or `undefined` when
@@ -63,6 +82,7 @@ export function planBranchSwitch(
   const target = branch?.trim();
   if (!clone || !target || clone.branch?.trim() === target) return undefined;
   return {
+    mode: "switch",
     baseRef: base.ref,
     url,
     branch: target,
@@ -74,9 +94,35 @@ export function planBranchSwitch(
   };
 }
 
+/** The clone of `url` at boot, laid out like a quick prebuild of it
+ * (`buildRepoPrebuildSpec`: the repo's name as the clone path, each setup
+ * step scoped to it), so a later prebuild of the repo looks the same. */
+export function planRepoClone(
+  url: string,
+  branch: string | undefined,
+  setup: readonly string[] = [],
+): RepoClone {
+  const recipe = buildRepoPrebuildSpec({
+    repo: url,
+    branch,
+    image: "",
+    build: [...setup],
+  });
+  const repo = recipe.repos?.[0];
+  return {
+    mode: "clone",
+    url: repo?.url ?? url,
+    ...(repo?.branch ? { branch: repo.branch } : {}),
+    clonePath: repo?.clonePath ?? "repo",
+    build: recipe.build ?? [],
+    devServers: [],
+  };
+}
+
 /** The setup job's feed label, e.g. `frak-id/wallet#feature/x`. */
-export function branchSetupLabel(plan: BranchSwitch): string {
-  return `${repoShortName(plan.url)}#${plan.branch}`;
+export function repoSetupLabel(plan: RepoSetup): string {
+  const name = repoShortName(plan.url);
+  return plan.branch ? `${name}#${plan.branch}` : name;
 }
 
 function shQuote(arg: string): string {
@@ -114,6 +160,16 @@ export function branchCheckoutCommand(
   ].join(" && ");
 }
 
+/** The shell that clones `url` into `clonePath`, as a bake does. */
+export function repoCloneCommand(
+  url: string,
+  clonePath: string,
+  branch?: string,
+): string {
+  const at = branch ? `-b ${shQuote(branch)} ` : "";
+  return `git clone --depth 1 ${at}-- ${shQuote(url)} ${shQuote(clonePath)}`;
+}
+
 function lastLine(text: string): string | undefined {
   return text.trim().split("\n").pop()?.trim() || undefined;
 }
@@ -123,24 +179,37 @@ function reason(err: unknown): string {
 }
 
 /**
- * Check the branch out in the booted guest (`beforeProcesses` of the create)
- * and record it on the sandbox (`SANDBOX_CHECKOUT_ANNOTATION`). Never
- * throws: returns the warning when the sandbox stays on the default branch.
+ * Get the repo ready in the booted guest (`beforeProcesses` of the create):
+ * switch or clone it, then record it on the sandbox
+ * (`SANDBOX_CHECKOUT_ANNOTATION`). Never throws: returns the warning when it
+ * failed (the sandbox keeps the prebuild's branch, or has no clone).
  */
-export async function checkoutBranch(
+export async function prepareRepo(
   runtime: SetupRuntime,
   id: string,
-  plan: BranchSwitch,
+  plan: RepoSetup,
   onProgress: (msg: string) => void,
 ): Promise<string | undefined> {
+  const name = repoShortName(plan.url);
   const failed = (why: string) =>
-    `Could not switch ${repoShortName(plan.url)} to ${plan.branch} (${why}); ` +
-    "the sandbox is on the default branch.";
-  if (!isPlausibleBranch(plan.branch)) return failed("invalid branch name");
-  onProgress(`switching ${plan.clonePath} to ${plan.branch}…`);
+    plan.mode === "switch"
+      ? `Could not switch ${name} to ${plan.branch} (${why}); the sandbox ` +
+        "is on the prebuild's branch."
+      : `Could not clone ${name} (${why}); the sandbox starts without it.`;
+  if (plan.branch !== undefined && !isPlausibleBranch(plan.branch)) {
+    return failed("invalid branch name");
+  }
+  onProgress(
+    plan.mode === "switch"
+      ? `switching ${plan.clonePath} to ${plan.branch}…`
+      : `cloning ${name} into ${plan.clonePath}…`,
+  );
   try {
     const res = await runtime.exec(id, {
-      command: branchCheckoutCommand(plan.clonePath, plan.branch),
+      command:
+        plan.mode === "switch"
+          ? branchCheckoutCommand(plan.clonePath, plan.branch)
+          : repoCloneCommand(plan.url, plan.clonePath, plan.branch),
       cwd: VM.HOME,
       timeoutMs: CHECKOUT_TIMEOUT_MS,
     });
@@ -153,36 +222,39 @@ export async function checkoutBranch(
   runtime.setAnnotation(
     id,
     SANDBOX_CHECKOUT_ANNOTATION,
-    `${plan.url}#${plan.branch}`,
+    plan.branch ? `${plan.url}#${plan.branch}` : plan.url,
   );
   return undefined;
 }
 
 /** What a `sandbox-setup` job settles with (its feed `result`). */
-export interface BranchSetupResult {
-  branch: string;
+export interface RepoSetupResult {
+  branch?: string;
   /** Set when a step or a dev-server restart failed. */
   warnings?: string[];
 }
 
 /**
- * The `sandbox-setup` job body: run the prebuild's build steps in the live
- * sandbox, fail-fast like a bake, streaming their output to the job log,
- * then restart the dev servers that are running. Never throws.
+ * The `sandbox-setup` job body: run the plan's steps in the live sandbox,
+ * fail-fast like a bake, streaming their output to the job log, then
+ * restart the dev servers that are running. Never throws.
  */
-export async function runBranchSetup(
+export async function runRepoSetup(
   runtime: SetupRuntime,
   id: string,
-  plan: BranchSwitch,
+  plan: RepoSetup,
   log: (chunk: string) => void,
-): Promise<BranchSetupResult> {
-  const warn = (warning: string): BranchSetupResult => {
+): Promise<RepoSetupResult> {
+  const branch = plan.branch ? { branch: plan.branch } : {};
+  const warn = (warning: string): RepoSetupResult => {
     log(`✗ ${warning}`);
-    return { branch: plan.branch, warnings: [warning] };
+    return { ...branch, warnings: [warning] };
   };
   const stepFailed = (step: string, why: string) =>
-    `Build step failed after switching to ${plan.branch}: ${step} (${why}). ` +
-    "Dependencies may be out of date.";
+    (plan.mode === "switch"
+      ? `Build step failed after switching to ${plan.branch}`
+      : `Setup step failed in ${plan.clonePath}`) +
+    `: ${step} (${why}). Dependencies may be missing or out of date.`;
   for (const step of plan.build) {
     log(`$ ${step}`);
     let res: Awaited<ReturnType<SetupRuntime["exec"]>>;
@@ -202,8 +274,12 @@ export async function runBranchSetup(
     }
   }
   const warnings = await restartDevServers(runtime, id, plan.devServers, log);
-  log(`${plan.clonePath} is set up on ${plan.branch}.`);
-  return { branch: plan.branch, ...(warnings.length > 0 ? { warnings } : {}) };
+  log(
+    plan.branch
+      ? `${plan.clonePath} is set up on ${plan.branch}.`
+      : `${plan.clonePath} is set up.`,
+  );
+  return { ...branch, ...(warnings.length > 0 ? { warnings } : {}) };
 }
 
 /** Restart the running ones of `names`; a lazy dev server nobody opened yet

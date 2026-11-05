@@ -9,13 +9,15 @@ import { Card, CardContent } from "@/components/ui/card";
 import { cn } from "@/lib/utils";
 
 /**
- * A branch switch's build steps (`sandbox-setup` job): the sandbox booted
- * from the repo's default-branch prebuild, checked the branch out, and now
- * re-runs the prebuild's build steps while the user already works in it.
- * Shown while they run, and after if they left warnings or did not finish;
- * a clean finish needs no card (the toast said so). Live from the jobs feed.
+ * A repo prepared at boot, then set up in the background (`sandbox-setup`
+ * job): either switched (the sandbox booted another branch's prebuild,
+ * checked its branch out, and re-runs the prebuild's build steps) or cloned
+ * (no prebuild: the bare image cloned it and runs its setup steps), while
+ * the user already works in it. Shown while they run, and after if they
+ * left warnings or did not finish; a clean finish needs no card (the toast
+ * said so). Live from the jobs feed.
  */
-export function BranchSetupSection({ sandboxId }: { sandboxId: string }) {
+export function RepoSetupSection({ sandboxId }: { sandboxId: string }) {
   const { data: jobs } = useQuery(jobsListQuery());
   const [showLogs, setShowLogs] = useState(false);
   const job = latestSetupJob(jobs, sandboxId);
@@ -25,8 +27,13 @@ export function BranchSetupSection({ sandboxId }: { sandboxId: string }) {
   if (!active && job.status === "succeeded" && warnings.length === 0) {
     return null;
   }
-  const branch = job.metadata?.branch ?? "the branch";
+  const cloned = job.metadata?.mode === "clone";
   const repo = job.metadata?.repo ? repoShortName(job.metadata.repo) : "";
+  const branch = job.metadata?.branch;
+  // What is being set up: the branch of a switch, the repo of a clone.
+  const subject = cloned
+    ? repo || "the repo"
+    : (branch ?? job.target ?? "the branch");
 
   return (
     <Card className={active ? "border-info/40" : "border-warning/40"}>
@@ -45,17 +52,19 @@ export function BranchSetupSection({ sandboxId }: { sandboxId: string }) {
               )}
             >
               {active
-                ? `Setting up ${branch}`
+                ? `Setting up ${subject}`
                 : warnings.length > 0
-                  ? `${branch} is set up, with warnings`
-                  : `The setup of ${branch} did not finish`}
+                  ? `${subject} is set up, with warnings`
+                  : `The setup of ${subject} did not finish`}
             </p>
             {active ? (
               <p className="text-muted-foreground">
-                {repo ? `${repo} is on ${branch}. ` : ""}The prebuild's build
-                steps are re-running for it. You can already work in the
-                sandbox: dependencies may be out of date until they finish, then
-                the dev servers restart.
+                {cloned
+                  ? `${repo || "The repo"} is cloned${branch ? ` on ${branch}` : ""}, and its setup steps are running. `
+                  : `${repo ? `${repo} is on ${branch}. ` : ""}The prebuild's build steps are re-running for it. `}
+                You can already work in the sandbox: dependencies may be missing
+                or out of date until they finish
+                {cloned ? "." : ", then the dev servers restart."}
               </p>
             ) : warnings.length > 0 ? (
               <ul className="list-disc space-y-0.5 pl-4 text-muted-foreground">
@@ -65,8 +74,8 @@ export function BranchSetupSection({ sandboxId }: { sandboxId: string }) {
               </ul>
             ) : (
               <p className="text-muted-foreground">
-                {job.error ?? "It stopped before the build steps were done."}{" "}
-                Dependencies may be out of date.
+                {job.error ?? "It stopped before the steps were done."}{" "}
+                Dependencies may be missing or out of date.
               </p>
             )}
           </div>

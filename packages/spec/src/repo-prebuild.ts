@@ -182,22 +182,26 @@ export function findRepoBasePrebuild(
 }
 
 /**
- * The repos a sandbox works on, with the branch switch recorded in its
- * `SANDBOX_CHECKOUT_ANNOTATION` (`<url>#<branch>`) applied: a sandbox booted
- * from a default-branch prebuild and switched to a feature branch lists that
- * branch, not the prebuild's. Display only; an absent or malformed
- * annotation leaves `repos` unchanged.
+ * The repos a sandbox works on (`repos`: the ones its prebuild cloned), with
+ * the checkout recorded in its `SANDBOX_CHECKOUT_ANNOTATION` applied: `<url>`
+ * or `<url>#<branch>`. A repo it switched to another branch lists that
+ * branch, not the prebuild's; a repo it cloned at boot (no prebuild) is
+ * added. Display only; an absent or blank annotation leaves `repos` as is.
  */
-export function withCheckedOutBranch<
-  T extends { url: string; branch?: string },
->(repos: readonly T[], checkout: string | undefined): T[] {
+export function withCheckout(
+  repos: readonly { url: string; branch?: string }[],
+  checkout: string | undefined,
+): { url: string; branch?: string }[] {
   const hash = checkout?.indexOf("#") ?? -1;
-  if (!checkout || hash <= 0) return [...repos];
-  const key = repoKey(checkout.slice(0, hash));
-  const branch = checkout.slice(hash + 1).trim();
-  if (!branch) return [...repos];
+  const url = (hash === -1 ? checkout : checkout?.slice(0, hash))?.trim();
+  if (!url) return [...repos];
+  const branch = hash === -1 ? undefined : checkout?.slice(hash + 1).trim();
+  const key = repoKey(url);
+  if (!repos.some((repo) => repoKey(repo.url) === key)) {
+    return [...repos, branch ? { url, branch } : { url }];
+  }
   return repos.map((repo) =>
-    repoKey(repo.url) === key ? { ...repo, branch } : repo,
+    repoKey(repo.url) === key && branch ? { ...repo, branch } : repo,
   );
 }
 

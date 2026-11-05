@@ -17,16 +17,18 @@
  */
 import {
   CreateSandboxRequestSchema,
+  SANDBOX_CHECKOUT_ANNOTATION,
   SANDBOX_NAME_ANNOTATION,
   SANDBOX_NAME_MAX_LENGTH,
   type SandboxIdleSummary,
+  withCheckout,
 } from "@atelier/spec";
 import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { z } from "zod";
 import type { AuthUser } from "../../../control/index.ts";
 import type { JobRecord } from "../../../runtime/index.ts";
 import { ValidationError } from "../../../shared/errors.ts";
-import type { BranchSetupResult } from "../../app/branch-setup.ts";
+import type { RepoSetupResult } from "../../app/repo-setup.ts";
 import { settledWithin } from "../../app/sandbox-ops.ts";
 import type { ServerContainer } from "../../container.ts";
 import {
@@ -71,7 +73,7 @@ function splitUrls(raw: RawUrl[], verbose = false) {
  * agent: `running` means dependencies may still be stale. */
 function setupView(job: JobRecord | undefined) {
   if (!job) return undefined;
-  const warnings = (job.result as BranchSetupResult | undefined)?.warnings;
+  const warnings = (job.result as RepoSetupResult | undefined)?.warnings;
   const status =
     job.status === "queued" || job.status === "running"
       ? "running"
@@ -157,8 +159,9 @@ export function registerSandboxTools(
         "after `create_sandbox`. `idle`: when the server auto-pauses it " +
         "(`pausesAt`; `mode: observe` = only would); " +
         "`sandbox_lifecycle` action=keep_awake postpones. `setup`: build " +
-        "steps still running after a branch switch (status `running`: " +
-        "dependencies may be stale, poll until `done`, or `warnings`). " +
+        "or setup steps still running after a branch switch or a clone " +
+        "(status `running`: dependencies may be missing or stale, poll " +
+        "until `done`, or `warnings`). " +
         "Without `id`: " +
         "`{sandboxes}`, newest first (id, status, name, repos, createdAt, " +
         "idle), optionally filtered by `status` and `metadata`.",
@@ -258,12 +261,16 @@ export function registerSandboxTools(
         const rows = (status ? all.filter((s) => s.status === status) : all)
           .map((s) => {
             const name = s.annotations?.[SANDBOX_NAME_ANNOTATION];
+            const repos = withCheckout(
+              s.repos ?? [],
+              s.annotations?.[SANDBOX_CHECKOUT_ANNOTATION],
+            );
             return {
               id: s.id,
               status: s.status,
               ...(name ? { name } : {}),
               createdAt: s.createdAt,
-              ...(s.repos?.length ? { repos: s.repos.map((r) => r.url) } : {}),
+              ...(repos.length > 0 ? { repos: repos.map((r) => r.url) } : {}),
               ...(s.idle ? { idle: s.idle } : {}),
             };
           })
@@ -323,16 +330,24 @@ export function registerSandboxTools(
               "boot source instead of `spec.source`.",
           ),
         repo: z
-          .object({ url: z.string(), branch: z.string().optional() })
+          .object({
+            url: z.string(),
+            branch: z.string().optional(),
+            bake: z.boolean().optional(),
+            setup: z.array(z.string()).optional(),
+          })
           .optional()
           .describe(
             "A git repo to boot from. With `spec.source.image`: a prebuild " +
               "of that branch is reused; else another prebuild of the repo " +
               "(its default branch's first) boots switched to the branch, " +
               "its build steps re-running in the background (`get_sandbox` " +
-              "`setup`); else one is baked on the image. With " +
-              "`spec.source.snapshot` = a prebuild of that repo: it boots " +
-              "switched to `branch` (required). Not with `prebuild`.",
+              "`setup`); else one is baked on the image, or with `bake: " +
+              "false` the repo is cloned into it at boot (nothing stored), " +
+              "then `setup` (shell steps, run in the clone) runs in the " +
+              "background. With `spec.source.snapshot` = a prebuild of that " +
+              "repo: it boots switched to `branch` (required). Not with " +
+              "`prebuild`.",
           ),
         orgId: z
           .string()

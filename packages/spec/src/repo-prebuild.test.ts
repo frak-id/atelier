@@ -16,7 +16,7 @@ import {
   repoKey,
   repoShortName,
   runtimeOnlyEdit,
-  withCheckedOutBranch,
+  withCheckout,
   withoutSurface,
 } from "./repo-prebuild.ts";
 
@@ -236,29 +236,43 @@ describe("findRepoBasePrebuild", () => {
   });
 });
 
-describe("withCheckedOutBranch", () => {
+describe("withCheckout", () => {
   const atelier = { url: "https://github.com/frak-id/atelier", branch: "dev" };
   const repos: { url: string; branch?: string }[] = [
     { url: "https://github.com/frak-id/wallet" },
     atelier,
   ];
 
-  test("applies the recorded branch to its repo only", () => {
+  test("a switched repo lists its new branch", () => {
     expect(
-      withCheckedOutBranch(repos, "git@github.com:frak-id/wallet.git#feat#1"),
+      withCheckout(repos, "git@github.com:frak-id/wallet.git#feat#1"),
     ).toEqual([
       { url: "https://github.com/frak-id/wallet", branch: "feat#1" },
       atelier,
     ]);
+    // A known repo without a branch keeps the prebuild's.
+    expect(withCheckout(repos, "https://github.com/frak-id/atelier")).toEqual(
+      repos,
+    );
   });
 
-  test("an absent or malformed annotation changes nothing", () => {
-    expect(withCheckedOutBranch(repos, undefined)).toEqual(repos);
-    expect(withCheckedOutBranch(repos, "no-branch")).toEqual(repos);
-    expect(withCheckedOutBranch(repos, "#main")).toEqual(repos);
-    expect(
-      withCheckedOutBranch(repos, "https://github.com/frak-id/wallet#"),
-    ).toEqual(repos);
+  test("a repo cloned at boot is added", () => {
+    expect(withCheckout([], "https://github.com/frak-id/landing#x")).toEqual([
+      { url: "https://github.com/frak-id/landing", branch: "x" },
+    ]);
+    expect(withCheckout(repos, "https://github.com/frak-id/landing")).toEqual([
+      ...repos,
+      { url: "https://github.com/frak-id/landing" },
+    ]);
+  });
+
+  test("an absent or blank annotation changes nothing", () => {
+    expect(withCheckout(repos, undefined)).toEqual(repos);
+    expect(withCheckout(repos, "  ")).toEqual(repos);
+    expect(withCheckout(repos, "#main")).toEqual(repos);
+    expect(withCheckout(repos, "https://github.com/frak-id/wallet#")).toEqual(
+      repos,
+    );
   });
 });
 

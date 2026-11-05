@@ -43,6 +43,12 @@ const CreateSandboxRepoSchema = Type.Object(
   {
     url: Type.String({ minLength: 1 }),
     branch: Type.Optional(Type.String({ minLength: 1 })),
+    /** `false`: never bake. With an image source and no prebuild of the
+     * repo to boot, clone it into the home at boot instead (nothing stored). */
+    bake: Type.Optional(Type.Boolean()),
+    /** With `bake: false`, shell steps run in the clone (`cd` into it) in
+     * the background once the sandbox is up, e.g. `bun install`. */
+    setup: Type.Optional(Type.Array(Type.String({ minLength: 1 }))),
   },
   { additionalProperties: false },
 );

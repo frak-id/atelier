@@ -55,12 +55,15 @@ const PICKER_LIMIT = 50;
 /**
  * "Spawn from a repository": pick one of your GitHub repos + a branch and
  * spawn. With a prebuild for that branch the sandbox boots from the snapshot
- * right away. Without one but with a default-branch prebuild, the request
- * carries the `repo`: the server boots that prebuild, switches it to the
- * branch, and re-runs its build steps in the background. Without either, the
- * request carries the prebuild *recipe*: the server bakes it (the same spec
- * the Prebuilds tab would create) and boots from it, so the first spawn is
- * slower and later ones are instant.
+ * right away. Without one but with a prebuild of another branch (the
+ * default one's first), the request names that snapshot and carries the
+ * `repo`: the server boots it, switches it to the branch, and re-runs its
+ * build steps in the background. Without any
+ * prebuild of the repo, "Spawn" clones it into the base image at boot
+ * (`repo.bake: false`, nothing stored) and runs its detected setup steps in
+ * the background, while "Prebuild & spawn" carries the prebuild *recipe*:
+ * the server bakes it (the same spec the Prebuilds tab would create) and
+ * boots from it, so that spawn is slower and later ones are instant.
  *
  * Controlled by the page's URL search params (`?repo=&branch=`), so the
  * selection is deep-linkable, e.g. from the Prebuilds tab's "Spawn" button.
@@ -96,8 +99,8 @@ export function RepoSpawnCard({
           Spawn from a repository
         </CardTitle>
         <CardDescription>
-          Pick a repo and branch. Prebuilt repos boot instantly; the others get
-          prebuilt on their first spawn.
+          Pick a repo and branch. Prebuilt repos boot instantly; the others are
+          cloned at boot, or prebuilt first if you choose to.
         </CardDescription>
       </CardHeader>
       <CardContent>
@@ -367,12 +370,28 @@ function SelectedRepo({
         metadata,
       });
     } else {
+      // Nothing prebuilt: clone at boot, store nothing.
+      const setup = inspection.suggestedBuild ?? [];
       onSpawn({
         ...baseSpec({ image: defaultImage }),
-        prebuild: recipe(),
+        repo: {
+          url: repo.cloneUrl,
+          ...(branchParam ? { branch: branchParam } : {}),
+          bake: false,
+          ...(setup.length > 0 ? { setup } : {}),
+        },
         metadata,
       });
     }
+  }
+
+  /** Bake the branch's prebuild (a job), then boot from it. */
+  function prebuildAndSpawn() {
+    onSpawn({
+      ...baseSpec({ image: defaultImage }),
+      prebuild: recipe(),
+      metadata,
+    });
   }
 
   return (
@@ -425,8 +444,19 @@ function SelectedRepo({
           onClick={spawn}
         >
           {spawnPending ? null : <Rocket />}
-          {matched || base ? "Spawn" : "Prebuild & spawn"}
+          Spawn
         </Button>
+        {!matched && !base ? (
+          <Button
+            variant="outline"
+            disabled={spawnPending || !stepsReady}
+            title="Bake a prebuild of this branch first, so later spawns boot instantly"
+            onClick={prebuildAndSpawn}
+          >
+            <Zap />
+            Prebuild & spawn
+          </Button>
+        ) : null}
         {!matched ? (
           <Button
             variant="outline"
@@ -512,7 +542,8 @@ function SpawnPlan({
     return (
       <p className="flex items-start gap-2 rounded-md border border-info/30 bg-info/10 p-2.5 text-sm text-info">
         <Loader2 className="mt-0.5 size-4 shrink-0 animate-spin" />A prebuild
-        for this branch is building. Spawning now waits for it to finish.
+        for this branch is building. Spawn clones the repo now without waiting;
+        Prebuild & spawn waits for it.
       </p>
     );
   }
@@ -521,8 +552,9 @@ function SpawnPlan({
       <Timer className="mt-0.5 size-4 shrink-0" />
       <div className="min-w-0 space-y-1">
         <p>
-          No prebuild for this branch yet. The first spawn clones and sets it up
-          (slower); later spawns boot instantly.
+          No prebuild of this repo. Spawn boots the base image and clones it,
+          storing nothing; its setup steps then run in the background. Prebuild
+          it to make later spawns boot instantly.
         </p>
         <p className="truncate font-mono text-xs">
           {stepsPending

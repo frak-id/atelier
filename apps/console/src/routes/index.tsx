@@ -4,7 +4,7 @@ import {
   SANDBOX_CHECKOUT_ANNOTATION,
   SANDBOX_IDLE_PAUSED_ANNOTATION,
   type SandboxSummary,
-  withCheckedOutBranch,
+  withCheckout,
 } from "@atelier/spec";
 import { useQueries, useQuery } from "@tanstack/react-query";
 import { createFileRoute, Link } from "@tanstack/react-router";
@@ -342,11 +342,11 @@ function SandboxRow({
   const name = sandboxNameFromAnnotations(sandbox.annotations);
   const orgId = orgIdFromAnnotations(sandbox.annotations);
   const orgName = orgId ? orgNameById.get(orgId) : undefined;
-  // A branch switch's build steps, still running in the sandbox.
+  // A switched or cloned repo's setup steps, still running in the sandbox.
   const { data: jobs } = useQuery(jobsListQuery());
   const setup = latestSetupJob(jobs, sandbox.id);
   const settingUp = setup?.status === "running" || setup?.status === "queued";
-  const repos = withCheckedOutBranch(
+  const repos = withCheckout(
     sandbox.repos ?? [],
     sandbox.annotations?.[SANDBOX_CHECKOUT_ANNOTATION],
   );
@@ -372,7 +372,7 @@ function SandboxRow({
               <Badge
                 variant="info"
                 className="gap-1"
-                title="The prebuild's build steps are re-running for this branch"
+                title="Its repo's setup steps are running in the sandbox"
               >
                 <Loader2 className="size-3 animate-spin" />
                 Setting up

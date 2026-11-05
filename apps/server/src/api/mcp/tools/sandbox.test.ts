@@ -433,7 +433,7 @@ describe("create_sandbox", () => {
       expect(create?.result).toMatchObject({
         warnings: [
           "Could not switch acme/app to feature/x (fatal: nope); the " +
-            "sandbox is on the default branch.",
+            "sandbox is on the prebuild's branch.",
         ],
       });
       expect(jobs.list().some((j) => j.kind === "sandbox-setup")).toBe(false);
@@ -525,6 +525,45 @@ describe("create_sandbox", () => {
       expect(otherRepo.isError).toBe(true);
       expect(otherRepo.raw).toContain("needs a prebuild that clones");
       expect(fake.calls.created).toEqual([]);
+    });
+
+    test("`bake: false` with no prebuild clones at boot, stores nothing", async () => {
+      const { call, fake, jobs } = await setup();
+      fake.setBakes([]);
+      const res = await call("create_sandbox", {
+        spec: { source: { image: "dev-base" } },
+        repo: { ...repo, bake: false, setup: ["bun install"] },
+      });
+      expect(res.isError).toBe(false);
+      await settle(jobs);
+      expect(fake.calls.baked).toEqual([]);
+      expect(fake.calls.created[0]?.source).toEqual({ image: "dev-base" });
+      expect(fake.calls.exec.map((e) => e.req.command)).toEqual([
+        `git clone --depth 1 -b 'feature/x' -- '${repo.url}' 'app'`,
+        "cd app && bun install",
+      ]);
+      expect(fake.calls.annotations).toEqual([
+        ["atelier.dev/checkout", `${repo.url}#feature/x`],
+      ]);
+      expect(jobs.list().find((j) => j.kind === "sandbox-setup")).toMatchObject(
+        {
+          status: "succeeded",
+          target: "acme/app#feature/x",
+          metadata: { mode: "clone", branch: "feature/x" },
+        },
+      );
+      expect(jobs.list().some((j) => j.kind === "prebuild")).toBe(false);
+    });
+
+    test("`bake: false` still boots an existing prebuild of the repo", async () => {
+      const { call, fake, jobs } = await setup();
+      fake.setBakes([defaultBake]);
+      await call("create_sandbox", {
+        spec: { source: { image: "dev-base" } },
+        repo: { ...repo, bake: false },
+      });
+      await settle(jobs);
+      expect(fake.calls.created[0]?.source).toEqual({ snapshot: "snap-main" });
     });
 
     test("an exact bake of the branch, or another base image, wins", async () => {

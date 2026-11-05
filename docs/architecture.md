@@ -163,7 +163,7 @@ never deletes the newest one.
 MCP `create_sandbox`, the console's repo card) on a branch with no prebuild
 of its own boots from another prebuild of that repo instead of baking, and
 switches it to the branch (`findRepoBasePrebuild`,
-`api/app/branch-setup.ts`). Any bake of the repo will do, since the switch
+`api/app/repo-setup.ts`). Any bake of the repo will do, since the switch
 fetches the branch by name; the default branch's is preferred. With an
 image `source` the server picks it among the bakes on that image. With a
 `snapshot` source, `repo` names the branch to switch that prebuild to: the
@@ -182,12 +182,22 @@ GitHub, which the server does not.
    on the sandbox page and list, and MCP `get_sandbox` returns it as `setup`.
 
 Every failure is a warning, never a failed spawn: a failed checkout leaves the
-sandbox on the default branch (a create warning, no setup job), and a failed
-step leaves the dependencies as baked (the setup job's `warnings`). The steps
-run with the sandbox's env, not the prebuild's build-only `env`, which may hold
-values the spawning user must not read. Without a default-branch prebuild,
-the spawn bakes a one-repo prebuild of the branch as before. An explicit bake
-of the branch always wins.
+sandbox on the prebuild's branch (a create warning, no setup job), and a
+failed step leaves the dependencies as baked (the setup job's `warnings`). The
+steps run with the sandbox's env, not the prebuild's build-only `env`, which
+may hold values the spawning user must not read. An explicit bake of the
+branch always wins.
+
+**Spawning a repo with no prebuild.** Without any prebuild of the repo, the
+spawn bakes a one-repo prebuild of the branch, unless `repo.bake` is `false`:
+then it boots the bare image and clones the repo at boot, storing nothing.
+The clone (`--depth 1`, into `~/<repo name>` like a quick prebuild) runs in
+the same `beforeProcesses` step and is recorded in the same annotation, so
+the sandbox list and the default task cwd know the repo. `repo.setup` steps
+(the console sends the detected installs) then run in the clone as a
+`sandbox-setup` job. A failed clone is a create warning (the sandbox starts
+without it). The console's repo card does this on "Spawn" for a repo with
+no prebuild, and keeps "Prebuild & spawn" to bake first.
 
 A prebuild can clone any number of repos and declare its projects' dev
 servers as a **runtime surface in the toolbox scheme**

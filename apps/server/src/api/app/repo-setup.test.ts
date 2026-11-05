@@ -1,8 +1,7 @@
 /**
- * The branch switch of a spawn with no bake of its branch: the plan read off
- * the default-branch prebuild, the checkout shell (run against a real git
- * remote, since the command IS the contract), and the warning-only
- * checkout/setup steps over a fake runtime.
+ * Preparing a spawn's repo in the live sandbox: the switch and clone plans,
+ * their shell (run against a real git remote, since the command IS the
+ * contract), and the warning-only prepare/setup steps over a fake runtime.
  */
 import { afterAll, describe, expect, test } from "bun:test";
 import { mkdtemp, rm } from "node:fs/promises";
@@ -15,11 +14,13 @@ import {
 import {
   type BranchSwitch,
   branchCheckoutCommand,
-  branchSetupLabel,
-  checkoutBranch,
   planBranchSwitch,
-  runBranchSetup,
-} from "./branch-setup.ts";
+  planRepoClone,
+  prepareRepo,
+  repoCloneCommand,
+  repoSetupLabel,
+  runRepoSetup,
+} from "./repo-setup.ts";
 
 const URL = "https://github.com/frak-id/wallet";
 
@@ -55,6 +56,7 @@ describe("planBranchSwitch", () => {
       ["cd code/wallet && bun install", "cd landing && bun install"],
     );
     expect(planBranchSwitch(runtime, multi, URL, " feature/x ")).toEqual({
+      mode: "switch",
       baseRef: "snap-multi",
       url: URL,
       branch: "feature/x",
@@ -156,6 +158,7 @@ describe("branchCheckoutCommand", () => {
 });
 
 const PLAN: BranchSwitch = {
+  mode: "switch",
   baseRef: "snap-default",
   url: URL,
   branch: "feature/x",
@@ -210,11 +213,11 @@ function fakeRuntime(answer: (command: string) => Exec | Error = () => ok) {
 
 const ok: Exec = { exitCode: 0, stdout: "", stderr: "" };
 
-describe("checkoutBranch", () => {
+describe("prepareRepo: switch", () => {
   test("checks out from the home and records the branch", async () => {
     const { runtime, calls } = fakeRuntime();
     const progress: string[] = [];
-    const warning = await checkoutBranch(runtime, "sb", PLAN, (m) =>
+    const warning = await prepareRepo(runtime, "sb", PLAN, (m) =>
       progress.push(m),
     );
     expect(warning).toBeUndefined();
@@ -237,14 +240,14 @@ describe("checkoutBranch", () => {
       stdout: "",
       stderr: "remote: hi\nfatal: couldn't find remote ref refs/heads/x\n",
     }));
-    expect(await checkoutBranch(failing.runtime, "sb", PLAN, () => {})).toBe(
+    expect(await prepareRepo(failing.runtime, "sb", PLAN, () => {})).toBe(
       "Could not switch frak-id/wallet to feature/x (fatal: couldn't find " +
-        "remote ref refs/heads/x); the sandbox is on the default branch.",
+        "remote ref refs/heads/x); the sandbox is on the prebuild's branch.",
     );
     expect(failing.calls.annotations).toEqual([]);
 
     const down = fakeRuntime(() => new Error("agent unreachable"));
-    expect(await checkoutBranch(down.runtime, "sb", PLAN, () => {})).toContain(
+    expect(await prepareRepo(down.runtime, "sb", PLAN, () => {})).toContain(
       "(agent unreachable)",
     );
   });
@@ -252,7 +255,7 @@ describe("checkoutBranch", () => {
   test("an implausible branch name never reaches the shell", async () => {
     for (const branch of ["-f", "a b", "a..b", "x.lock", "x/", "$(id)"]) {
       const { runtime, calls } = fakeRuntime();
-      const warning = await checkoutBranch(
+      const warning = await prepareRepo(
         runtime,
         "sb",
         { ...PLAN, branch },
@@ -270,7 +273,7 @@ describe("checkoutBranch", () => {
   });
 });
 
-describe("runBranchSetup", () => {
+describe("runRepoSetup", () => {
   test("runs every step, then restarts the running dev servers", async () => {
     const { runtime, calls } = fakeRuntime((command) =>
       command.includes("install")
@@ -278,9 +281,7 @@ describe("runBranchSetup", () => {
         : ok,
     );
     const log: string[] = [];
-    const result = await runBranchSetup(runtime, "sb", PLAN, (c) =>
-      log.push(c),
-    );
+    const result = await runRepoSetup(runtime, "sb", PLAN, (c) => log.push(c));
     expect(result).toEqual({ branch: "feature/x" });
     expect(calls.exec).toEqual(
       PLAN.build.map((command) => ({
@@ -307,12 +308,10 @@ describe("runBranchSetup", () => {
         : ok,
     );
     const log: string[] = [];
-    const result = await runBranchSetup(runtime, "sb", PLAN, (c) =>
-      log.push(c),
-    );
+    const result = await runRepoSetup(runtime, "sb", PLAN, (c) => log.push(c));
     const warning =
       "Build step failed after switching to feature/x: cd wallet && bun " +
-      "install (exit 1). Dependencies may be out of date.";
+      "install (exit 1). Dependencies may be missing or out of date.";
     expect(result).toEqual({ branch: "feature/x", warnings: [warning] });
     expect(calls.exec).toHaveLength(1);
     expect(calls.processActions).toEqual([]);
@@ -323,23 +322,147 @@ describe("runBranchSetup", () => {
   test("a step that cannot run, or a failed restart, is a warning", async () => {
     const gone = fakeRuntime(() => new Error("Sandbox sb not found"));
     expect(
-      (await runBranchSetup(gone.runtime, "sb", PLAN, () => {})).warnings,
+      (await runRepoSetup(gone.runtime, "sb", PLAN, () => {})).warnings,
     ).toEqual([
       "Build step failed after switching to feature/x: cd wallet && bun " +
-        "install (Sandbox sb not found). Dependencies may be out of date.",
+        "install (Sandbox sb not found). Dependencies may be missing or " +
+        "out of date.",
     ]);
 
     const restart = fakeRuntime();
     restart.failRestartOf("web");
-    expect(await runBranchSetup(restart.runtime, "sb", PLAN, () => {})).toEqual(
-      {
-        branch: "feature/x",
-        warnings: ["Could not restart web (agent down)."],
-      },
-    );
+    expect(await runRepoSetup(restart.runtime, "sb", PLAN, () => {})).toEqual({
+      branch: "feature/x",
+      warnings: ["Could not restart web (agent down)."],
+    });
   });
 });
 
-test("branchSetupLabel", () => {
-  expect(branchSetupLabel(PLAN)).toBe("frak-id/wallet#feature/x");
+describe("cloning a repo with no prebuild", () => {
+  test("laid out like a quick prebuild: repo-named, steps scoped to it", () => {
+    expect(
+      planRepoClone(` ${URL}.git `, " feature/x ", [
+        "bun install",
+        "cd sub && make",
+      ]),
+    ).toEqual({
+      mode: "clone",
+      url: `${URL}.git`,
+      branch: "feature/x",
+      clonePath: "wallet",
+      build: ["cd wallet && bun install", "cd sub && make"],
+      devServers: [],
+    });
+    expect(planRepoClone(URL, undefined)).toEqual({
+      mode: "clone",
+      url: URL,
+      clonePath: "wallet",
+      build: [],
+      devServers: [],
+    });
+  });
+
+  test("clones into the home and records the repo", async () => {
+    const onDefault = fakeRuntime();
+    const plan = planRepoClone(URL, undefined, ["bun install"]);
+    expect(
+      await prepareRepo(onDefault.runtime, "sb", plan, () => {}),
+    ).toBeUndefined();
+    expect(onDefault.calls.exec).toEqual([
+      {
+        command: `git clone --depth 1 -- '${URL}' 'wallet'`,
+        cwd: "/home/dev",
+        timeoutMs: 120_000,
+      },
+    ]);
+    expect(onDefault.calls.annotations).toEqual([
+      [SANDBOX_CHECKOUT_ANNOTATION, URL],
+    ]);
+
+    const onBranch = fakeRuntime();
+    await prepareRepo(
+      onBranch.runtime,
+      "sb",
+      planRepoClone(URL, "x"),
+      () => {},
+    );
+    expect(onBranch.calls.exec[0]?.command).toBe(
+      `git clone --depth 1 -b 'x' -- '${URL}' 'wallet'`,
+    );
+    expect(onBranch.calls.annotations).toEqual([
+      [SANDBOX_CHECKOUT_ANNOTATION, `${URL}#x`],
+    ]);
+  });
+
+  test("a failed clone is a warning", async () => {
+    const failing = fakeRuntime(() => ({
+      exitCode: 128,
+      stdout: "",
+      stderr: "fatal: repository not found\n",
+    }));
+    expect(
+      await prepareRepo(
+        failing.runtime,
+        "sb",
+        planRepoClone(URL, "x"),
+        () => {},
+      ),
+    ).toBe(
+      "Could not clone frak-id/wallet (fatal: repository not found); the " +
+        "sandbox starts without it.",
+    );
+    expect(failing.calls.annotations).toEqual([]);
+  });
+
+  test("its setup runs in the clone, restarting nothing", async () => {
+    const { runtime, calls } = fakeRuntime();
+    const log: string[] = [];
+    const plan = planRepoClone(URL, undefined, ["bun install"]);
+    expect(await runRepoSetup(runtime, "sb", plan, (c) => log.push(c))).toEqual(
+      {},
+    );
+    expect(calls.exec.map((e) => e.command)).toEqual([
+      "cd wallet && bun install",
+    ]);
+    expect(calls.processActions).toEqual([]);
+    expect(log.at(-1)).toBe("wallet is set up.");
+  });
+
+  test("the clone shell works against a real remote", async () => {
+    const root = await mkdtemp(join(tmpdir(), "atelier-clone-"));
+    try {
+      const git = "git -c user.email=t@t -c user.name=t";
+      await sh(
+        [
+          "git init -q -b main origin",
+          "cd origin",
+          `echo 1 > a && git add a && ${git} commit -qm one`,
+          "git checkout -qb dev",
+          `echo 2 > b && git add b && ${git} commit -qm two`,
+          "git checkout -q main",
+          "cd .. && mkdir home",
+        ].join(" && "),
+        root,
+      );
+      const home = join(root, "home");
+      const remote = `file://${root}/origin`;
+      await sh(repoCloneCommand(remote, "main-clone"), home);
+      expect(await sh("ls main-clone", home)).toBe("a");
+      await sh(repoCloneCommand(remote, "dev-clone", "dev"), home);
+      expect(await sh("git -C dev-clone status -sb | head -1", home)).toBe(
+        "## dev...origin/dev",
+      );
+      // An existing directory is not overwritten: the clone fails.
+      await expect(
+        sh(repoCloneCommand(remote, "main-clone"), home),
+      ).rejects.toThrow("already exists");
+    } finally {
+      await rm(root, { recursive: true, force: true });
+    }
+  });
+});
+
+test("repoSetupLabel", () => {
+  expect(repoSetupLabel(PLAN)).toBe("frak-id/wallet#feature/x");
+  expect(repoSetupLabel(planRepoClone(URL, undefined))).toBe("frak-id/wallet");
 });

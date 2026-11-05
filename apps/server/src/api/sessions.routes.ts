@@ -6,7 +6,12 @@
  * auto-approve, so there is nothing to answer.
  */
 
-import { repoCloneName, SANDBOX_NAME_ANNOTATION } from "@atelier/spec";
+import {
+  repoCloneName,
+  SANDBOX_CHECKOUT_ANNOTATION,
+  SANDBOX_NAME_ANNOTATION,
+  withCheckout,
+} from "@atelier/spec";
 import { Elysia, sse, t } from "elysia";
 import { VM } from "../config/constants.ts";
 import { createChildLogger } from "../shared/lib/logger.ts";
@@ -189,11 +194,15 @@ export function createSessionsRoutes(container: ServerContainer) {
     );
   }
 
-  /** The first repo the sandbox booted with, cloned under the dev home by
-   * its default clone name; the home itself for a sandbox with no repo. */
+  /** The first repo the sandbox booted with (or cloned at boot), under the
+   * dev home by its default clone name; the home itself for a sandbox with
+   * no repo. */
   function defaultTaskCwd(sandboxId: string): string {
-    const repo = container.runtime.list().find((s) => s.id === sandboxId)
-      ?.repos?.[0];
+    const sandbox = container.runtime.list().find((s) => s.id === sandboxId);
+    const repo = withCheckout(
+      sandbox?.repos ?? [],
+      sandbox?.annotations?.[SANDBOX_CHECKOUT_ANNOTATION],
+    )[0];
     return repo ? `${VM.HOME}/${repoCloneName(repo.url)}` : VM.HOME;
   }
 

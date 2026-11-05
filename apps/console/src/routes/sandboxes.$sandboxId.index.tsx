@@ -8,7 +8,6 @@ import {
 } from "@/api/queries/sandboxes";
 import { ImmersiveView } from "@/components/immersive-view";
 import { SandboxActivitySection } from "@/components/sandbox-activity";
-import { BranchSetupSection } from "@/components/sandbox-detail/branch-setup";
 import { ExposePortSection } from "@/components/sandbox-detail/expose-port";
 import { SandboxHeader } from "@/components/sandbox-detail/header";
 import {
@@ -16,6 +15,7 @@ import {
   MetadataSection,
 } from "@/components/sandbox-detail/metadata";
 import { ProcessesSection } from "@/components/sandbox-detail/processes";
+import { RepoSetupSection } from "@/components/sandbox-detail/repo-setup";
 import { SaveToolsetForToolboxSection } from "@/components/sandbox-detail/save-toolset";
 import { TerminalSection } from "@/components/sandbox-detail/terminal";
 import { UrlsSection } from "@/components/sandbox-detail/urls";
@@ -85,7 +85,7 @@ function SandboxDetailPage() {
         onDestroyed={() => navigate({ to: "/" })}
       />
 
-      <BranchSetupSection sandboxId={sandbox.id} />
+      <RepoSetupSection sandboxId={sandbox.id} />
 
       {sandbox.bootedFrom ? (
         <BootedFromCard bootedFrom={sandbox.bootedFrom} />

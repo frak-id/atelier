@@ -20,6 +20,7 @@ const labels: Record<
     annotations: { "atelier.dev/name": "My box" },
   },
   bare: { metadata: { [OWNER]: "alice" }, annotations: {} },
+  cloned: { metadata: { [OWNER]: "alice" }, annotations: {} },
   theirs: { metadata: { [OWNER]: "bob" }, annotations: {} },
 };
 
@@ -69,6 +70,13 @@ beforeAll(() => {
       list: () => [
         { id: "mine", repos: [{ url: "https://github.com/a/wallet.git" }] },
         { id: "bare" },
+        // Booted a bare image and cloned its repo at boot: no prebuild repos.
+        {
+          id: "cloned",
+          annotations: {
+            "atelier.dev/checkout": "https://github.com/a/landing#dev",
+          },
+        },
       ],
     },
     control: {
@@ -143,6 +151,11 @@ describe("POST /sessions/tasks", () => {
     expect(calls[0]?.[2]).toMatchObject({ cwd: "/tmp/x" });
     await post("POST", "/sessions/tasks", { sandboxId: "bare", prompt: "p" });
     expect(calls[0]?.[2]).toMatchObject({ cwd: "/home/dev" });
+  });
+
+  test("a repo cloned at boot is the default cwd too", async () => {
+    await post("POST", "/sessions/tasks", { sandboxId: "cloned", prompt: "p" });
+    expect(calls[0]?.[2]).toMatchObject({ cwd: "/home/dev/landing" });
   });
 
   test("another user's sandbox is a 404 and dispatches nothing", async () => {
