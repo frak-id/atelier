@@ -5,7 +5,7 @@ import {
 } from "@tanstack/react-query";
 import { toast } from "sonner";
 import { api } from "@/api/client";
-import { errorMessage } from "./error";
+import { unwrap } from "./error";
 import { queryKeys } from "./keys";
 
 export const TRANSFER_KINDS = ["secrets", "toolboxes"] as const;
@@ -29,12 +29,12 @@ export function transferPreviewQuery(from: string, to: string) {
   return queryOptions({
     queryKey: queryKeys.transfers.preview(from, to),
     queryFn: async () => {
-      const { data, error } = await api.api.transfers.preview.get({
-        query: { from, to },
-      });
-      if (error)
-        throw new Error(errorMessage(error, "Failed to load the preview"));
-      return data as TransferPreview;
+      return unwrap(
+        await api.api.transfers.preview.get({
+          query: { from, to },
+        }),
+        "Failed to load the preview",
+      ) as TransferPreview;
     },
     enabled: from.length > 0 && to.length > 0,
   });
@@ -62,9 +62,7 @@ export function useMoveResources() {
       to: string;
       selection: TransferSelection;
     }) => {
-      const { data, error } = await api.api.transfers.post(body);
-      if (error) throw new Error(errorMessage(error, "Failed to move"));
-      return data;
+      return unwrap(await api.api.transfers.post(body), "Failed to move");
     },
     onSuccess: (result) => {
       queryClient.invalidateQueries({ queryKey: queryKeys.organizations.all });

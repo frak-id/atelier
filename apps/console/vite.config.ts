@@ -8,6 +8,8 @@ import { defineConfig } from "vite";
 // server-owned path keeps the browser origin === server origin, so the
 // httpOnly `sandbox_token` cookie and CORS are moot in dev.
 const SERVER_TARGET = "http://localhost:4000";
+// KEEP IN SYNC with the server-path regex in infra/nginx/console.conf (the
+// production proxy); a new top-level server path must be added to both.
 const PROXY_PATHS = ["/v1", "/api", "/sessions", "/auth", "/health", "/mcp"];
 
 export default defineConfig({

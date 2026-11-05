@@ -3,6 +3,7 @@ import { Plus, Trash2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { NativeSelect } from "@/components/ui/native-select";
+import { Textarea } from "@/components/ui/textarea";
 
 /**
  * Files a toolbox writes into every sandbox it applies to: a path, its
@@ -73,12 +74,12 @@ export function ToolboxFilesField({
                   className="font-mono"
                 />
               ) : (
-                <textarea
+                <Textarea
                   value={file.content}
                   onChange={(e) => update(index, { content: e.target.value })}
                   spellCheck={false}
                   aria-label="File content"
-                  className="min-h-16 w-full rounded-md border bg-muted/30 p-2 font-mono text-xs"
+                  className="min-h-16 p-2"
                 />
               )}
             </div>

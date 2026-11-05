@@ -6,7 +6,7 @@ import {
 } from "@tanstack/react-query";
 import { toast } from "sonner";
 import { api } from "@/api/client";
-import { errorMessage } from "./error";
+import { unwrap } from "./error";
 import { queryKeys } from "./keys";
 
 /**
@@ -17,12 +17,12 @@ export function toolboxesListQuery(owner?: string) {
   return queryOptions({
     queryKey: queryKeys.toolboxes.list(owner),
     queryFn: async () => {
-      const { data, error } = await api.api.toolboxes.get({
-        query: owner ? { owner } : {},
-      });
-      if (error)
-        throw new Error(errorMessage(error, "Failed to load toolboxes"));
-      return data;
+      return unwrap(
+        await api.api.toolboxes.get({
+          query: owner ? { owner } : {},
+        }),
+        "Failed to load toolboxes",
+      );
     },
     staleTime: 30_000,
   });
@@ -38,11 +38,12 @@ export function useCreateToolbox() {
       input: ToolboxConfigInput;
       owner?: string;
     }) => {
-      const { error } = await api.api.toolboxes.post(input, {
-        query: owner ? { owner } : {},
-      });
-      if (error)
-        throw new Error(errorMessage(error, "Failed to create toolbox"));
+      unwrap(
+        await api.api.toolboxes.post(input, {
+          query: owner ? { owner } : {},
+        }),
+        "Failed to create toolbox",
+      );
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: queryKeys.toolboxes.all });
@@ -62,9 +63,10 @@ export function useUpdateToolbox() {
       id: string;
       patch: ToolboxConfigPatch;
     }) => {
-      const { error } = await api.api.toolboxes({ id }).patch(patch);
-      if (error)
-        throw new Error(errorMessage(error, "Failed to update toolbox"));
+      unwrap(
+        await api.api.toolboxes({ id }).patch(patch),
+        "Failed to update toolbox",
+      );
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: queryKeys.toolboxes.all });
@@ -83,10 +85,10 @@ export function useUpdateToolbox() {
 export function useRefreshToolbox() {
   return useMutation({
     mutationFn: async (id: string) => {
-      const { data, error } = await api.api.toolboxes({ id }).refresh.post();
-      if (error)
-        throw new Error(errorMessage(error, "Failed to start the refresh"));
-      return data;
+      return unwrap(
+        await api.api.toolboxes({ id }).refresh.post(),
+        "Failed to start the refresh",
+      );
     },
     onSuccess: (job) => {
       toast.success(
@@ -101,9 +103,10 @@ export function useDeleteToolbox() {
   const queryClient = useQueryClient();
   return useMutation({
     mutationFn: async (id: string) => {
-      const { error } = await api.api.toolboxes({ id }).delete();
-      if (error)
-        throw new Error(errorMessage(error, "Failed to delete toolbox"));
+      unwrap(
+        await api.api.toolboxes({ id }).delete(),
+        "Failed to delete toolbox",
+      );
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: queryKeys.toolboxes.all });

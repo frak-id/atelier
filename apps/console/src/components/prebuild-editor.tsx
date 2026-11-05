@@ -23,6 +23,7 @@ import {
   CardTitle,
 } from "@/components/ui/card";
 import { Label } from "@/components/ui/label";
+import { Textarea } from "@/components/ui/textarea";
 import { cloneCwds } from "@/lib/runtime-surface";
 import { parsePrebuildSpec } from "@/lib/spec";
 
@@ -103,7 +104,7 @@ export function PrebuildEditor({
       toast.error(problem);
       return;
     }
-    const done = { onSuccess: () => navigate({ to: "/settings/prebuilds" }) };
+    const done = { onSuccess: () => navigate({ to: "/library/prebuilds" }) };
     if (prebuildRef && surfaceOnly(cleaned)) {
       saveSurface.mutate({ ref: prebuildRef, surface: cleaned }, done);
       return;
@@ -206,7 +207,7 @@ function PrebuildVisualForm({
         </CardHeader>
         <CardContent className="space-y-1">
           <Label htmlFor="prebuild-build">Build steps (one per line)</Label>
-          <textarea
+          <Textarea
             id="prebuild-build"
             value={arrayToLines(spec.build)}
             onChange={(e) => {
@@ -218,7 +219,7 @@ function PrebuildVisualForm({
             }}
             spellCheck={false}
             placeholder="cd workspace/repo && bun install"
-            className="min-h-32 w-full rounded-md border bg-muted/30 p-2 font-mono text-xs"
+            className="min-h-32 p-2"
           />
         </CardContent>
       </Card>

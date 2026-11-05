@@ -6,7 +6,7 @@ import {
 } from "@tanstack/react-query";
 import { toast } from "sonner";
 import { api } from "@/api/client";
-import { errorMessage } from "./error";
+import { unwrap } from "./error";
 import { queryKeys } from "./keys";
 
 /** A version row as returned by `GET /toolboxes/:id/versions`: the stored
@@ -23,12 +23,10 @@ export function toolboxVersionsQuery(toolboxId: string) {
   return queryOptions({
     queryKey: queryKeys.toolboxVersions.list(toolboxId),
     queryFn: async () => {
-      const { data, error } = await api.api
-        .toolboxes({ id: toolboxId })
-        .versions.get();
-      if (error)
-        throw new Error(errorMessage(error, "Failed to load versions"));
-      return data;
+      return unwrap(
+        await api.api.toolboxes({ id: toolboxId }).versions.get(),
+        "Failed to load versions",
+      );
     },
   });
 }
@@ -44,11 +42,12 @@ export function useCaptureToolboxVersion() {
       sandboxId: string;
       description: string;
     }) => {
-      const { data, error } = await api.api
-        .toolboxes({ id: toolboxId })
-        .versions.capture.post({ sandboxId, description });
-      if (error) throw new Error(errorMessage(error, "Failed to save version"));
-      return data;
+      return unwrap(
+        await api.api
+          .toolboxes({ id: toolboxId })
+          .versions.capture.post({ sandboxId, description }),
+        "Failed to save version",
+      );
     },
     // 202 + a `running`/`queued` job: the agent tar/scan/push runs in the
     // background. The job is delivered to the queue over the SSE feed
@@ -73,12 +72,12 @@ export function useSetActiveToolboxVersion() {
       toolboxId: string;
       versionId: string | null;
     }) => {
-      const { data, error } = await api.api
-        .toolboxes({ id: toolboxId })
-        ["active-version"].put({ versionId });
-      if (error)
-        throw new Error(errorMessage(error, "Failed to update pinned version"));
-      return data;
+      return unwrap(
+        await api.api
+          .toolboxes({ id: toolboxId })
+          ["active-version"].put({ versionId }),
+        "Failed to update pinned version",
+      );
     },
     onSuccess: (_data, { toolboxId, versionId }) => {
       queryClient.invalidateQueries({
@@ -104,13 +103,13 @@ export function usePublishToolboxVersion() {
       toolboxId: string;
       versionId: string;
     }) => {
-      const { data, error } = await api.api
-        .toolboxes({ id: toolboxId })
-        .versions({ versionId })
-        .publish.post();
-      if (error)
-        throw new Error(errorMessage(error, "Failed to publish version"));
-      return data;
+      return unwrap(
+        await api.api
+          .toolboxes({ id: toolboxId })
+          .versions({ versionId })
+          .publish.post(),
+        "Failed to publish version",
+      );
     },
     onSuccess: (_data, { toolboxId }) => {
       queryClient.invalidateQueries({
@@ -134,12 +133,13 @@ export function useDeleteToolboxVersion() {
       toolboxId: string;
       versionId: string;
     }) => {
-      const { error } = await api.api
-        .toolboxes({ id: toolboxId })
-        .versions({ versionId })
-        .delete();
-      if (error)
-        throw new Error(errorMessage(error, "Failed to delete version"));
+      unwrap(
+        await api.api
+          .toolboxes({ id: toolboxId })
+          .versions({ versionId })
+          .delete(),
+        "Failed to delete version",
+      );
     },
     onSuccess: (_data, { toolboxId }) => {
       queryClient.invalidateQueries({

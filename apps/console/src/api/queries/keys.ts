@@ -10,8 +10,6 @@ export const queryKeys = {
     all: ["sandboxes"] as const,
     list: () => [...queryKeys.sandboxes.all, "list"] as const,
     detail: (id: string) => [...queryKeys.sandboxes.all, "detail", id] as const,
-    processLogs: (id: string, name: string) =>
-      [...queryKeys.sandboxes.all, "detail", id, "logs", name] as const,
     activity: (id: string) =>
       [...queryKeys.sandboxes.all, "detail", id, "activity"] as const,
   },

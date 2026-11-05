@@ -1,4 +1,4 @@
-import type { ReactNode } from "react";
+import { type ReactNode, useState } from "react";
 import { Button } from "@/components/ui/button";
 import {
   Dialog,
@@ -11,8 +11,10 @@ import {
 
 /**
  * A yes/no confirmation dialog for destructive actions. Controlled via `open`.
- * On confirm it calls `onConfirm` and then closes itself via `onOpenChange`
- * (fire-and-close; the mutation result surfaces through its own toast).
+ * On confirm it awaits `onConfirm` and closes via `onOpenChange` only once it
+ * resolved; if it throws, the dialog stays open (the mutation surfaces the
+ * error through its own toast). A callback that returns nothing closes
+ * immediately.
  */
 export function ConfirmDialog({
   open,
@@ -27,8 +29,9 @@ export function ConfirmDialog({
   title: string;
   description: ReactNode;
   confirmLabel?: string;
-  onConfirm: () => void;
+  onConfirm: () => unknown;
 }) {
+  const [pending, setPending] = useState(false);
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent>
@@ -42,9 +45,17 @@ export function ConfirmDialog({
           </Button>
           <Button
             variant="destructive"
-            onClick={() => {
-              onConfirm();
-              onOpenChange(false);
+            loading={pending}
+            onClick={async () => {
+              setPending(true);
+              try {
+                await onConfirm();
+                onOpenChange(false);
+              } catch {
+                // Surfaced by the caller's mutation; keep the dialog open.
+              } finally {
+                setPending(false);
+              }
             }}
           >
             {confirmLabel}

@@ -13,7 +13,7 @@ import {
 } from "@tanstack/react-query";
 import { toast } from "sonner";
 import { api } from "@/api/client";
-import { errorMessage } from "./error";
+import { unwrap } from "./error";
 import type { Job } from "./jobs";
 import { queryKeys } from "./keys";
 
@@ -23,10 +23,7 @@ export function prebuildsListQuery() {
   return queryOptions({
     queryKey: queryKeys.prebuilds.list(),
     queryFn: async () => {
-      const { data, error } = await api.v1.prebuilds.get();
-      if (error)
-        throw new Error(errorMessage(error, "Failed to load prebuilds"));
-      return data;
+      return unwrap(await api.v1.prebuilds.get(), "Failed to load prebuilds");
     },
     staleTime: 30_000,
   });
@@ -51,11 +48,12 @@ export function useRunPrebuild() {
       /** Human label for the toast (e.g. `owner/repo`). */
       label?: string;
     }) => {
-      const { data, error } = await api.v1.prebuilds.post(spec, {
-        query: { force: force ?? false },
-      });
-      if (error) throw new Error(errorMessage(error, "Prebuild failed"));
-      return data;
+      return unwrap(
+        await api.v1.prebuilds.post(spec, {
+          query: { force: force ?? false },
+        }),
+        "Prebuild failed",
+      );
     },
     // The endpoint answers 202 with a `running` (or `queued`, if the pool is
     // full) job: the bake proceeds in the background. The SSE feed
@@ -97,13 +95,13 @@ export function useSavePrebuildSurface() {
       ref: string;
       surface: RuntimeSurface;
     }) => {
-      const { data, error } = await api.v1.prebuilds({ ref }).surface.patch({
-        processes: surface.processes ?? [],
-        ports: surface.ports ?? [],
-      });
-      if (error)
-        throw new Error(errorMessage(error, "Failed to save dev servers"));
-      return data;
+      return unwrap(
+        await api.v1.prebuilds({ ref }).surface.patch({
+          processes: surface.processes ?? [],
+          ports: surface.ports ?? [],
+        }),
+        "Failed to save dev servers",
+      );
     },
     onSuccess: (stored) => {
       if (stored) {
@@ -135,9 +133,10 @@ export function useDeletePrebuild() {
   const queryClient = useQueryClient();
   return useMutation({
     mutationFn: async (ref: string) => {
-      const { error } = await api.v1.prebuilds({ ref }).delete();
-      if (error)
-        throw new Error(errorMessage(error, "Failed to delete prebuild"));
+      unwrap(
+        await api.v1.prebuilds({ ref }).delete(),
+        "Failed to delete prebuild",
+      );
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: queryKeys.prebuilds.all });

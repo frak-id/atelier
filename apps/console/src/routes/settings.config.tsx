@@ -2,31 +2,22 @@ import { useQuery } from "@tanstack/react-query";
 import { createFileRoute } from "@tanstack/react-router";
 import { Loader2 } from "lucide-react";
 import { useEffect, useState } from "react";
-import { serverConfigQuery, useSetConfig } from "@/api/queries/server-config";
+import {
+  type ConfigEntry,
+  serverConfigQuery,
+  useSetConfig,
+} from "@/api/queries/server-config";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Input } from "@/components/ui/input";
+import { NativeSelect } from "@/components/ui/native-select";
 import { Skeleton } from "@/components/ui/skeleton";
+import { useIsAdmin } from "@/hooks/use-is-admin";
 
 export const Route = createFileRoute("/settings/config")({
   component: ConfigPage,
 });
-
-type ConfigEntry = {
-  key: string;
-  label: string;
-  description: string;
-  type: "boolean" | "number" | "string";
-  options?: readonly string[];
-  value: boolean | number | string;
-  default: boolean | number | string;
-  isDefault: boolean;
-  locked: boolean;
-  lockedBy: "file" | "env" | null;
-  envVar: string;
-  updatedAt: string | null;
-};
 
 function ConfigPage() {
   const { data, isPending, isError, error } = useQuery(serverConfigQuery());
@@ -37,7 +28,8 @@ function ConfigPage() {
         <h2 className="text-sm font-medium">Server configuration</h2>
         <p className="text-sm text-muted-foreground">
           Runtime knobs for this server. Changes apply live. Keys set via an
-          environment variable are locked and shown read-only.
+          environment variable are locked and shown read-only, as is everything
+          for non-admins.
         </p>
       </div>
       {isPending ? (
@@ -48,7 +40,7 @@ function ConfigPage() {
         </p>
       ) : (
         <div className="space-y-2">
-          {(data as ConfigEntry[]).map((entry) => (
+          {data.map((entry) => (
             <ConfigRow key={entry.key} entry={entry} />
           ))}
         </div>
@@ -59,6 +51,9 @@ function ConfigPage() {
 
 function ConfigRow({ entry }: { entry: ConfigEntry }) {
   const setConfig = useSetConfig();
+  // Only a server admin writes config: everyone else sees it read-only.
+  const isAdmin = useIsAdmin();
+  const readOnly = entry.locked || !isAdmin;
 
   return (
     <Card>
@@ -71,7 +66,7 @@ function ConfigRow({ entry }: { entry: ConfigEntry }) {
             </code>
             {entry.locked ? (
               <span
-                className="text-[11px] text-amber-600"
+                className="text-[11px] text-warning"
                 title={
                   entry.lockedBy === "env"
                     ? `Locked by ${entry.envVar}`
@@ -107,7 +102,7 @@ function ConfigRow({ entry }: { entry: ConfigEntry }) {
               <Checkbox
                 id={`config-${entry.key}`}
                 checked={entry.value === true}
-                disabled={setConfig.isPending || entry.locked}
+                disabled={setConfig.isPending || readOnly}
                 onChange={(e) =>
                   setConfig.mutate({ key: entry.key, value: e.target.checked })
                 }
@@ -118,7 +113,7 @@ function ConfigRow({ entry }: { entry: ConfigEntry }) {
             <NumberEditor
               value={entry.value as number}
               pending={setConfig.isPending}
-              locked={entry.locked}
+              locked={readOnly}
               onSave={(value) => setConfig.mutate({ key: entry.key, value })}
             />
           ) : entry.options ? (
@@ -126,14 +121,14 @@ function ConfigRow({ entry }: { entry: ConfigEntry }) {
               value={String(entry.value)}
               options={entry.options}
               pending={setConfig.isPending}
-              locked={entry.locked}
+              locked={readOnly}
               onSave={(value) => setConfig.mutate({ key: entry.key, value })}
             />
           ) : (
             <StringEditor
               value={String(entry.value)}
               pending={setConfig.isPending}
-              locked={entry.locked}
+              locked={readOnly}
               onSave={(value) => setConfig.mutate({ key: entry.key, value })}
             />
           )}
@@ -236,17 +231,17 @@ function EnumEditor({
   onSave: (value: string) => void;
 }) {
   return (
-    <select
+    <NativeSelect
       value={value}
       disabled={pending || locked}
       onChange={(e) => onSave(e.target.value)}
-      className="h-9 rounded-md border bg-background px-2 text-sm"
+      className="w-40"
     >
       {options.map((opt) => (
         <option key={opt} value={opt}>
           {opt}
         </option>
       ))}
-    </select>
+    </NativeSelect>
   );
 }

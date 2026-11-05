@@ -21,6 +21,7 @@ import {
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Skeleton } from "@/components/ui/skeleton";
+import { Textarea } from "@/components/ui/textarea";
 import { formatRelativeTime } from "@/lib/formatters";
 
 export const Route = createFileRoute("/settings/ssh-keys")({
@@ -177,14 +178,14 @@ function AddSshKeyDialog({
             </div>
             <div className="space-y-1">
               <Label htmlFor="ssh-public-key">Public key</Label>
-              <textarea
+              <Textarea
                 id="ssh-public-key"
                 value={publicKey}
                 onChange={(e) => setPublicKey(e.target.value)}
                 spellCheck={false}
                 required
                 placeholder="ssh-ed25519 AAAA…"
-                className="min-h-24 w-full rounded-md border bg-muted/30 p-2 font-mono text-xs"
+                className="min-h-24 p-2"
               />
             </div>
           </div>

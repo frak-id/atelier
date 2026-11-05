@@ -1,11 +1,8 @@
-import { createFileRoute, Outlet } from "@tanstack/react-router";
+import { createFileRoute, redirect } from "@tanstack/react-router";
 
-/** Layout for the prebuilds settings section. The list (index) and the
- * new/edit editor routes are sibling children rendered here via <Outlet/>. */
+/** Moved to the Library: keeps old bookmarks working. */
 export const Route = createFileRoute("/settings/prebuilds")({
-  component: PrebuildsLayout,
+  beforeLoad: () => {
+    throw redirect({ to: "/library/prebuilds" });
+  },
 });
-
-function PrebuildsLayout() {
-  return <Outlet />;
-}

@@ -6,17 +6,14 @@ import {
 } from "@tanstack/react-query";
 import { toast } from "sonner";
 import { api } from "@/api/client";
-import { errorMessage } from "./error";
+import { unwrap } from "./error";
 import { queryKeys } from "./keys";
 
 export function toolsetsListQuery() {
   return queryOptions({
     queryKey: queryKeys.toolsets.list(),
     queryFn: async () => {
-      const { data, error } = await api.v1.toolsets.get();
-      if (error)
-        throw new Error(errorMessage(error, "Failed to load toolsets"));
-      return data;
+      return unwrap(await api.v1.toolsets.get(), "Failed to load toolsets");
     },
   });
 }
@@ -36,10 +33,7 @@ function useInvalidateToolsets() {
 export function useBuildToolset() {
   return useMutation({
     mutationFn: async (req: ToolsetBuildRequest) => {
-      const { data, error } = await api.v1.toolsets.post(req);
-      if (error)
-        throw new Error(errorMessage(error, "Failed to build toolset"));
-      return data;
+      return unwrap(await api.v1.toolsets.post(req), "Failed to build toolset");
     },
     onSuccess: (data) => {
       toast.success(
@@ -56,10 +50,10 @@ export function usePublishToolset() {
   const invalidate = useInvalidateToolsets();
   return useMutation({
     mutationFn: async (ref: string) => {
-      const { data, error } = await api.v1.toolsets.publish.post({ ref });
-      if (error)
-        throw new Error(errorMessage(error, "Failed to publish toolset"));
-      return data;
+      return unwrap(
+        await api.v1.toolsets.publish.post({ ref }),
+        "Failed to publish toolset",
+      );
     },
     onSuccess: () => {
       invalidate();
@@ -73,11 +67,12 @@ export function useRemoveToolset() {
   const invalidate = useInvalidateToolsets();
   return useMutation({
     mutationFn: async (ref: string) => {
-      const { error } = await api.v1.toolsets.delete(undefined, {
-        query: { ref },
-      });
-      if (error)
-        throw new Error(errorMessage(error, "Failed to remove toolset"));
+      unwrap(
+        await api.v1.toolsets.delete(undefined, {
+          query: { ref },
+        }),
+        "Failed to remove toolset",
+      );
     },
     onSuccess: () => {
       invalidate();

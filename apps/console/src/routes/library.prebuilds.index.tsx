@@ -22,13 +22,14 @@ import {
   CardTitle,
 } from "@/components/ui/card";
 import { Skeleton } from "@/components/ui/skeleton";
+import { useIsAdmin } from "@/hooks/use-is-admin";
 import {
   formatRelativeTime,
   prebuildTitle,
   rebuildTitle,
 } from "@/lib/formatters";
 
-export const Route = createFileRoute("/settings/prebuilds/")({
+export const Route = createFileRoute("/library/prebuilds/")({
   component: PrebuildsPage,
 });
 
@@ -72,7 +73,7 @@ function PrebuildsList() {
           </CardDescription>
         </div>
         <Button asChild size="sm" variant="outline" className="shrink-0">
-          <Link to="/settings/prebuilds/new">
+          <Link to="/library/prebuilds/new">
             <Plus />
             New prebuild
           </Link>
@@ -136,6 +137,7 @@ function StoredPrebuildRow({
   onDelete: () => void;
 }) {
   const runPrebuild = useRunPrebuild();
+  const isAdmin = useIsAdmin();
   const spec = prebuild.spec;
   const title = prebuildTitle(prebuild);
   return (
@@ -156,7 +158,7 @@ function StoredPrebuildRow({
             <>
               <Button asChild variant="outline" size="sm">
                 <Link
-                  to="/settings/prebuilds/$ref"
+                  to="/library/prebuilds/$ref"
                   params={{ ref: prebuild.ref }}
                 >
                   <Pencil />
@@ -177,21 +179,23 @@ function StoredPrebuildRow({
               </Button>
             </>
           ) : null}
-          <Button
-            variant="outline"
-            size="sm"
-            disabled={prebuild.inUse}
-            loading={deleting}
-            title={
-              prebuild.inUse
-                ? "In use by a sandbox or a chained prebuild"
-                : "Delete this snapshot"
-            }
-            onClick={onDelete}
-          >
-            {deleting ? null : <Trash2 />}
-            Delete
-          </Button>
+          {isAdmin ? (
+            <Button
+              variant="outline"
+              size="sm"
+              disabled={prebuild.inUse}
+              loading={deleting}
+              title={
+                prebuild.inUse
+                  ? "In use by a sandbox or a chained prebuild"
+                  : "Delete this snapshot"
+              }
+              onClick={onDelete}
+            >
+              {deleting ? null : <Trash2 />}
+              Delete
+            </Button>
+          ) : null}
         </div>
       </div>
       <span className="truncate font-mono text-xs text-muted-foreground">

@@ -6,7 +6,7 @@ import {
   Outlet,
   useRouter,
 } from "@tanstack/react-router";
-import { Boxes, Rocket, Settings } from "lucide-react";
+import { Boxes, Library, Rocket, Settings } from "lucide-react";
 import { Toaster } from "sonner";
 import { api } from "@/api/client";
 import { currentUserQuery } from "@/api/queries/auth";
@@ -24,6 +24,7 @@ export const Route = createRootRouteWithContext<{
 const NAV_ITEMS = [
   { to: "/", label: "Sandboxes", icon: Boxes, exact: true },
   { to: "/spawn", label: "Spawn", icon: Rocket, exact: true },
+  { to: "/library", label: "Library", icon: Library, exact: false },
   { to: "/settings", label: "Settings", icon: Settings, exact: false },
 ] as const;
 
@@ -63,7 +64,7 @@ function RootLayout() {
 
   return (
     <div className="flex min-h-dvh flex-col bg-background text-foreground">
-      <header className="sticky top-0 z-10 flex items-center justify-between border-b bg-background/95 px-4 py-3 backdrop-blur">
+      <header className="sticky top-0 z-10 flex items-center justify-between border-b bg-background/95 py-3 pt-[max(0.75rem,env(safe-area-inset-top))] pr-[max(1rem,env(safe-area-inset-right))] pl-[max(1rem,env(safe-area-inset-left))] backdrop-blur">
         <nav className="flex items-center gap-1">
           <span className="mr-3 font-semibold">Atelier</span>
           {NAV_ITEMS.map((item) => (
@@ -84,7 +85,7 @@ function RootLayout() {
           <AccountControls username={user.username} onLogout={handleLogout} />
         </div>
       </header>
-      <main className="flex-1 p-4">
+      <main className="flex-1 p-4 pr-[max(1rem,env(safe-area-inset-right))] pb-[max(1rem,env(safe-area-inset-bottom))] pl-[max(1rem,env(safe-area-inset-left))]">
         <Outlet />
       </main>
       <Toaster richColors position="top-right" />

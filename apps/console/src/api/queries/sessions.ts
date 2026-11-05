@@ -5,7 +5,7 @@ import {
 } from "@tanstack/react-query";
 import { toast } from "sonner";
 import { api } from "@/api/client";
-import { errorMessage } from "./error";
+import { unwrap } from "./error";
 import { queryKeys } from "./keys";
 
 // ── queries ──────────────────────────────────────────────────────────────
@@ -14,12 +14,10 @@ export function sessionsListQuery(sandboxId: string) {
   return queryOptions({
     queryKey: queryKeys.sessions.list(sandboxId),
     queryFn: async () => {
-      const { data, error } = await api.sessions
-        .sandboxes({ id: sandboxId })
-        .agent.sessions.get();
-      if (error)
-        throw new Error(errorMessage(error, "Failed to load sessions"));
-      return data;
+      return unwrap(
+        await api.sessions.sandboxes({ id: sandboxId }).agent.sessions.get(),
+        "Failed to load sessions",
+      );
     },
   });
 }
@@ -28,12 +26,12 @@ export function sessionStatusesQuery(sandboxId: string) {
   return queryOptions({
     queryKey: queryKeys.sessions.statuses(sandboxId),
     queryFn: async () => {
-      const { data, error } = await api.sessions
-        .sandboxes({ id: sandboxId })
-        .agent["session-statuses"].get();
-      if (error)
-        throw new Error(errorMessage(error, "Failed to load session statuses"));
-      return data;
+      return unwrap(
+        await api.sessions
+          .sandboxes({ id: sandboxId })
+          .agent["session-statuses"].get(),
+        "Failed to load session statuses",
+      );
     },
   });
 }
@@ -42,12 +40,13 @@ export function sessionTodosQuery(sandboxId: string, sessionId: string | null) {
   return queryOptions({
     queryKey: queryKeys.sessions.todos(sandboxId, sessionId ?? ""),
     queryFn: async () => {
-      const { data, error } = await api.sessions
-        .sandboxes({ id: sandboxId })
-        .agent.sessions({ sessionId: sessionId ?? "" })
-        .todos.get();
-      if (error) throw new Error(errorMessage(error, "Failed to load todos"));
-      return data;
+      return unwrap(
+        await api.sessions
+          .sandboxes({ id: sandboxId })
+          .agent.sessions({ sessionId: sessionId ?? "" })
+          .todos.get(),
+        "Failed to load todos",
+      );
     },
     enabled: sessionId !== null,
   });
@@ -73,12 +72,13 @@ export function useAbortSession() {
       sandboxId: string;
       sessionId: string;
     }) => {
-      const { error } = await api.sessions
-        .sandboxes({ id: sandboxId })
-        .agent.sessions({ sessionId })
-        .abort.post();
-      if (error)
-        throw new Error(errorMessage(error, "Failed to abort session"));
+      unwrap(
+        await api.sessions
+          .sandboxes({ id: sandboxId })
+          .agent.sessions({ sessionId })
+          .abort.post(),
+        "Failed to abort session",
+      );
       return sandboxId;
     },
     onSuccess: (sandboxId) => {
@@ -104,12 +104,13 @@ export function useDeleteSession() {
       sandboxId: string;
       sessionId: string;
     }) => {
-      const { error } = await api.sessions
-        .sandboxes({ id: sandboxId })
-        .agent.sessions({ sessionId })
-        .delete();
-      if (error)
-        throw new Error(errorMessage(error, "Failed to delete session"));
+      unwrap(
+        await api.sessions
+          .sandboxes({ id: sandboxId })
+          .agent.sessions({ sessionId })
+          .delete(),
+        "Failed to delete session",
+      );
       return sandboxId;
     },
     onSuccess: (sandboxId) => {

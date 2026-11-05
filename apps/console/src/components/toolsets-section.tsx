@@ -3,7 +3,6 @@ import { useQuery } from "@tanstack/react-query";
 import { type ParseError, parse as parseJsonc } from "jsonc-parser";
 import { Loader2, Plus } from "lucide-react";
 import { type FormEvent, useState } from "react";
-import { currentUserQuery } from "@/api/queries/auth";
 import {
   toolsetsListQuery,
   useBuildToolset,
@@ -23,6 +22,8 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog";
 import { Skeleton } from "@/components/ui/skeleton";
+import { Textarea } from "@/components/ui/textarea";
+import { useIsAdmin } from "@/hooks/use-is-admin";
 import { formatRelativeTime } from "@/lib/formatters";
 
 const BUILD_PLACEHOLDER = `{
@@ -84,8 +85,7 @@ function ToolsetRow({ toolset }: { toolset: ToolsetEntry }) {
   const publish = usePublishToolset();
   const remove = useRemoveToolset();
   // Publishing and removing raw toolsets are server-admin actions.
-  const { data: currentUser } = useQuery(currentUserQuery());
-  const isAdmin = currentUser?.admin === true;
+  const isAdmin = useIsAdmin();
   return (
     <Card>
       <CardContent className="flex flex-col gap-2 p-3">
@@ -190,13 +190,13 @@ function BuildToolsetDialog({
             <DialogTitle>Build a toolset</DialogTitle>
           </DialogHeader>
           <div className="space-y-2 py-2">
-            <textarea
+            <Textarea
               value={text}
               onChange={(e) => setText(e.target.value)}
               spellCheck={false}
               required
               placeholder={BUILD_PLACEHOLDER}
-              className="min-h-56 w-full rounded-md border bg-muted/30 p-2 font-mono text-xs"
+              className="min-h-56 p-2"
             />
             {parseError ? (
               <p className="text-sm text-destructive">{parseError}</p>

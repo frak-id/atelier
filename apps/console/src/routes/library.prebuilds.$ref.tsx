@@ -5,7 +5,7 @@ import { prebuildsListQuery } from "@/api/queries/prebuilds";
 import { PrebuildEditor } from "@/components/prebuild-editor";
 import { Skeleton } from "@/components/ui/skeleton";
 
-export const Route = createFileRoute("/settings/prebuilds/$ref")({
+export const Route = createFileRoute("/library/prebuilds/$ref")({
   component: EditPrebuildPage,
 });
 
@@ -29,7 +29,7 @@ function EditPrebuildPage() {
   return (
     <div className="mx-auto max-w-2xl space-y-4">
       <Link
-        to="/settings/prebuilds"
+        to="/library/prebuilds"
         className="inline-flex items-center gap-1 text-sm text-muted-foreground hover:text-foreground"
       >
         <ChevronLeft className="size-4" />
@@ -45,7 +45,7 @@ function EditPrebuildPage() {
       ) : !record ? (
         <p className="text-sm text-muted-foreground">
           Prebuild not found.{" "}
-          <Link to="/settings/prebuilds" className="underline">
+          <Link to="/library/prebuilds" className="underline">
             Back to prebuilds
           </Link>
         </p>
@@ -53,7 +53,7 @@ function EditPrebuildPage() {
         <p className="text-sm text-muted-foreground">
           This snapshot has no stored recipe (a pause or manual snapshot), so it
           can't be replayed in the editor.{" "}
-          <Link to="/settings/prebuilds" className="underline">
+          <Link to="/library/prebuilds" className="underline">
             Back to prebuilds
           </Link>
         </p>

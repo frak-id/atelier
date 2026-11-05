@@ -51,7 +51,7 @@ function SessionsPage() {
         </Link>
         <span className="text-muted-foreground">/</span>
         <h1 className="text-lg font-semibold">Sessions</h1>
-        <Badge variant={connected ? "success" : "secondary"}>
+        <Badge variant={connected ? "success" : "secondary"} aria-live="polite">
           <Radio className="mr-1 size-3" />
           {connected ? "Live" : "Reconnecting"}
         </Badge>

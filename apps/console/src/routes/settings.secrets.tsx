@@ -24,6 +24,7 @@ import {
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Skeleton } from "@/components/ui/skeleton";
+import { Textarea } from "@/components/ui/textarea";
 import { formatRelativeTime } from "@/lib/formatters";
 import type { OwnerScope } from "@/lib/orgs";
 
@@ -211,13 +212,13 @@ function AddSecretDialog({
             </div>
             <div className="space-y-1">
               <Label htmlFor="secret-value">Value</Label>
-              <textarea
+              <Textarea
                 id="secret-value"
                 value={value}
                 onChange={(e) => setValue(e.target.value)}
                 spellCheck={false}
                 required
-                className="min-h-20 w-full rounded-md border bg-muted/30 p-2 font-mono text-xs"
+                className="min-h-20 p-2"
               />
             </div>
           </div>

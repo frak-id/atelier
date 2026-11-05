@@ -1,6 +1,6 @@
 import { queryOptions } from "@tanstack/react-query";
 import { api } from "@/api/client";
-import { errorMessage } from "./error";
+import { unwrap } from "./error";
 import { queryKeys } from "./keys";
 
 /** The user directory: every registered user + their org memberships. Backs
@@ -9,9 +9,7 @@ export function usersDirectoryQuery() {
   return queryOptions({
     queryKey: queryKeys.users.directory(),
     queryFn: async () => {
-      const { data, error } = await api.api.users.get();
-      if (error) throw new Error(errorMessage(error, "Failed to load users"));
-      return data;
+      return unwrap(await api.api.users.get(), "Failed to load users");
     },
     staleTime: 30_000,
   });

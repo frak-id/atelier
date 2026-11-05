@@ -121,7 +121,7 @@ function ImageGrid({
         </p>
       ) : !images || images.length === 0 ? (
         <p className="text-sm text-muted-foreground">
-          No images yet. Add one under Settings → Images.
+          No images yet. Add one under Library → Images.
         </p>
       ) : (
         <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">

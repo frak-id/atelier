@@ -2,6 +2,7 @@ import { AlertTriangle } from "lucide-react";
 import type { ReactNode } from "react";
 import { useState } from "react";
 import { SegmentedControl } from "@/components/ui/segmented-control";
+import { Textarea } from "@/components/ui/textarea";
 
 export type SpecParseResult<T> =
   | { ok: true; value: T }
@@ -119,12 +120,12 @@ export function SpecEditorShell<T>({
       {mode === "visual" ? (
         renderVisual(spec, onSpecChange)
       ) : (
-        <textarea
+        <Textarea
           value={draftText}
           onChange={(e) => setDraftText(e.target.value)}
           spellCheck={false}
           placeholder={jsonPlaceholder}
-          className="min-h-96 w-full rounded-md border bg-muted/30 p-3 font-mono text-xs"
+          className="min-h-96 p-3"
         />
       )}
 

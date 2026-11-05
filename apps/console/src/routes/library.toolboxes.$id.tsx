@@ -5,7 +5,7 @@ import { toolboxesListQuery } from "@/api/queries/toolboxes";
 import { ToolboxEditor } from "@/components/toolbox-editor";
 import { Skeleton } from "@/components/ui/skeleton";
 
-export const Route = createFileRoute("/settings/toolboxes/$id")({
+export const Route = createFileRoute("/library/toolboxes/$id")({
   validateSearch: (search: Record<string, unknown>) => ({
     owner: typeof search.owner === "string" ? search.owner : "me",
   }),
@@ -26,7 +26,7 @@ function EditToolboxPage() {
   return (
     <div className="mx-auto max-w-2xl space-y-4">
       <Link
-        to="/settings/toolboxes"
+        to="/library/toolboxes"
         className="inline-flex items-center gap-1 text-sm text-muted-foreground hover:text-foreground"
       >
         <ChevronLeft className="size-4" />

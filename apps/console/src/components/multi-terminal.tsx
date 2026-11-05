@@ -91,7 +91,11 @@ export function MultiTerminal({
         className,
       )}
     >
-      <div className="flex items-center overflow-x-auto border-b bg-elevated/50">
+      <div
+        role="tablist"
+        aria-label="Terminals"
+        className="flex items-center overflow-x-auto border-b bg-elevated/50"
+      >
         {list.map((session) => (
           <div
             key={session.id}
@@ -104,6 +108,8 @@ export function MultiTerminal({
           >
             <button
               type="button"
+              role="tab"
+              aria-selected={session.id === activeId}
               className="flex max-w-[160px] items-center gap-1.5"
               onClick={() => setActiveId(session.id)}
             >
@@ -113,7 +119,7 @@ export function MultiTerminal({
             <button
               type="button"
               aria-label="Close terminal"
-              className="rounded p-0.5 text-muted-foreground opacity-0 transition-opacity hover:text-danger group-hover:opacity-100"
+              className="rounded p-1.5 text-muted-foreground opacity-100 transition-opacity hover:text-danger focus-visible:opacity-100 [@media(hover:hover)]:opacity-0 [@media(hover:hover)]:group-hover:opacity-100"
               disabled={remove.isPending}
               onClick={() => {
                 // Advance to an adjacent tab immediately so the pane never

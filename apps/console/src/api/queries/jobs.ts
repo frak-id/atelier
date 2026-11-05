@@ -1,3 +1,5 @@
+import { Type } from "@sinclair/typebox";
+import { Check } from "@sinclair/typebox/value";
 import {
   queryOptions,
   useMutation,
@@ -5,7 +7,7 @@ import {
 } from "@tanstack/react-query";
 import { toast } from "sonner";
 import { api } from "@/api/client";
-import { errorMessage } from "./error";
+import { unwrap } from "./error";
 import { queryKeys } from "./keys";
 
 /** The job shape, derived from the server's `GET /v1/jobs` response so it
@@ -14,6 +16,25 @@ type JobsResponse = NonNullable<
   Awaited<ReturnType<typeof api.v1.jobs.get>>["data"]
 >;
 export type Job = JobsResponse[number];
+
+const JobShape = Type.Object({
+  id: Type.String(),
+  kind: Type.String(),
+  status: Type.Union([
+    Type.Literal("queued"),
+    Type.Literal("running"),
+    Type.Literal("succeeded"),
+    Type.Literal("failed"),
+    Type.Literal("canceled"),
+  ]),
+  createdAt: Type.String(),
+  updatedAt: Type.String(),
+});
+
+/** Runtime check for a job pushed over the SSE feed. */
+export function isJob(value: unknown): value is Job {
+  return Check(JobShape, value);
+}
 
 /** True only while a job is actually executing (not merely waiting for a
  * concurrency slot). */
@@ -34,9 +55,7 @@ export function jobsListQuery() {
   return queryOptions({
     queryKey: queryKeys.jobs.list(),
     queryFn: async () => {
-      const { data, error } = await api.v1.jobs.get();
-      if (error) throw new Error(errorMessage(error, "Failed to load jobs"));
-      return data;
+      return unwrap(await api.v1.jobs.get(), "Failed to load jobs");
     },
   });
 }
@@ -50,9 +69,10 @@ export function jobLogsQuery(id: string) {
   return queryOptions({
     queryKey: queryKeys.jobs.logs(id),
     queryFn: async () => {
-      const { data, error } = await api.v1.jobs({ id }).logs.get();
-      if (error) throw new Error(errorMessage(error, "Failed to load logs"));
-      return data;
+      return unwrap(
+        await api.v1.jobs({ id }).logs.get(),
+        "Failed to load logs",
+      );
     },
     refetchInterval: (query) => {
       const status = query.state.data?.status;
@@ -68,9 +88,10 @@ export function useCancelJob() {
   const queryClient = useQueryClient();
   return useMutation({
     mutationFn: async (id: string) => {
-      const { data, error } = await api.v1.jobs({ id }).cancel.post();
-      if (error) throw new Error(errorMessage(error, "Failed to cancel job"));
-      return data;
+      return unwrap(
+        await api.v1.jobs({ id }).cancel.post(),
+        "Failed to cancel job",
+      );
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: queryKeys.jobs.all });
