@@ -9,7 +9,7 @@ import { unwrap } from "./error";
 import { queryKeys } from "./keys";
 
 /** How often the inbox refreshes while the tab is visible. */
-export const TASK_POLL_MS = 10_000;
+const TASK_POLL_MS = 10_000;
 
 async function fetchTasks() {
   return unwrap(

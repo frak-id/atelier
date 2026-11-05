@@ -32,7 +32,7 @@ const MAX_BRANCHES = 100;
 const MAX_CACHE_ENTRIES = 500;
 
 /** One repository the caller can clone, trimmed to what the console shows. */
-export interface GitHubRepo {
+interface GitHubRepo {
   /** `owner/name`, as GitHub spells it. */
   fullName: string;
   owner: string;

@@ -15,11 +15,9 @@
 import {
   type ActivitySignal,
   type AddPortRequest,
-  type AddProcessRequest,
   type CreateSandboxResponse,
   type ExecRequest,
   gatingProcessNames,
-  type PatchEnvRequest,
   type PatchFilesRequest,
   type PortEntry,
   type PrebuildRecord,
@@ -64,7 +62,6 @@ import {
 } from "./activity.ts";
 import type { HookPhase, WriteFilesResult } from "./agent/index.ts";
 import { AgentClient } from "./agent/index.ts";
-import { specToAgentConfig } from "./agent-config.ts";
 import { createSandboxBackend, type SandboxBackend } from "./backend/index.ts";
 import { BuildPods, type OnLog } from "./build-pod.ts";
 import { getRemoteCommitHash } from "./git-remote.ts";
@@ -141,7 +138,15 @@ export interface RuntimeDeps {
   /** A repo's current remote HEAD (`git ls-remote`). Injectable so tests
    * key prebuilds without network git. */
   remoteHead?: typeof getRemoteCommitHash;
+  /** Turns a STORED spec into the one a boot uses: `$secret` refs resolved,
+   * fresh git credentials added. Called on every boot (create, resume, fork);
+   * its output is handed to the backend and never persisted, so the stored
+   * spec keeps refs instead of values. Injected by the api/ layer (the
+   * runtime must not import control/). Defaults to the identity. */
+  resolveBootSpec?: BootSpecResolver;
 }
+
+export type BootSpecResolver = (spec: SandboxSpec) => Promise<SandboxSpec>;
 
 export class RuntimeService {
   /** Prebuild bake, recipe surface, staleness, retention. */
@@ -155,6 +160,7 @@ export class RuntimeService {
   private readonly sandboxToolsetRefs: SandboxToolsetRefStore;
   private readonly resolver: SourceResolver;
   private readonly activity: ActivityRecorder;
+  private readonly resolveBootSpec: BootSpecResolver;
   /** Per-sandbox operation lock: lifecycle ops and live mutations on the same
    * id serialize instead of racing. */
   private readonly opLock = new OpLock();
@@ -172,6 +178,7 @@ export class RuntimeService {
     this.sandboxToolsetRefs =
       deps.sandboxToolsetRefs ?? new DrizzleSandboxToolsetRefStore();
     this.activity = deps.activity ?? new ActivityRecorder();
+    this.resolveBootSpec = deps.resolveBootSpec ?? (async (spec) => spec);
     this.resolver = new SourceResolver(
       this.snapshots,
       deps.images ?? new DrizzleImageStore(),
@@ -240,7 +247,6 @@ export class RuntimeService {
     spec: SandboxSpec,
     options: RuntimeCreateOptions = {},
   ): Promise<CreateSandboxResponse> {
-    rejectUnresolvedSecrets(spec);
     rejectDuplicateToolsetRefs(spec);
     const id = options.id ?? safeNanoid();
     return this.opLock.run(id, () => this.executeCreate(id, spec, options));
@@ -255,10 +261,21 @@ export class RuntimeService {
       throw new ConflictError(`Sandbox ${id} already exists`);
     }
     const progress = options.onProgress ?? (() => {});
+    // Resolved before the record exists: a missing secret fails the create
+    // with no `error` sandbox left behind.
+    const bootSpec = await this.toBootSpec(spec);
     const resolved = await this.resolver.resolveSource(spec.source);
     progress(`source resolved (${resolved.snapshotName ?? resolved.image})`);
     this.registerCreating(id, spec);
-    return this.bootNew(id, spec, resolved, options);
+    return this.bootNew(id, spec, bootSpec, resolved, options);
+  }
+
+  /** The spec a boot runs with (secrets resolved, git credentials fresh).
+   * Never stored: `spec` stays the persisted one. */
+  private async toBootSpec(spec: SandboxSpec): Promise<SandboxSpec> {
+    const bootSpec = await this.resolveBootSpec(spec);
+    rejectUnresolvedSecrets(bootSpec);
+    return bootSpec;
   }
 
   /** Insert the `creating` record — the sandbox is visible from here on. */
@@ -279,6 +296,7 @@ export class RuntimeService {
   private async bootNew(
     id: string,
     spec: SandboxSpec,
+    bootSpec: SandboxSpec,
     { image, snapshotName }: { image: string; snapshotName?: string },
     options: RuntimeCreateOptions,
     keepDisk = false,
@@ -297,7 +315,7 @@ export class RuntimeService {
       progress("booting pod…");
       const boot = await this.backend.boot(
         id,
-        spec,
+        bootSpec,
         {
           image,
           snapshotName,
@@ -540,7 +558,9 @@ export class RuntimeService {
         );
       }
       const spec = mergeResume(record.spec, req);
-      rejectUnresolvedSecrets(spec);
+      // Resolved per boot (rotated secrets and tokens apply); only `spec`,
+      // the unresolved one, is stored back.
+      const bootSpec = await this.toBootSpec(spec);
       const reusePvc = await this.backend.volumes.volumeExists(
         resourceName(id),
       );
@@ -561,7 +581,7 @@ export class RuntimeService {
       // the credential-rotation primitive; it runs before processes restart.
       const boot = await this.backend.boot(
         id,
-        spec,
+        bootSpec,
         {
           image,
           reusePvc,
@@ -750,30 +770,6 @@ export class RuntimeService {
     return writePatchFiles(this.agent, id, files);
   }
 
-  /**
-   * Re-export env to future process spawns and fire the `envChanged` hook.
-   * Does NOT mutate a running process's environment (stated honestly,
-   * design.md §2 "Runtime API").
-   */
-  async patchEnv(id: string, env: PatchEnvRequest): Promise<void> {
-    return this.opLock.run(id, async () => {
-      const record = this.requireRunning(id);
-      this.activity.touch(id, "api");
-      const nextEnv = { ...(record.spec.env ?? {}), ...env };
-      const nextSpec = { ...record.spec, env: nextEnv };
-      // Re-push so future process spawns see the new env, then fire
-      // envChanged (the agent runs it with the updated pod env). Persist the
-      // spec only after the push succeeds, so the store never claims env the
-      // agent didn't get. Does not mutate running processes' env (stated
-      // honestly, design.md §2).
-      await this.agent.putConfig(id, specToAgentConfig(id, nextSpec));
-      this.sandboxes.update(id, {
-        spec: this.withStoredAnnotations(id, nextSpec),
-      });
-      await this.runPhase(id, "envChanged");
-    });
-  }
-
   async exec(id: string, req: ExecRequest) {
     this.require(id);
     this.activity.touch(id, "api");
@@ -801,29 +797,6 @@ export class RuntimeService {
     return this.agent.processLogs(id, name, offset, limit);
   }
 
-  /**
-   * Register an ad-hoc supervised process after boot: append it to the spec,
-   * re-push the config so the agent supervises it (readiness/restart/attach
-   * all apply), then start it now unless `lazy` (a lazy process starts on
-   * first attach/`start`).
-   */
-  async addProcess(id: string, req: AddProcessRequest): Promise<void> {
-    return this.opLock.run(id, async () => {
-      const record = this.requireRunning(id);
-      this.activity.touch(id, "api");
-      const spec: SandboxSpec = {
-        ...record.spec,
-        processes: [...(record.spec.processes ?? []), req],
-      };
-      rejectUnresolvedSecrets(spec);
-      await this.agent.putConfig(id, specToAgentConfig(id, spec));
-      this.sandboxes.update(id, {
-        spec: this.withStoredAnnotations(id, spec),
-      });
-      if (!req.lazy) await this.agent.processStart(id, req.name);
-    });
-  }
-
   /** Expose a port after boot — creates the ingress now, real mechanism. The
    * spec records the port only once the backend exposed it, so the record
    * never claims a port that has no route. */
@@ -835,6 +808,7 @@ export class RuntimeService {
         name: req.name,
         port: req.port,
         public: req.public ?? true,
+        ...(req.auth ? { auth: req.auth } : {}),
       };
       if (portEntry.public) {
         // The live-added port becomes a Service port + Ingress (mechanism
@@ -1009,6 +983,7 @@ export class RuntimeService {
 
     return this.opLock.run(id, async () => {
       let forked: SandboxSpec;
+      let bootSpec: SandboxSpec;
       let resolved: ResolvedSource;
       try {
         const derived = fork.derive({ ...source.spec, annotations });
@@ -1024,8 +999,8 @@ export class RuntimeService {
         };
         // The stored spec was validated at the source's creation, but derive
         // is caller policy: re-check what boot would reject.
-        rejectUnresolvedSecrets(forked);
         rejectDuplicateToolsetRefs(forked);
+        bootSpec = await this.toBootSpec(forked);
         this.sandboxes.update(id, {
           spec: forked,
           metadata: forked.metadata ?? {},
@@ -1052,7 +1027,7 @@ export class RuntimeService {
         this.sandboxes.update(id, { status: "error" });
         throw error;
       }
-      return this.bootNew(id, forked, resolved, options, true);
+      return this.bootNew(id, forked, bootSpec, resolved, options, true);
     });
   }
 

@@ -14,12 +14,11 @@
  */
 
 import type { PortEntry, SandboxSpec } from "@atelier/spec";
-import { customAlphabet } from "nanoid";
 import { ValidationError } from "../../shared/errors.ts";
 import { createChildLogger } from "../../shared/lib/logger.ts";
 import { AGENT_ATTACH_PORT, type AgentClient } from "../agent/index.ts";
 import type { BootInput, BootOutput } from "../boot.ts";
-import { provisionAgent } from "../boot-agent.ts";
+import { generateAgentPassword, provisionAgent } from "../boot-agent.ts";
 import { resourceName } from "../resource-name.ts";
 import type {
   AgentEndpoint,
@@ -31,10 +30,6 @@ import { docker } from "./docker-cli.ts";
 import { DockerVolumeBackend } from "./docker-volume.backend.ts";
 
 const log = createChildLogger("runtime-backend-docker");
-
-const generatePassword = customAlphabet(
-  "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789",
-);
 
 /** Container port the guest agent's HTTP control plane listens on. */
 const AGENT_PORT = 9998;
@@ -90,7 +85,7 @@ export class DockerBackend implements SandboxBackend {
   ): Promise<BootOutput> {
     const containerName = this.containerName(id);
     const pvcName = containerName;
-    const agentPassword = generatePassword(32);
+    const agentPassword = generateAgentPassword();
     // The agent refuses calls without this token and the record doesn't exist
     // yet, so hand it to the client before the first agent call.
     agent.setToken(id, agentPassword);
@@ -137,8 +132,6 @@ export class DockerBackend implements SandboxBackend {
       );
 
       return {
-        podName: containerName,
-        pvcName,
         agentPassword,
         podIp,
         sshHostKeys,

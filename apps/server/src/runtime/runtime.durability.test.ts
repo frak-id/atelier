@@ -8,11 +8,7 @@ import { beforeEach, describe, expect, test } from "bun:test";
 import type { PrebuildSpec, SandboxSpec } from "@atelier/spec";
 import { ConflictError, ValidationError } from "../shared/errors.ts";
 import { RuntimeService } from "./runtime.service.ts";
-import {
-  FakeAgentClient,
-  FakeBackend,
-  fakeRuntimeDeps,
-} from "./runtime.test-support.ts";
+import { FakeBackend, fakeRuntimeDeps } from "./runtime.test-support.ts";
 import * as stores from "./store.ts";
 import { useTestDatabase } from "./test-database.ts";
 
@@ -157,36 +153,6 @@ describe("destroying a sandbox others boot from", () => {
 });
 
 describe("live mutations", () => {
-  test("concurrent addProcess calls keep both processes", async () => {
-    const agent = new FakeAgentClient();
-    // Each push yields, so unserialized calls would interleave.
-    agent.putConfig = async () => {
-      await Bun.sleep(5);
-    };
-    const { runtime, sandboxes } = makeRuntime({ agent });
-    await runtime.create(spec, { id: "sb1" });
-    await Promise.all([
-      runtime.addProcess("sb1", { name: "web", command: "bun dev" }),
-      runtime.addProcess("sb1", { name: "api", command: "bun api" }),
-    ]);
-    const names = sandboxes.get("sb1")?.spec.processes?.map((p) => p.name);
-    expect(names?.sort()).toEqual(["api", "web"]);
-  });
-
-  test("concurrent patchEnv calls keep both variables", async () => {
-    const agent = new FakeAgentClient();
-    agent.putConfig = async () => {
-      await Bun.sleep(5);
-    };
-    const { runtime, sandboxes } = makeRuntime({ agent });
-    await runtime.create(spec, { id: "sb1" });
-    await Promise.all([
-      runtime.patchEnv("sb1", { A: "1" }),
-      runtime.patchEnv("sb1", { B: "2" }),
-    ]);
-    expect(sandboxes.get("sb1")?.spec.env).toEqual({ A: "1", B: "2" });
-  });
-
   test("addPort needs a running sandbox", async () => {
     const { runtime } = makeRuntime();
     await runtime.create(spec, { id: "sb1" });

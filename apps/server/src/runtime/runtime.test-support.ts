@@ -167,8 +167,6 @@ export class FakeBackend implements SandboxBackend {
   ): Promise<BootOutput> {
     const { podIp, sshHostKeys } = await provisionAgent(id, spec, input, agent);
     return {
-      podName: `sandbox-${id}`,
-      pvcName: `sandbox-${id}`,
       agentPassword: "test-password",
       podIp,
       sshHostKeys,

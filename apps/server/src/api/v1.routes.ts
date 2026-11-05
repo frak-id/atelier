@@ -1,29 +1,20 @@
 /**
  * `/v1/*` — the whole runtime API (design.md §2 "Runtime API (the whole
- * thing)"). Every route: authenticate (control) → enrich the spec (control's
- * two seam mutations) → call `runtime.*(spec)` once. The runtime itself never
- * sees an unresolved secret or an unauthenticated caller.
+ * thing)"). Thin HTTP: authenticate (control), parse, then call the
+ * application layer (`sandboxOps`, `toolboxOps`) or the runtime. The runtime
+ * itself never sees an unauthenticated caller.
  */
 import {
   AddPortRequestSchema,
-  buildRepoPrebuildSpec,
   type CreateSandboxRequest,
   CreateSandboxRequestSchema,
   ExecRequestSchema,
-  type ForkSandboxRequest,
   ForkSandboxRequestSchema,
-  findRepoBranchPrebuild,
   PatchFilesRequestSchema,
   type PrebuildSpec,
   PrebuildSpecSchema,
-  prebuildJobTarget,
-  type ResumeRequest,
   ResumeRequestSchema,
-  runtimeSurfaceOf,
   SANDBOX_NAME_ANNOTATION,
-  SANDBOX_ORG_ANNOTATION,
-  type SandboxSpec,
-  type SnapshotRef,
   SurfacePortsSchema,
   SurfaceProcessesSchema,
   type ToolsetBuildRequest,
@@ -35,29 +26,15 @@ import {
 import { Elysia, sse, t } from "elysia";
 import type { JobRecord } from "../runtime/index.ts";
 import { NotFoundError, ValidationError } from "../shared/errors.ts";
-import {
-  buildGitAttributionFiles,
-  OWNER_ID_METADATA,
-} from "../shared/lib/git-attribution.ts";
-import { safeNanoid } from "../shared/lib/id.ts";
-import { createChildLogger } from "../shared/lib/logger.ts";
-import { defaultMemoryMb, defaultVcpus } from "../shared/lib/runtime-config.ts";
+import { OWNER_ID_METADATA } from "../shared/lib/git-attribution.ts";
 import { createAuthPlugin } from "./auth.plugin.ts";
-import {
-  harnessForToolset,
-  resolveSpawnToolboxes,
-  type ServerContainer,
-  toolboxHarness,
-  toolboxSurface,
-  withToolboxFiles,
-} from "./container.ts";
+import type { ServerContainer } from "./container.ts";
 import {
   accessibleSandboxes,
   requireSandboxAccess,
   requireSourceAccess,
   sandboxAccessGuard,
 } from "./sandbox-guard.ts";
-import { spawnSurface } from "./spawn-surface.ts";
 import {
   closeUpstream,
   isUserInput,
@@ -65,35 +42,9 @@ import {
   relayMessage,
 } from "./ws-relay.ts";
 
-const log = createChildLogger("v1-routes");
-
-/** A short, human label for a sandbox-create job's queue row — the spec's
- * opaque name/workspace metadata when present, else its source. */
-function sandboxLabel(req: CreateSandboxRequest): string {
-  return (
-    req.metadata?.name ??
-    req.metadata?.workspace ??
-    ("image" in req.source ? req.source.image : req.source.snapshot)
-  );
-}
-
-/** `repo` is sugar over `prebuild` with an image base: both at once, or a
- * snapshot source, leave no unambiguous recipe (400). */
-function assertRepoRequest(req: CreateSandboxRequest): void {
-  if (!req.repo) return;
-  if (req.prebuild) {
-    throw new ValidationError("`repo` cannot be combined with `prebuild`");
-  }
-  if (!("image" in req.source)) {
-    throw new ValidationError(
-      "`repo` needs an image `source` (the base the repo is baked on)",
-    );
-  }
-}
-
 /** Parse `GET /v1/sandboxes?metadata=`: a JSON object of string → string
  * (already URL-decoded). Absent is no filter; anything else is a 400. */
-export function parseMetadataFilter(raw?: string): Record<string, string> {
+function parseMetadataFilter(raw?: string): Record<string, string> {
   if (raw === undefined) return {};
   let parsed: unknown;
   try {
@@ -114,320 +65,13 @@ export function parseMetadataFilter(raw?: string): Record<string, string> {
   return parsed as Record<string, string>;
 }
 
-/** A copy of `record` without `key` (undefined stays undefined). */
-function withoutKey(
-  record: Record<string, string> | undefined,
-  key: string,
-): Record<string, string> | undefined {
-  if (!record) return record;
-  const { [key]: _dropped, ...rest } = record;
-  return rest;
-}
-
 /** `GET /v1/sandboxes?owner=`: `me` is the caller. */
 function ownerFilter(owner: string | undefined, userId: string) {
   return owner === "me" ? userId : owner;
 }
 
-/**
- * The org a spawn runs in (whose secrets and auto-injected toolboxes it
- * gets). An explicit `requested` org must be one the caller belongs to.
- * Absent, it's the default org (`auth.defaultOrg`) when the caller is in it,
- * else their personal org, else their oldest membership, else none (spawn
- * bare).
- */
-export function resolveOrgId(
-  control: ServerContainer["control"],
-  userId: string,
-  requested?: string,
-): string | undefined {
-  if (requested) {
-    control.orgMemberService.requireMembership(requested, userId);
-    return requested;
-  }
-  const memberships = control.orgMemberService.getByUserId(userId);
-  const defaultOrgId = control.defaultOrg.defaultOrgId();
-  if (defaultOrgId && memberships.some((m) => m.orgId === defaultOrgId)) {
-    return defaultOrgId;
-  }
-  const personal = control.userService.getById(userId)?.personalOrgId;
-  if (personal && memberships.some((m) => m.orgId === personal)) {
-    return personal;
-  }
-  return [...memberships].sort((a, b) =>
-    a.joinedAt.localeCompare(b.joinedAt),
-  )[0]?.orgId;
-}
-
-/**
- * Shared by `POST /v1/sandboxes` and the `create_sandbox` MCP tool (the
- * "one API, three surfaces" principle, design.md §4): resolve the caller's
- * org, apply toolbox auto-inject + explicit selectors, run the enrichment
- * seam, merge toolbox-contributed processes/ports, and boot. Both callers
- * pass an authenticated `AuthUser` — there is exactly one enrichment path.
- */
-export async function createSandboxForUser(
-  container: ServerContainer,
-  user: { id: string; username: string; email: string },
-  body: CreateSandboxRequest,
-  id?: string,
-  onProgress?: (msg: string) => void,
-) {
-  const { runtime, control } = container;
-  assertRepoRequest(body);
-  // The body is a spec plus the high-level references the caller picked
-  // (`toolboxes` selectors, a `prebuild` recipe, a `repo`); strip them so the
-  // runtime only ever sees a resolved spec.
-  const {
-    toolboxes: selectors = [],
-    prebuild: bodyPrebuild,
-    repo,
-    orgId: requestedOrgId,
-    resources,
-    metadata,
-    annotations,
-    ...specFields
-  } = body;
-  // A sandbox-scoped snapshot is its sandbox's data (access rule).
-  requireSourceAccess(container, user.id, body.source, body.prebuild?.source);
-  // Resolved first: an unauthorized org must fail before any build work.
-  const orgId = resolveOrgId(control, user.id, requestedOrgId);
-  // `resources` is optional on the request (each field too): fill the gaps
-  // from the server's defaults so the runtime always sees a complete spec.
-  // The owner-id metadata and the org annotation are server-owned (access
-  // rule): enrichment sets the owner and the resolved org is applied below,
-  // so a caller-supplied value never survives.
-  const callerMetadata = withoutKey(metadata, OWNER_ID_METADATA);
-  const callerAnnotations = withoutKey(annotations, SANDBOX_ORG_ANNOTATION);
-  let spec: SandboxSpec = {
-    ...specFields,
-    ...(callerMetadata ? { metadata: callerMetadata } : {}),
-    ...(callerAnnotations ? { annotations: callerAnnotations } : {}),
-    resources: {
-      ...resources,
-      vcpus: resources?.vcpus ?? defaultVcpus(),
-      memoryMb: resources?.memoryMb ?? defaultMemoryMb(),
-    },
-  };
-  // `repo`: boot from an existing bake of it, else bake a quick one-repo
-  // prebuild below (on `source.image`, the base `assertRepoRequest` checked).
-  let prebuild = bodyPrebuild;
-  if (repo && "image" in spec.source) {
-    // Only a bake on the requested base image: another base is another
-    // environment.
-    const baseImage = spec.source.image;
-    const baked = findRepoBranchPrebuild(
-      runtime
-        .listPrebuilds()
-        .filter(
-          (record) =>
-            record.spec?.source !== undefined &&
-            "image" in record.spec.source &&
-            record.spec.source.image === baseImage,
-        ),
-      repo.url,
-      repo.branch,
-    );
-    if (baked) {
-      spec = { ...spec, source: { snapshot: baked.ref } };
-    } else {
-      prebuild = buildRepoPrebuildSpec({
-        repo: repo.url,
-        branch: repo.branch,
-        image: spec.source.image,
-      });
-    }
-  }
-  // A template built from a prebuild carries the recipe, not a pinned ref:
-  // resolve it to the current snapshot (idempotent — a cache hit when
-  // unchanged) so an updated prebuild is picked up here.
-  const warnings: string[] = [];
-  if (prebuild) {
-    onProgress?.("resolving prebuild…");
-    const options = {
-      githubToken: control.userService.resolveGitHubToken(user.id),
-      createdBy: user.id,
-    };
-    // A cached prebuild is a plain lookup. A bake is a pooled job (in the
-    // feed, bounded by `jobs.concurrency`, cancellable); if the fresh build
-    // fails the spawn falls back to the recipe's last good one.
-    const snapshot: SnapshotRef & { warning?: string } =
-      (await runtime.cachedPrebuild(prebuild, options)) ??
-      (await container.jobs.dispatchAndWait(
-        {
-          kind: "prebuild",
-          target: prebuildJobTarget(prebuild),
-          metadata: prebuild.metadata,
-        },
-        (signal, log) =>
-          runtime.prebuildForSpawn(prebuild, {
-            ...options,
-            signal,
-            onLog: log,
-          }),
-      ));
-    if (snapshot.warning) {
-      warnings.push(snapshot.warning);
-      onProgress?.(`warning: ${snapshot.warning}`);
-    }
-    spec = { ...spec, source: { snapshot: snapshot.ref } };
-  }
-  if (selectors.length > 0) onProgress?.("resolving toolboxes…");
-  // The sandbox owner (git user): identity for attribution/display + GitHub
-  // token for the injected credential helper.
-  const owner = {
-    id: user.id,
-    username: user.username,
-    email: user.email,
-    githubToken: control.userService.resolveGitHubToken(user.id),
-  };
-  // The org's auto-inject toolboxes, then the picked ones. Their files are
-  // merged into the spec BEFORE enrichment so `$secret` refs resolve there;
-  // the spec's own file at the same path wins.
-  const { refs: toolboxRefs, applied } = await resolveSpawnToolboxes(
-    container,
-    { orgId, userId: user.id, selectors, toolsets: spec.toolsets ?? [] },
-  );
-  const enriched = await control.enrichSpec(
-    withToolboxFiles(spec, applied),
-    orgId,
-    {
-      toolboxHarnessId: toolboxHarness(applied),
-      owner,
-    },
-  );
-  // Dedupe materialized refs (a toolbox can be both auto-injected and
-  // picked) so the agent never extracts the same artifact twice.
-  const seen = new Set<string>();
-  const toolsets = [...toolboxRefs, ...(enriched.toolsets ?? [])].filter(
-    (t) => {
-      if (seen.has(t.ref)) return false;
-      seen.add(t.ref);
-      return true;
-    },
-  );
-  // The runtime surface: the prebuild's dev servers, then the toolboxes'
-  // tools, then the spec's own (see `spawnSurface` for who wins). A recipe
-  // that declares dev servers brings its own; otherwise they're the stored
-  // recipe's current ones, so a copied recipe or a pinned snapshot never
-  // misses dev servers edited since.
-  const declared = prebuild ? runtimeSurfaceOf(prebuild) : {};
-  const surface = spawnSurface({
-    prebuild:
-      declared.processes || declared.ports
-        ? declared
-        : "snapshot" in spec.source
-          ? runtime.prebuildSurface(spec.source.snapshot)
-          : undefined,
-    toolboxes: toolboxSurface(applied),
-    own: enriched,
-  });
-  if (surface.shadowed.length > 0) {
-    log.warn(
-      { id, shadowed: surface.shadowed },
-      "toolbox entries replace same-name prebuild processes/ports",
-    );
-  }
-  const withToolboxes: SandboxSpec = {
-    ...enriched,
-    toolsets,
-    processes: surface.processes,
-    ports: surface.ports,
-    ...(orgId
-      ? {
-          annotations: {
-            ...enriched.annotations,
-            [SANDBOX_ORG_ANNOTATION]: orgId,
-          },
-        }
-      : {}),
-  };
-  const created = await runtime.create(withToolboxes, { id, onProgress });
-  return warnings.length > 0 ? { ...created, warnings } : created;
-}
-
-/**
- * Shared by `POST /v1/sandboxes/:id/fork` and the `sandbox_lifecycle` MCP
- * tool's `fork` action: snapshot the source and boot a copy owned by the
- * CALLER. The runtime only does the mechanism; the copy's spec is derived here
- * through control — the source owner's git identity/credentials and owner
- * annotations are replaced by the caller's, and `metadata` is the body's with
- * `atelier.dev/owner-id` forced to the caller (an echoed value is overridden).
- * The copy keeps the source's org annotation (same org, same org secrets —
- * values resolved at the source's creation carry over). Authorizing access to
- * the source is the caller's job (the sandbox-access guard).
- *
- * Must reach `runtime.fork` without awaiting: the unpooled job relies on it
- * to register the copy's `creating` record before the route answers.
- */
-export function forkSandboxForUser(
-  container: ServerContainer,
-  user: { id: string; username: string; email: string },
-  sourceId: string,
-  body: ForkSandboxRequest,
-  id?: string,
-  onProgress?: (msg: string) => void,
-) {
-  const { runtime, control } = container;
-  const owner = {
-    id: user.id,
-    username: user.username,
-    email: user.email,
-    githubToken: control.userService.resolveGitHubToken(user.id),
-  };
-  const name = body.name?.trim() || undefined;
-  // The copy's labels until `derive` runs (or if it fails): the caller as
-  // owner, the source's org only, never the source owner's.
-  const org = runtime.getLabels(sourceId)?.annotations[SANDBOX_ORG_ANNOTATION];
-  return runtime.fork(
-    sourceId,
-    {
-      name,
-      initial: {
-        metadata: { [OWNER_ID_METADATA]: user.id },
-        annotations: {
-          ...(org ? { [SANDBOX_ORG_ANNOTATION]: org } : {}),
-          ...(name ? { [SANDBOX_NAME_ANNOTATION]: name } : {}),
-        },
-      },
-      derive: (sourceSpec) => ({
-        spec: control.reattributeSpec(sourceSpec, owner, body.metadata),
-      }),
-    },
-    { id, onProgress },
-  );
-}
-
-/**
- * A resume body with the owner's git credentials refreshed (the
- * credential-rotation primitive). The owner is re-resolved from the persisted
- * owner-id metadata, so it's stable regardless of who triggers the resume,
- * and fresh git files are merged over the persisted (possibly stale) ones.
- * A sandbox with no recorded owner gets no token (never someone else's).
- * Throws `NotFoundError` for an unknown sandbox.
- */
-export async function withFreshCredentials(
-  container: ServerContainer,
-  id: string,
-  body: ResumeRequest = {},
-): Promise<ResumeRequest> {
-  const { runtime, control } = container;
-  const state = await runtime.get(id);
-  const ownerId = state.metadata?.[OWNER_ID_METADATA];
-  const ownerUser = ownerId ? control.userService.getById(ownerId) : undefined;
-  const gitFiles = buildGitAttributionFiles({
-    identity: ownerUser
-      ? { name: ownerUser.username, email: ownerUser.email }
-      : undefined,
-    githubToken: ownerId
-      ? control.userService.resolveGitHubToken(ownerId)
-      : undefined,
-  });
-  return { ...body, files: [...(body.files ?? []), ...gitFiles] };
-}
-
 export function createV1Routes(container: ServerContainer) {
-  const { runtime, control, jobs, idle } = container;
+  const { runtime, control, jobs, idle, sandboxOps, toolboxOps } = container;
   const authPlugin = createAuthPlugin(control);
 
   // The durable, observable queue for long runtime ops (prebuild bake, toolset
@@ -567,32 +211,9 @@ export function createV1Routes(container: ServerContainer) {
       .post(
         "/prebuilds",
         ({ body, query, user, set }) => {
-          const spec = body as PrebuildSpec;
-          // Chained on another sandbox's snapshot? Same rule as a spawn.
-          requireSourceAccess(container, user.id, spec.source);
-          // Transient credential for cloning private repos in the build pod;
-          // scrubbed before the snapshot (never baked into the shared
-          // content-addressed artifact). Resolved now (in request scope), not
-          // inside the background job.
-          const githubToken = control.userService.resolveGitHubToken(user.id);
-          const job = jobs.dispatch(
-            {
-              kind: "prebuild",
-              target: prebuildJobTarget(spec),
-              metadata: spec.metadata,
-            },
-            (signal, log) =>
-              runtime.prebuild(spec, {
-                force: query.force === true,
-                githubToken,
-                createdBy: user.id,
-                signal,
-                onLog: log,
-                // The explicit create: a declared surface is saved on a
-                // cache hit (a spawn's re-resolve never writes it).
-                saveSurface: true,
-              }),
-          );
+          const job = sandboxOps.startPrebuild(user, body as PrebuildSpec, {
+            force: query.force === true,
+          });
           set.status = 202;
           return job;
         },
@@ -627,7 +248,7 @@ export function createV1Routes(container: ServerContainer) {
       .get("/toolsets", () =>
         runtime.listToolsets().map((entry) => ({
           ...entry,
-          harness: harnessForToolset(container, entry.name),
+          harness: toolboxOps.harnessForToolset(entry.name),
         })),
       )
       .post(
@@ -680,36 +301,9 @@ export function createV1Routes(container: ServerContainer) {
       .post(
         "/sandboxes",
         ({ body, user, set }) => {
-          const req = body as CreateSandboxRequest;
-          // Checked here for a synchronous 400 (the create job re-checks for
-          // MCP).
-          assertRepoRequest(req);
-          // Fail an org the caller can't use now (403), not in the job.
-          resolveOrgId(control, user.id, req.orgId);
-          // Same for a snapshot the caller may not boot from.
-          requireSourceAccess(
-            container,
-            user.id,
-            req.source,
-            req.prebuild?.source,
-          );
-          // Non-blocking spawn: pre-allocate the id so the `202` job carries
-          // `metadata.sandboxId` — the console navigates straight to the detail
-          // page and shows its loading state (the `creating` record lands a
-          // moment later, once source resolution completes; the detail query
-          // retries the brief 404) instead of holding the button locked for the
-          // whole multi-minute boot. Unpooled so a spawn never waits behind a
-          // build.
-          const id = safeNanoid();
-          const job = jobs.dispatch(
-            {
-              kind: "sandbox-create",
-              target: sandboxLabel(req),
-              metadata: { sandboxId: id },
-              unpooled: true,
-            },
-            (_signal, log) =>
-              createSandboxForUser(container, user, req, id, log),
+          const job = sandboxOps.startCreate(
+            user,
+            body as CreateSandboxRequest,
           );
           set.status = 202;
           return job;
@@ -741,7 +335,14 @@ export function createV1Routes(container: ServerContainer) {
           }),
         },
       )
-      .get("/sandboxes/:id", async ({ params }) => runtime.get(params.id))
+      // Without `generated`: the agent token, pod IP and host keys are
+      // server-side credentials, not something every org member reads.
+      .get("/sandboxes/:id", async ({ params }) => {
+        const { generated: _generated, ...state } = await runtime.get(
+          params.id,
+        );
+        return state;
+      })
       // Idle auto-pause view: the operator's rule applied to this sandbox,
       // its activity clocks and the agent's last hour of measurements.
       .get("/sandboxes/:id/activity", ({ params }) => idle.view(params.id))
@@ -753,7 +354,7 @@ export function createV1Routes(container: ServerContainer) {
         ({ params, body, set }) => {
           // Validate first, so a rejected keep-awake changes nothing.
           if (body.keepAwakeUntil !== undefined) {
-            idle.setKeepAwake(params.id, body.keepAwakeUntil);
+            sandboxOps.keepAwake(params.id, body.keepAwakeUntil);
           }
           if (body.name !== undefined) {
             const name = body.name?.trim() || undefined;
@@ -763,33 +364,21 @@ export function createV1Routes(container: ServerContainer) {
         },
         { body: UpdateSandboxRequestSchema },
       )
-      .post("/sandboxes/:id/pause", ({ params }) =>
-        jobs.track({ kind: "sandbox-pause", target: params.id }, () =>
-          runtime.pause(params.id),
-        ),
-      )
+      .post("/sandboxes/:id/pause", ({ params }) => sandboxOps.pause(params.id))
       .post(
         "/sandboxes/:id/resume",
-        async ({ params, body }) => {
-          // Resolved before the job opens: an unknown id is a plain 404.
-          const merged = await withFreshCredentials(container, params.id, body);
-          return jobs.track({ kind: "sandbox-resume", target: params.id }, () =>
-            runtime.resume(params.id, merged),
-          );
-        },
+        ({ params, body }) => sandboxOps.resume(params.id, body),
         { body: ResumeRequestSchema },
       )
       .delete("/sandboxes/:id", async ({ params, set }) => {
-        await jobs.track({ kind: "sandbox-destroy", target: params.id }, () =>
-          runtime.destroy(params.id),
-        );
+        await sandboxOps.destroy(params.id);
         set.status = 204;
       })
       // ── live mutations ────────────────────────────────────────────────
       .patch(
         "/sandboxes/:id/files",
         async ({ params, body, set }) => {
-          await runtime.patchFiles(params.id, body);
+          await sandboxOps.patchFiles(params.id, body);
           set.status = 204;
         },
         { body: PatchFilesRequestSchema },
@@ -801,7 +390,7 @@ export function createV1Routes(container: ServerContainer) {
             set.status = 501;
             return { error: `Unsupported process action "${params.action}"` };
           }
-          await runtime.processAction(params.id, params.name, params.action);
+          await sandboxOps.processAction(params.id, params.name, params.action);
           set.status = 204;
         },
         {
@@ -815,7 +404,7 @@ export function createV1Routes(container: ServerContainer) {
       .get(
         "/sandboxes/:id/processes/:name/logs",
         async ({ params, query }) =>
-          runtime.processLogs(
+          sandboxOps.processLogs(
             params.id,
             params.name,
             query.offset,
@@ -838,13 +427,11 @@ export function createV1Routes(container: ServerContainer) {
       )
       .post(
         "/sandboxes/:id/exec",
-        async ({ params, body }) => runtime.exec(params.id, body),
+        ({ params, body }) => sandboxOps.exec(params.id, body),
         { body: ExecRequestSchema },
       )
       .post("/sandboxes/:id/snapshot", ({ params }) =>
-        jobs.track({ kind: "sandbox-snapshot", target: params.id }, () =>
-          runtime.snapshot(params.id),
-        ),
+        sandboxOps.snapshot(params.id),
       )
       // Fork is a spawn: `202` with a `sandbox-create` job whose
       // `metadata.sandboxId` is the copy's pre-allocated id, exactly like
@@ -852,23 +439,7 @@ export function createV1Routes(container: ServerContainer) {
       .post(
         "/sandboxes/:id/fork",
         ({ params, body, user, set }) => {
-          // No id is handed out that never gets a record: an unknown (404) or
-          // non-snapshottable (409) source is a plain error, not a failed job.
-          runtime.assertSnapshottable(params.id);
-          // Unpooled dispatch runs the body synchronously up to its first
-          // await, and the runtime registers the copy's `creating` record
-          // before that: the id in this 202 resolves immediately.
-          const id = safeNanoid();
-          const job = jobs.dispatch(
-            {
-              kind: "sandbox-create",
-              target: body.name ?? `fork of ${params.id}`,
-              metadata: { sandboxId: id, forkOf: params.id },
-              unpooled: true,
-            },
-            (_signal, log) =>
-              forkSandboxForUser(container, user, params.id, body, id, log),
-          );
+          const job = sandboxOps.startFork(user, params.id, body);
           set.status = 202;
           return job;
         },

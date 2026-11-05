@@ -4,7 +4,7 @@ import { piHarness } from "./pi.ts";
 
 /** The harnesses a sandbox can run, by catalog id (the toolbox's `harness`
  * and the `atelier.dev/harness` annotation). */
-export const HARNESSES: Record<string, Harness> = {
+const HARNESSES: Record<string, Harness> = {
   opencode: opencodeHarness,
   pi: piHarness,
 };

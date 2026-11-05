@@ -7,29 +7,19 @@ import {
   ToolboxConfigInputSchema,
   ToolboxConfigPatchSchema,
   ToolboxVersionCaptureRequestSchema,
-  toolboxArtifactName,
 } from "@atelier/spec";
 import { Elysia, t } from "elysia";
-import { type ControlContainer, recipeFingerprint } from "../control/index.ts";
+import { recipeFingerprint } from "../control/index.ts";
 import {
   ConflictError,
   ForbiddenError,
   NotFoundError,
-  ValidationError,
 } from "../shared/errors.ts";
 import { isAuthBypassed } from "../shared/lib/config.ts";
-import { createChildLogger } from "../shared/lib/logger.ts";
 import { createAuthPlugin } from "./auth.plugin.ts";
-import { pruneToolboxVersions, type ServerContainer } from "./container.ts";
-import { requireSandboxAccess, requireSourceAccess } from "./sandbox-guard.ts";
-import { requireToolboxAccess, resolveToolboxOrg } from "./toolbox-access.ts";
+import type { ServerContainer } from "./container.ts";
+import { resolveToolboxOrg } from "./toolbox-access.ts";
 import { startToolboxRefresh } from "./toolbox-refresh.ts";
-
-const log = createChildLogger("control-routes");
-
-/** Soft cap on enabled toolboxes per org — a boot-latency tradeoff, not a
- * hard limit (R10). */
-const TOOLBOX_SOFT_CAP = 5;
 
 const OrgRoleSchema = t.Union([t.Literal("owner"), t.Literal("member")]);
 
@@ -48,27 +38,8 @@ const TransferSelectionSchema = t.Object({
   toolboxes: TransferIdsSchema,
 });
 
-/**
- * AuthZ for an ownership transfer: an owner of the source org (their personal
- * org, typically) and a member of the target org: sharing a toolbox with the
- * team is open to every member. Moving secrets writes them into the target,
- * which takes an owner there. A non-member gets 403 for an org that doesn't
- * exist, too.
- */
-function authorizeTransfer(
-  control: ControlContainer,
-  userId: string,
-  fromOrgId: string,
-  toOrgId: string,
-  movesSecrets: boolean,
-) {
-  control.orgMemberService.requireOwner(fromOrgId, userId);
-  if (movesSecrets) control.orgMemberService.requireOwner(toOrgId, userId);
-  else control.orgMemberService.requireMembership(toOrgId, userId);
-}
-
 export function createControlRoutes(container: ServerContainer) {
-  const { control, jobs } = container;
+  const { control } = container;
   const authPlugin = createAuthPlugin(control);
 
   const apiKeyRoutes = new Elysia({ prefix: "/api-keys" })
@@ -125,25 +96,15 @@ export function createControlRoutes(container: ServerContainer) {
 
   // Move an org's secrets and toolboxes into another org (the caller's
   // personal org is the usual source).
-  const transferOptions = {
-    // Same invariant as the org publish-before-pin guard on
-    // `PUT /toolboxes/:id/active-version`: a private capture pinned org-wide
-    // would replay one user's config (maybe secrets) into every org spawn.
-    pinnedToolboxBlocker: (ref: string) =>
-      container.runtime.getToolsetEntry(ref)?.private === true
-        ? "its pinned version is a private capture; publish it or unpin first"
-        : undefined,
-  };
   const transferRoutes = new Elysia({ prefix: "/transfers" })
     .use(authPlugin)
     .get(
       "/preview",
       ({ user, query }) => {
-        authorizeTransfer(control, user.id, query.from, query.to, false);
-        return control.ownershipTransferService.preview(
+        return container.toolboxOps.previewTransfer(
+          user.id,
           query.from,
           query.to,
-          transferOptions,
         );
       },
       {
@@ -156,18 +117,11 @@ export function createControlRoutes(container: ServerContainer) {
     .post(
       "/",
       ({ user, body }) => {
-        authorizeTransfer(
-          control,
+        return container.toolboxOps.transfer(
           user.id,
           body.from,
           body.to,
-          body.selection.secrets.length > 0,
-        );
-        return control.ownershipTransferService.execute(
-          body.from,
-          body.to,
           body.selection,
-          transferOptions,
         );
       },
       {
@@ -340,6 +294,7 @@ export function createControlRoutes(container: ServerContainer) {
       set.status = 204;
     });
 
+  const { toolboxOps } = container;
   const toolboxRoutes = new Elysia({ prefix: "/toolboxes" })
     .use(authPlugin)
     .get(
@@ -352,21 +307,7 @@ export function createControlRoutes(container: ServerContainer) {
     )
     .post(
       "/",
-      ({ user, query, body }) => {
-        const orgId = resolveToolboxOrg(control, user.id, query.owner);
-        // The source is built over at every spawn: check it now, as the writer.
-        requireSourceAccess(container, user.id, body.source);
-        const created = control.toolboxService.create(orgId, body);
-        const autoInjectCount =
-          control.toolboxService.listAutoInject(orgId).length;
-        if (autoInjectCount > TOOLBOX_SOFT_CAP) {
-          log.warn(
-            { orgId, autoInjectCount },
-            `org exceeds the soft cap of ${TOOLBOX_SOFT_CAP} auto-inject toolboxes — each adds boot latency to every spawn`,
-          );
-        }
-        return created;
-      },
+      ({ user, query, body }) => toolboxOps.create(user.id, query.owner, body),
       {
         query: t.Object({ owner: t.Optional(t.String()) }),
         body: ToolboxConfigInputSchema,
@@ -374,77 +315,18 @@ export function createControlRoutes(container: ServerContainer) {
     )
     .patch(
       "/:id",
-      ({ user, params, body }) => {
-        const existing = control.toolboxService.get(params.id);
-        requireToolboxAccess(control, existing, user.id);
-        requireSourceAccess(container, user.id, body.source);
-        return control.toolboxService.update(params.id, body);
-      },
+      ({ user, params, body }) => toolboxOps.update(user.id, params.id, body),
       { body: ToolboxConfigPatchSchema },
     )
     .delete("/:id", ({ user, params, set }) => {
-      const existing = control.toolboxService.get(params.id);
-      requireToolboxAccess(control, existing, user.id);
-      control.toolboxService.delete(params.id);
+      toolboxOps.delete(user.id, params.id);
       set.status = 204;
     })
+    // Capture is a long op: a `202` job whose result is the saved version.
     .post(
       "/:id/versions/capture",
       ({ user, params, body, set }) => {
-        const tb = control.toolboxService.get(params.id);
-        requireToolboxAccess(control, tb, user.id);
-        // The sandbox arrives in the body, not a guarded `:id` path.
-        requireSandboxAccess(container, user.id, body.sandboxId);
-        if (tb.paths.length === 0) {
-          throw new ValidationError("toolbox has no paths to capture");
-        }
-        // Long op (agent tar + secret scan + push): dispatch a durable job and
-        // answer `202`. The whole flow — capture, drift probe, version-row
-        // create, retention prune — runs in the job body so the version is the
-        // job's result once it settles.
-        const job = jobs.dispatch(
-          {
-            kind: "toolset-capture",
-            target: tb.slug,
-            metadata: { toolboxId: tb.id, sandboxId: body.sandboxId },
-          },
-          async (signal, log) => {
-            // Server-authoritative capture inputs (docs/toolbox-versions.md §2
-            // invariant): a "version" must capture the toolbox's OWN paths[]
-            // to stay substitutable for the recipe-built artifact, never
-            // whatever the caller passes.
-            const { ref } = await container.runtime.captureToolset(
-              body.sandboxId,
-              {
-                name: toolboxArtifactName(tb),
-                paths: tb.paths,
-                exclude: [],
-                overrides: [],
-              },
-              signal,
-              log,
-            );
-            // Best-effort drift signal (docs/toolbox-versions.md §5): the base
-            // image the sandbox was actually running at capture time.
-            const sourceImage = await container.runtime
-              .getSandboxImage(body.sandboxId)
-              .catch(() => undefined);
-            // Save, don't pin — pinning is a separate, explicit call (§7).
-            const version = control.toolboxVersionService.create(tb.id, {
-              ref,
-              description: body.description,
-              provenance: {
-                kind: "captured",
-                capturedFrom: body.sandboxId,
-                capturedBy: user.id,
-                ...(sourceImage ? { sourceImage } : {}),
-              },
-              recipeFingerprint: recipeFingerprint(tb),
-            });
-            pruneToolboxVersions(container, tb.id);
-            return version;
-          },
-        );
+        const job = toolboxOps.startCapture(user.id, params.id, body);
         set.status = 202;
         return job;
       },
@@ -455,8 +337,7 @@ export function createControlRoutes(container: ServerContainer) {
     // as a new version and pin it. A `202` job, or the one already running
     // for this toolbox.
     .post("/:id/refresh", ({ user, params, set }) => {
-      const tb = control.toolboxService.get(params.id);
-      requireToolboxAccess(control, tb, user.id);
+      const tb = toolboxOps.authorize(user.id, params.id);
       const { job } = startToolboxRefresh(container, tb.id, {
         trigger: "manual",
         userId: user.id,
@@ -465,8 +346,7 @@ export function createControlRoutes(container: ServerContainer) {
       return job;
     })
     .get("/:id/versions", async ({ user, params }) => {
-      const tb = control.toolboxService.get(params.id);
-      requireToolboxAccess(control, tb, user.id);
+      const tb = toolboxOps.authorize(user.id, params.id);
       const currentSourceImage = await container.runtime
         .resolveSourceImage(
           tb.source ?? { image: container.runtime.defaultImage() },
@@ -493,29 +373,9 @@ export function createControlRoutes(container: ServerContainer) {
     })
     .put(
       "/:id/active-version",
-      ({ user, params, body }) => {
-        const tb = control.toolboxService.get(params.id);
-        requireToolboxAccess(control, tb, user.id);
-        if (body.versionId === null) {
-          control.toolboxService.setActiveVersionId(tb.id, null);
-          return { activeVersionId: null };
-        }
-        const version = control.toolboxVersionService.get(body.versionId);
-        if (version.toolboxId !== tb.id) {
-          throw new ValidationError("version does not belong to this toolbox");
-        }
-        // Org publish-before-pin guard (docs/toolbox-versions.md §5): a
-        // private capture pinned org-wide would replay one user's config
-        // (and possibly secrets) into every future spawn for the whole org.
-        const entry = container.runtime.getToolsetEntry(version.ref);
-        if (entry?.private === true) {
-          throw new ValidationError(
-            "publish this toolset before pinning a toolbox org-wide",
-          );
-        }
-        control.toolboxService.setActiveVersionId(tb.id, version.id);
-        return { activeVersionId: version.id };
-      },
+      ({ user, params, body }) => ({
+        activeVersionId: toolboxOps.pin(user.id, params.id, body.versionId),
+      }),
       {
         body: t.Object({
           versionId: t.Union([t.String(), t.Null()]),
@@ -525,31 +385,11 @@ export function createControlRoutes(container: ServerContainer) {
     // Mark a version's artifact as shareable (flip `private` off). Same
     // bytes, same digest: publishing never changes what a pin replays. Scoped
     // to the toolbox's owner, unlike the raw `POST /v1/toolsets/publish`.
-    .post("/:id/versions/:versionId/publish", ({ user, params }) => {
-      const tb = control.toolboxService.get(params.id);
-      requireToolboxAccess(control, tb, user.id);
-      const version = control.toolboxVersionService.get(params.versionId);
-      if (version.toolboxId !== tb.id) {
-        throw new ValidationError("version does not belong to this toolbox");
-      }
-      const entry = container.runtime.publishToolset(version.ref);
-      log.info(
-        { toolboxId: tb.id, versionId: version.id, ref: version.ref },
-        "toolbox version published",
-      );
-      return { versionId: version.id, private: entry.private === true };
-    })
+    .post("/:id/versions/:versionId/publish", ({ user, params }) =>
+      toolboxOps.publish(user.id, params.id, params.versionId),
+    )
     .delete("/:id/versions/:versionId", ({ user, params, set }) => {
-      const tb = control.toolboxService.get(params.id);
-      requireToolboxAccess(control, tb, user.id);
-      if (
-        control.toolboxService.getActiveVersionId(tb.id) === params.versionId
-      ) {
-        throw new ValidationError(
-          "cannot delete the active version; unpin first",
-        );
-      }
-      control.toolboxVersionService.delete(tb.id, params.versionId);
+      toolboxOps.deleteVersion(user.id, params.id, params.versionId);
       set.status = 204;
     });
 

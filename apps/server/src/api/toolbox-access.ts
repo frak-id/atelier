@@ -1,6 +1,6 @@
 /**
  * Org scoping + authorization for toolboxes (`/api/toolboxes`, the
- * `list_toolboxes`/`manage_toolbox` MCP tools). Toolboxes belong to an org
+ * `manage_toolbox` admin MCP tool and `whoami`). Toolboxes belong to an org
  * ("personal" means the caller's personal org); any member of the org may
  * use, create and edit them.
  */

@@ -7,20 +7,39 @@
  * indentation is pure token cost.
  */
 import { SandboxError, ValidationError } from "../../shared/errors.ts";
+import { createChildLogger } from "../../shared/lib/logger.ts";
 
+const log = createChildLogger("mcp");
+
+/**
+ * A tool result: the JSON as text, and for an object also as
+ * `structuredContent` (what `outputSchema` validates and typed clients read).
+ * Both carry the same data. Lists are wrapped in an object by the tool, since
+ * structured content must be one.
+ */
 export function text(value: unknown, isError = false) {
+  const structured =
+    !isError &&
+    typeof value === "object" &&
+    value !== null &&
+    !Array.isArray(value);
   return {
     content: [{ type: "text" as const, text: JSON.stringify(value) }],
+    ...(structured && {
+      structuredContent: value as Record<string, unknown>,
+    }),
     ...(isError && { isError: true }),
   };
 }
 
 /** Turn a thrown `SandboxError` (or any error) into a friendly tool result
- * instead of a 500-shaped MCP protocol error. */
-function errorResult(error: unknown) {
+ * instead of a 500-shaped MCP protocol error. Anything that is not a
+ * `SandboxError` is a bug or an outage: it is logged with the tool's name. */
+function errorResult(tool: string, error: unknown) {
   if (error instanceof SandboxError) {
     return text({ error: error.code, message: error.message }, true);
   }
+  log.error({ tool, error }, "MCP tool failed");
   const message = error instanceof Error ? error.message : String(error);
   return text({ error: "INTERNAL_ERROR", message }, true);
 }
@@ -28,13 +47,14 @@ function errorResult(error: unknown) {
 /** Wrap a tool handler so any thrown error becomes a friendly `isError`
  * result instead of an MCP protocol-level error. */
 export function safeTool<Args extends unknown[], R>(
+  tool: string,
   handler: (...args: Args) => Promise<R>,
 ) {
   return async (...args: Args) => {
     try {
       return await handler(...args);
     } catch (error) {
-      return errorResult(error);
+      return errorResult(tool, error);
     }
   };
 }
@@ -68,6 +88,25 @@ export function keepTail(
   const dropped = value.length - max;
   return {
     text: `[… ${dropped} earlier chars truncated]\n${value.slice(-max)}`,
+    truncated: true,
+  };
+}
+
+/**
+ * Bound `value` to `max` characters, keeping its start and its end (a
+ * command's first error and its final lines both matter) with a marker for
+ * the omitted middle.
+ */
+export function keepHeadTail(
+  value: string,
+  max: number,
+): { text: string; truncated: boolean } {
+  if (value.length <= max) return { text: value, truncated: false };
+  const head = Math.floor(max / 4);
+  const tail = max - head;
+  const omitted = value.length - max;
+  return {
+    text: `${value.slice(0, head)}\n[… ${omitted} chars omitted …]\n${value.slice(-tail)}`,
     truncated: true,
   };
 }

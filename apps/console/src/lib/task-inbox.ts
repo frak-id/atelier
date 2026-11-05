@@ -4,8 +4,6 @@
  * and which polled changes deserve a browser notification.
  */
 
-export type InboxTaskStatus = "running" | "idle" | "failed" | "cancelled";
-
 /** The fields of a `GET /sessions/tasks` row the inbox logic reads. */
 export interface InboxTaskLike {
   taskId: string;
@@ -28,7 +26,7 @@ export interface TaskGroups<T> {
 
 /** A task is unseen until the user opened or acted on it at (or after) its
  * latest update. */
-export function isSeen(task: InboxTaskLike, seen: SeenMap): boolean {
+function isSeen(task: InboxTaskLike, seen: SeenMap): boolean {
   const at = seen[task.taskId];
   return at !== undefined && Date.parse(at) >= Date.parse(task.updatedAt);
 }

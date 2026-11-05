@@ -96,8 +96,8 @@ export interface SnapshotStore {
 
 /** Provenance of an `ImageRecord` — see `db/schema.ts`'s `images` table doc
  * for what each means. */
-export type ImageProvenance = "seed" | "external";
-export type ImageStatus = "building" | "ready" | "error";
+type ImageProvenance = "seed" | "external";
+type ImageStatus = "building" | "ready" | "error";
 
 /** A registered/built base image — the read+write model behind `GET/POST
  * /v1/images`. `name` is the sole identity (the destination repo name). */

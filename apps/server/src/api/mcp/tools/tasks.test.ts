@@ -144,21 +144,23 @@ describe("agent task tools", () => {
     });
 
     const listed = await call("get_task", { sandboxId: SANDBOX });
-    expect(listed.data).toHaveLength(1);
-    expect(listed.data[0]).toMatchObject({
+    expect(listed.data.tasks).toHaveLength(1);
+    expect(listed.data.tasks[0]).toMatchObject({
       taskId,
       turnCount: 2,
       status: "idle",
     });
-    expect(listed.data[0]).not.toHaveProperty("sessionId");
-    expect((await call("get_task", { status: "running" })).data).toEqual([]);
+    expect(listed.data.tasks[0]).not.toHaveProperty("sessionId");
+    expect((await call("get_task", { status: "running" })).data).toEqual({
+      tasks: [],
+    });
 
     expect(await call("manage_task", { taskId, action: "close" })).toEqual({
       isError: false,
       data: { taskId, status: "closed" },
     });
     expect(fake.state.closed).toBe(1);
-    expect((await call("get_task", {})).data).toEqual([]);
+    expect((await call("get_task", {})).data).toEqual({ tasks: [] });
   });
 
   test("a running turn reports progress, not a reply", async () => {
@@ -275,7 +277,7 @@ describe("agent task tools", () => {
       (await mallory("manage_task", { taskId: data.taskId, action: "close" }))
         .isError,
     ).toBe(true);
-    expect((await mallory("get_task", {})).data).toEqual([]);
+    expect((await mallory("get_task", {})).data).toEqual({ tasks: [] });
     expect((await alice("get_task", {})).data).toHaveLength(1);
   });
 

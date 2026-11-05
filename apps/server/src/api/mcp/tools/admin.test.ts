@@ -1,5 +1,5 @@
 /**
- * The config MCP tools (server config, prebuilds, toolboxes) through a real
+ * The admin MCP tools (prebuilds, toolboxes, images, server config) through a real
  * MCP client, against a real control DB (so org membership, roles and the
  * toolbox services are the real thing) and a fake runtime.
  */
@@ -22,8 +22,10 @@ import { connectMcp } from "./mcp.test-support.ts";
 
 let dataDir: string;
 let control: ControlContainer;
-let registerConfigTools: typeof import("./config.ts").registerConfigTools;
+let registerAdminTools: typeof import("./admin.ts").registerAdminTools;
+let SandboxOps: typeof import("../../app/sandbox-ops.ts").SandboxOps;
 let JobService: typeof import("../../../runtime/jobs.service.ts").JobService;
+let ToolboxOps: typeof import("../../app/toolbox-ops.ts").ToolboxOps;
 
 beforeAll(async () => {
   dataDir = await mkdtemp(join(tmpdir(), "atelier-mcp-config-"));
@@ -33,8 +35,10 @@ beforeAll(async () => {
   await initDatabase();
   const { createControlContainer } = await import("../../../control/index.ts");
   control = createControlContainer();
-  ({ registerConfigTools } = await import("./config.ts"));
+  ({ registerAdminTools } = await import("./admin.ts"));
+  ({ SandboxOps } = await import("../../app/sandbox-ops.ts"));
   ({ JobService } = await import("../../../runtime/jobs.service.ts"));
+  ({ ToolboxOps } = await import("../../app/toolbox-ops.ts"));
 });
 
 afterAll(async () => {
@@ -96,7 +100,11 @@ const PREBUILDS: PrebuildRecord[] = [
  * rule whatever the server mode (no reliance on the local-mode auth bypass). */
 function fakeRuntime(ownerId: string) {
   const toolsets = new Map<string, { private: boolean }>();
-  const calls = { deleted: [] as string[], published: [] as string[] };
+  const calls = {
+    deleted: [] as string[],
+    published: [] as string[],
+    built: [] as string[],
+  };
   const runtime = {
     listPrebuilds: () => PREBUILDS,
     prebuild: async () => ({ ref: "snap-new", hash: "c".repeat(64) }),
@@ -133,7 +141,31 @@ function fakeRuntime(ownerId: string) {
       return entry;
     },
   };
-  return { runtime, calls };
+  const images = {
+    listImages: () => [
+      {
+        name: "dev-base",
+        status: "ready",
+        provenance: "seed",
+        ref: "registry.test/dev-base@sha256:abc",
+        buildLog: "secret-looking log noise",
+        createdAt: "2026-01-01T00:00:00Z",
+        updatedAt: "2026-01-02T00:00:00Z",
+      },
+    ],
+    listTemplates: () => [
+      { id: "dev-base", dependsOn: [], name: "Base" },
+      { id: "dev-rust", dependsOn: ["dev-base"], name: "Rust" },
+    ],
+    getImage: (name: string) =>
+      name === "dev-base" ? { name, status: "ready" } : undefined,
+    getBuildLog: () => "step 1\nstep 2",
+    buildSeed: async (seed: string) => {
+      calls.built.push(seed);
+      return { name: seed, status: "building" };
+    },
+  };
+  return { runtime, calls, images };
 }
 
 let seq = 0;
@@ -168,13 +200,27 @@ function newOrg(name: string) {
 async function connectAs(user: AuthUser) {
   const fake = fakeRuntime(user.id);
   const jobs = new JobService();
+  const toolboxOps = new ToolboxOps({
+    runtime: fake.runtime,
+    control,
+    jobs,
+  } as never);
   const container = {
     runtime: fake.runtime,
     control,
     jobs,
+    toolboxOps,
+    sandboxOps: new SandboxOps({
+      runtime: fake.runtime,
+      control,
+      jobs,
+      toolboxes: toolboxOps,
+      idle: { setKeepAwake: () => undefined },
+    } as never),
+    images: fake.images,
   } as unknown as ServerContainer;
   const mcp = await connectMcp((server) =>
-    registerConfigTools(server, container, user),
+    registerAdminTools(server, container, user),
   );
   cleanups.push(() => mcp.close());
   return { ...mcp, ...fake, jobs };
@@ -195,13 +241,21 @@ function addToolbox(
   });
 }
 
+type Call = Awaited<ReturnType<typeof connectAs>>["call"];
+
+/** `manage_toolbox` action=list, with the `toolboxes` array as `data`. */
+async function listToolboxes(call: Call, args: Record<string, unknown> = {}) {
+  const res = await call("manage_toolbox", { action: "list", ...args });
+  return { ...res, data: res.data.toolboxes ?? res.data };
+}
+
 // ── manage_prebuilds ────────────────────────────────────────────────────────
 
 describe("manage_prebuilds list", () => {
   test("returns ref, repos, metadata, dev servers and creation date, newest first", async () => {
     const { call } = await connectAs(newUser());
     const res = await call("manage_prebuilds", { action: "list" });
-    expect(res.data).toEqual([
+    expect(res.data.prebuilds).toEqual([
       {
         ref: "snap-web",
         createdAt: "2026-02-01T00:00:00Z",
@@ -233,7 +287,7 @@ describe("manage_prebuilds list", () => {
       "ref",
       "repos",
     ];
-    for (const item of res.data) {
+    for (const item of res.data.prebuilds) {
       for (const key of Object.keys(item)) expect(allowed).toContain(key);
     }
     for (const hidden of [
@@ -255,18 +309,36 @@ describe("manage_prebuilds list", () => {
       action: "list",
       repo: "acme/api",
     });
-    expect(res.data.map((p: { ref: string }) => p.ref)).toEqual(["snap-api"]);
+    expect(res.data.prebuilds.map((p: { ref: string }) => p.ref)).toEqual([
+      "snap-api",
+    ]);
   });
 });
 
-describe("manage_prebuilds create/delete", () => {
-  test("create returns the ref without the content hash", async () => {
-    const { call } = await connectAs(newUser());
+describe("manage_prebuilds create/refresh/delete", () => {
+  test("create starts a background job and returns its id", async () => {
+    const { call, jobs } = await connectAs(newUser());
     const res = await call("manage_prebuilds", {
       action: "create",
       spec: { source: { image: "dev-base" } },
     });
-    expect(res.data).toEqual({ ref: "snap-new" });
+    expect(res.data).toMatchObject({ status: "started" });
+    expect(jobs.get(res.data.jobId).kind).toBe("prebuild");
+  });
+
+  test("refresh rebuilds a listed prebuild's recipe, ignoring the cache", async () => {
+    const { call, jobs } = await connectAs(newUser());
+    const res = await call("manage_prebuilds", {
+      action: "refresh",
+      ref: "snap-web",
+    });
+    expect(res.data).toMatchObject({ ref: "snap-web", status: "started" });
+    expect(jobs.get(res.data.jobId).kind).toBe("prebuild");
+    const missing = await call("manage_prebuilds", {
+      action: "refresh",
+      ref: "nope",
+    });
+    expect(missing.data.error).toBe("NOT_FOUND");
   });
 
   test("delete confirms the ref", async () => {
@@ -277,6 +349,39 @@ describe("manage_prebuilds create/delete", () => {
     });
     expect(res.data).toEqual({ ref: "snap-api", status: "deleted" });
     expect(calls.deleted).toEqual(["snap-api"]);
+  });
+});
+
+describe("manage_images", () => {
+  test("list shows images and the seeds a rebuild takes, without logs", async () => {
+    const { call } = await connectAs(newUser());
+    const res = await call("manage_images", { action: "list" });
+    expect(res.data.seeds.map((s: { id: string }) => s.id)).toEqual([
+      "dev-base",
+      "dev-rust",
+    ]);
+    expect(res.data.images[0].name).toBe("dev-base");
+    expect(res.raw).not.toContain("log noise");
+  });
+
+  test("rebuild starts a seed build; logs reads the tail", async () => {
+    const { call, calls } = await connectAs(newUser());
+    const built = await call("manage_images", {
+      action: "rebuild",
+      name: "dev-rust",
+    });
+    expect(built.data).toEqual({ name: "dev-rust", status: "building" });
+    expect(calls.built).toEqual(["dev-rust"]);
+    const logs = await call("manage_images", {
+      action: "logs",
+      name: "dev-base",
+    });
+    expect(logs.data.log).toBe("step 1\nstep 2");
+    const missing = await call("manage_images", {
+      action: "logs",
+      name: "nope",
+    });
+    expect(missing.data.error).toBe("NOT_FOUND");
   });
 });
 
@@ -296,11 +401,11 @@ function world() {
   return { user, org, otherOrg, mine, optional, baseline, extras, secret };
 }
 
-describe("list_toolboxes", () => {
+describe("manage_toolbox list", () => {
   test("lists every member org's toolboxes (personal included), auto-included first", async () => {
     const w = world();
     const { call } = await connectAs(w.user);
-    const res = await call("list_toolboxes");
+    const res = await listToolboxes(call);
     const rows = res.data.map((t: { slug: string; appliesTo: string }) => [
       t.slug,
       t.appliesTo,
@@ -326,7 +431,7 @@ describe("list_toolboxes", () => {
   test("each item says what it is, where it applies and how to select it", async () => {
     const w = world();
     const { call } = await connectAs(w.user);
-    const items = (await call("list_toolboxes")).data;
+    const items = (await listToolboxes(call)).data;
     const baseline = items.find((t: { slug: string }) => t.slug === "baseline");
     const mine = items.find((t: { slug: string }) => t.slug === "mine");
     expect(baseline).toEqual({
@@ -356,15 +461,15 @@ describe("list_toolboxes", () => {
     const slugs = (res: { data: { slug: string }[] }) =>
       res.data.map((t) => t.slug).sort();
 
-    expect(slugs(await call("list_toolboxes", { owner: "me" }))).toEqual([
+    expect(slugs(await listToolboxes(call, { owner: "me" }))).toEqual([
       "mine",
       "optional",
     ]);
     expect(
-      slugs(await call("list_toolboxes", { owner: `org:${w.org.id}` })),
+      slugs(await listToolboxes(call, { owner: `org:${w.org.id}` })),
     ).toEqual(["baseline", "extras"]);
 
-    const foreign = await call("list_toolboxes", {
+    const foreign = await listToolboxes(call, {
       owner: `org:${w.otherOrg.id}`,
     });
     expect(foreign.isError).toBe(true);
@@ -385,7 +490,7 @@ describe("list_toolboxes", () => {
       recipeFingerprint: "f".repeat(64),
     });
     const { call } = await connectAs(w.user);
-    const simple = (await call("list_toolboxes", { owner: "me" })).data;
+    const simple = (await listToolboxes(call, { owner: "me" })).data;
     expect(simple[0]).not.toHaveProperty("build");
     expect(simple[0]).not.toHaveProperty("versions");
     expect(
@@ -394,7 +499,7 @@ describe("list_toolboxes", () => {
       versionCount: 1,
     });
 
-    const res = await call("list_toolboxes", {
+    const res = await listToolboxes(call, {
       owner: "me",
       detail: "advanced",
     });
@@ -421,9 +526,8 @@ describe("list_toolboxes", () => {
     const admin = newUser();
     control.orgMemberService.addMember(w.org.id, admin.id, "owner");
     const { call } = await connectAs(admin);
-    const baseline = (
-      await call("list_toolboxes", { owner: `org:${w.org.id}` })
-    ).data[0];
+    const baseline = (await listToolboxes(call, { owner: `org:${w.org.id}` }))
+      .data[0];
     expect(baseline).toMatchObject({
       slug: "baseline",
       canManage: true,
@@ -616,7 +720,7 @@ describe("manage_toolbox", () => {
 });
 
 describe("manage_toolbox refresh", () => {
-  test("set up through update, run, then read back in list_toolboxes", async () => {
+  test("set up through update, run, then read back in the toolbox list", async () => {
     const owner = newUser();
     const org = newOrg("Refreshing");
     control.orgMemberService.addMember(org.id, owner.id, "owner");
@@ -652,7 +756,7 @@ describe("manage_toolbox refresh", () => {
     }
 
     const listed = (
-      await call("list_toolboxes", { owner: `org:${org.id}` })
+      await listToolboxes(call, { owner: `org:${org.id}` })
     ).data.find((t: { slug: string }) => t.slug === "pi-web");
     expect(listed.refresh).toMatchObject({
       running: false,
@@ -701,15 +805,80 @@ describe("manage_toolbox refresh", () => {
 
 // ── tool surface ────────────────────────────────────────────────────────────
 
-describe("config tool surface", () => {
-  test("server-wide config is not exposed over MCP", async () => {
+describe("server_config", () => {
+  test("list, get and set a known key; an unknown key is refused", async () => {
+    const { call } = await connectAs(newUser());
+    const list = await call("server_config", { action: "list" });
+    expect(
+      list.data.entries.some(
+        (e: { key: string }) => e.key === "jobs.concurrency",
+      ),
+    ).toBe(true);
+    const set = await call("server_config", {
+      action: "set",
+      key: "jobs.concurrency",
+      value: 3,
+    });
+    expect(set.data).toEqual({ key: "jobs.concurrency", value: 3 });
+    const got = await call("server_config", {
+      action: "get",
+      key: "jobs.concurrency",
+    });
+    expect(got.data.value).toBe(3);
+    const bad = await call("server_config", {
+      action: "set",
+      key: "no.such.key",
+      value: 1,
+    });
+    expect(bad.data.error).toBe("VALIDATION_ERROR");
+  });
+});
+
+describe("manage_toolbox transfer", () => {
+  test("dryRun previews; moving needs ownership of the source org", async () => {
+    const user = newUser();
+    const other = newUser();
+    const personal = personalOrgOf(user);
+    const org = newOrg("Team");
+    control.orgMemberService.addMember(org.id, user.id, "member");
+    const tb = addToolbox(personal, "movable", false);
+    const { call } = await connectAs(user);
+
+    const preview = await call("manage_toolbox", {
+      action: "transfer",
+      from: personal,
+      to: org.id,
+      dryRun: true,
+    });
+    expect(preview.isError).toBe(false);
+
+    const moved = await call("manage_toolbox", {
+      action: "transfer",
+      from: personal,
+      to: org.id,
+      toolboxIds: [tb.id],
+    });
+    expect(moved.isError).toBe(false);
+    expect(control.toolboxService.get(tb.id).orgId).toBe(org.id);
+
+    const foreign = await call("manage_toolbox", {
+      action: "transfer",
+      from: personalOrgOf(other),
+      to: org.id,
+      dryRun: true,
+    });
+    expect(foreign.data.error).toBe("FORBIDDEN");
+  });
+});
+
+describe("admin tool surface", () => {
+  test("is exactly these 4 tools, in this order", async () => {
     const { toolNames } = await connectAs(newUser());
-    // Operator business (console / CLI); no agent flow needs it, and it was
-    // read-only anyway. Guard against it creeping back in.
     expect(await toolNames()).toEqual([
-      "list_toolboxes",
       "manage_prebuilds",
       "manage_toolbox",
+      "manage_images",
+      "server_config",
     ]);
   });
 });

@@ -23,6 +23,7 @@ let dataDir: string;
 let control: ControlContainer;
 let JobService: typeof JobServiceType;
 let mod: typeof RefreshModule;
+let ToolboxOps: typeof import("./app/toolbox-ops.ts").ToolboxOps;
 
 beforeAll(async () => {
   dataDir = await mkdtemp(join(tmpdir(), "atelier-toolbox-refresh-test-"));
@@ -34,6 +35,7 @@ beforeAll(async () => {
   control = createControlContainer();
   ({ JobService } = await import("../runtime/jobs.service.ts"));
   mod = await import("./toolbox-refresh.ts");
+  ({ ToolboxOps } = await import("./app/toolbox-ops.ts"));
 });
 
 afterAll(async () => {
@@ -69,10 +71,12 @@ function makeContainer(
     defaultImage: () => "dev-base",
     deleteToolset: () => {},
   };
+  const jobs = new JobService();
   const container = {
     control,
     runtime,
-    jobs: new JobService(),
+    jobs,
+    toolboxOps: new ToolboxOps({ control, runtime, jobs } as never),
   } as unknown as ServerContainer;
   return { container, calls };
 }

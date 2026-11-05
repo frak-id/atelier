@@ -18,7 +18,7 @@ const OPENCODE_CONFIG_PATH = `${HOME}/.config/opencode/opencode.json`;
  * can leave the file untouched and warn, rather than clobbering a corrupt
  * config with a fresh document.
  */
-export function opencodeMergeProxyProviders(
+function opencodeMergeProxyProviders(
   providers: Record<string, unknown>,
   existing: string | undefined,
 ): string {
@@ -30,7 +30,7 @@ export function opencodeMergeProxyProviders(
   return JSON.stringify(parsed);
 }
 
-export interface ComposeOpencodeOptions {
+interface ComposeOpencodeOptions {
   /** MCP server names to record in the `atelier.dev/mcp` annotation. */
   mcp?: string[];
   /** Provider config merged into `opencode.json`'s `{ provider: {...} }`. */
@@ -54,9 +54,7 @@ const OPENCODE_SERVE_PORT = 4096;
  * primary — the sandbox's health gate) plus its config file and display
  * annotations.
  */
-export function composeOpencode(
-  opts: ComposeOpencodeOptions = {},
-): SpecFragment {
+function composeOpencode(opts: ComposeOpencodeOptions = {}): SpecFragment {
   // Sandbox agents auto-approve: the micro-VM is the boundary, so opencode
   // never asks (the server answers any ACP permission request with an allow
   // anyway). An explicit `permission` in `opts.config` still wins.

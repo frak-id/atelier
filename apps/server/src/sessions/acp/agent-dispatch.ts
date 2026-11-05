@@ -4,7 +4,7 @@
  * through the runtime's unified attach bridge (agent attach.rs on :9997) —
  * not by spawning a per-session bridge subprocess. The `acp` process is
  * declared in the spec (`stdio: "bridge"`, `primary: true`, composed
- * client-side by `@atelier/compose`); the runtime boots it once and gates
+ * by `apps/server/src/harnesses`); the runtime boots it once and gates
  * health on it, so by the time a session opens it is already running.
  *
  * The attach bridge is single-writer, so ALL consumers of one sandbox share

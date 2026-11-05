@@ -43,6 +43,8 @@ beforeAll(async () => {
   );
   const { SandboxError } = await import("../shared/errors.ts");
   const { createV1Routes } = await import("./v1.routes.ts");
+  const { SandboxOps } = await import("./app/sandbox-ops.ts");
+  const { ToolboxOps } = await import("./app/toolbox-ops.ts");
 
   const backend = new FakeBackend();
   const gate = new Promise<void>((resolve) => {
@@ -62,10 +64,20 @@ beforeAll(async () => {
     sandboxToolsetRefs: new stores.DrizzleSandboxToolsetRefStore(),
   });
   jobs = new JobService();
+  const control = createControlContainer();
+  const toolboxes = new ToolboxOps({ runtime, control, jobs });
   const container = {
     runtime,
     jobs,
-    control: createControlContainer(),
+    control,
+    sandboxOps: new SandboxOps({
+      runtime,
+      control,
+      jobs,
+      toolboxes,
+      idle: { setKeepAwake: () => undefined },
+    }),
+    toolboxOps: toolboxes,
   } as unknown as Parameters<typeof createV1Routes>[0];
   app = new Elysia()
     .onError(({ error, set }) => {

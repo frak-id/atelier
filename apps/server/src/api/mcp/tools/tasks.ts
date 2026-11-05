@@ -159,7 +159,7 @@ export function registerTaskTools(
         "Give the coding agent inside a sandbox an instruction; the agent " +
         "works in the background and this returns at once with the task " +
         "(`taskId`). Pass `sandboxId` to START a new task (the sandbox " +
-        "must be `running` — check `get_sandbox` — and have an agent " +
+        "must have an agent " +
         "harness), or `taskId` to CONTINUE one with a follow-up turn that " +
         "keeps the agent's earlier context (only when the task is not " +
         "mid-turn: `idle`, `failed` or `cancelled`; otherwise wait, or " +
@@ -167,10 +167,10 @@ export function registerTaskTools(
         "turns). Then `get_task` with `waitSeconds` for the answer, or set " +
         "`waitSeconds` here. The agent runs unattended: it never stops to " +
         "ask for a permission (the sandbox is its boundary). A follow-up " +
-        "keeps the context even days later: if the sandbox was " +
-        "paused meanwhile, `sandbox_lifecycle` action=resume it first. " +
-        "Tasks live in server memory (lost on restart) and are forgotten " +
-        "after a week without a prompt; at most 20 at once are active " +
+        "keeps the context even days later (a paused sandbox is resumed " +
+        "first). " +
+        "Tasks survive server restarts and are forgotten after a week " +
+        "without a prompt; at most 20 at once are active " +
         "(older idle ones make room): `manage_task` action=close the ones " +
         "you are done with.",
       inputSchema: {
@@ -201,52 +201,65 @@ export function registerTaskTools(
           ),
         waitSeconds: waitSecondsSchema,
       },
+      annotations: {
+        readOnlyHint: false,
+        destructiveHint: false,
+        idempotentHint: false,
+        openWorldHint: true,
+      },
     },
-    safeTool(async ({ sandboxId, taskId, prompt, cwd, waitSeconds }) => {
-      if (sandboxId !== undefined && taskId !== undefined) {
-        throw new ValidationError(
-          "Pass `sandboxId` to start a task or `taskId` to continue one, " +
-            "not both",
-        );
-      }
+    safeTool(
+      "send_prompt",
+      async ({ sandboxId, taskId, prompt, cwd, waitSeconds }) => {
+        if (sandboxId !== undefined && taskId !== undefined) {
+          throw new ValidationError(
+            "Pass `sandboxId` to start a task or `taskId` to continue one, " +
+              "not both",
+          );
+        }
 
-      if (taskId !== undefined) {
-        rejectParams(
-          { cwd },
-          "only apply when starting a task (pass `sandboxId`, not `taskId`)",
-        );
-        await tasks.sendPrompt(user.id, taskId, prompt);
+        if (taskId !== undefined) {
+          rejectParams(
+            { cwd },
+            "only apply when starting a task (pass `sandboxId`, not `taskId`)",
+          );
+          // The task's sandbox may have been paused since the last turn.
+          const { sandboxId: taskSandboxId } = await tasks.get(user.id, taskId);
+          await container.sandboxOps.ensureRunning(taskSandboxId);
+          await tasks.sendPrompt(user.id, taskId, prompt);
+          return text(
+            taskView(
+              await tasks.get(user.id, taskId, {
+                waitMs: (waitSeconds ?? 0) * 1000,
+              }),
+            ),
+          );
+        }
+
+        if (sandboxId === undefined) {
+          throw new ValidationError(
+            "Pass `sandboxId` to start a task or `taskId` to continue one",
+          );
+        }
+        requireSandboxAccess(container, user.id, sandboxId);
+        await container.sandboxOps.ensureRunning(sandboxId);
+        const started = await tasks.dispatchTask(user.id, {
+          sandboxId,
+          prompt,
+          cwd,
+          source: "mcp",
+        });
         return text(
           taskView(
-            await tasks.get(user.id, taskId, {
-              waitMs: (waitSeconds ?? 0) * 1000,
-            }),
+            waitSeconds
+              ? await tasks.get(user.id, started.taskId, {
+                  waitMs: waitSeconds * 1000,
+                })
+              : started,
           ),
         );
-      }
-
-      if (sandboxId === undefined) {
-        throw new ValidationError(
-          "Pass `sandboxId` to start a task or `taskId` to continue one",
-        );
-      }
-      requireSandboxAccess(container, user.id, sandboxId);
-      const started = await tasks.dispatchTask(user.id, {
-        sandboxId,
-        prompt,
-        cwd,
-        source: "mcp",
-      });
-      return text(
-        taskView(
-          waitSeconds
-            ? await tasks.get(user.id, started.taskId, {
-                waitMs: waitSeconds * 1000,
-              })
-            : started,
-        ),
-      );
-    }),
+      },
+    ),
   );
 
   server.registerTool(
@@ -264,10 +277,10 @@ export function registerTaskTools(
         "looping. Defaults to the latest turn (`turnCount` says how many " +
         "exist). view=full returns every message `segments` (instead of " +
         "`reply`), the prompt, timestamps and ids; it can be large. " +
-        "Without `taskId`: list your tasks, newest first, optionally for " +
-        "one `sandboxId` or `status`; tasks lost to a server restart or " +
-        "forgotten after a week no longer appear (a `NOT_FOUND` for a " +
-        "`taskId` means the same).",
+        "Without `taskId`: `{tasks}`, your tasks newest first, optionally for " +
+        "one `sandboxId` or `status`; tasks closed or forgotten after a " +
+        "week no longer appear (a `NOT_FOUND` for a `taskId` means the " +
+        "same).",
       inputSchema: {
         taskId: z
           .string()
@@ -305,8 +318,20 @@ export function registerTaskTools(
           ),
         waitSeconds: waitSecondsSchema,
       },
+      outputSchema: {
+        tasks: z.array(z.object({}).passthrough()).optional(),
+        taskId: z.string().optional(),
+        sandboxId: z.string().optional(),
+        status: z.string().optional(),
+        turn: z.object({}).passthrough().optional(),
+      },
+      annotations: {
+        readOnlyHint: true,
+        openWorldHint: false,
+      },
     },
     safeTool(
+      "get_task",
       async ({
         taskId,
         sandboxId,
@@ -321,8 +346,8 @@ export function registerTaskTools(
             { turn, view, maxChars, waitSeconds },
             "only apply when reading one task (pass `taskId`)",
           );
-          return text(
-            tasks
+          return text({
+            tasks: tasks
               .list(user.id, sandboxId)
               .filter((t) => !status || t.status === status)
               .map((t) => ({
@@ -335,7 +360,7 @@ export function registerTaskTools(
                 lastPrompt: t.lastPrompt,
                 updatedAt: t.updatedAt,
               })),
-          );
+          });
         }
 
         rejectParams(
@@ -370,8 +395,14 @@ export function registerTaskTools(
         taskId: z.string().describe("Task id from send_prompt / get_task"),
         action: z.enum(["cancel", "close"]),
       },
+      annotations: {
+        readOnlyHint: false,
+        destructiveHint: true,
+        idempotentHint: true,
+        openWorldHint: false,
+      },
     },
-    safeTool(async ({ taskId, action }) => {
+    safeTool("manage_task", async ({ taskId, action }) => {
       if (action === "cancel") {
         const view = await tasks.cancel(user.id, taskId);
         return text({ taskId, status: view.status });

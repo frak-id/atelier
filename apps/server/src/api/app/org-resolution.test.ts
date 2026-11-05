@@ -3,25 +3,25 @@ import { afterAll, beforeAll, describe, expect, test } from "bun:test";
 import { mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import type { ControlContainer } from "../control/index.ts";
-import { ForbiddenError } from "../shared/errors.ts";
-import type * as V1Routes from "./v1.routes.ts";
+import type { ControlContainer } from "../../control/index.ts";
+import { ForbiddenError } from "../../shared/errors.ts";
+import type * as SandboxOps from "./sandbox-ops.ts";
 
 let dataDir: string;
 let control: ControlContainer;
-let resolveOrgId: typeof V1Routes.resolveOrgId;
-const migrationsDir = join(import.meta.dir, "../../drizzle");
+let resolveOrgId: typeof SandboxOps.resolveOrgId;
+const migrationsDir = join(import.meta.dir, "../../../drizzle");
 
 beforeAll(async () => {
   dataDir = await mkdtemp(join(tmpdir(), "atelier-org-resolution-"));
   process.env.DATA_DIR = dataDir;
   process.env.MIGRATIONS_DIR ??= migrationsDir;
   process.env.ATELIER_DEFAULT_ORG = "res-default";
-  const { initDatabase } = await import("../control/db/client.ts");
+  const { initDatabase } = await import("../../control/db/client.ts");
   await initDatabase();
-  const { createControlContainer } = await import("../control/index.ts");
+  const { createControlContainer } = await import("../../control/index.ts");
   control = createControlContainer();
-  ({ resolveOrgId } = await import("./v1.routes.ts"));
+  ({ resolveOrgId } = await import("./sandbox-ops.ts"));
 });
 
 afterAll(async () => {

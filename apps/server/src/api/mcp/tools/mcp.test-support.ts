@@ -3,6 +3,7 @@
  * in-memory transport, so arguments go through the same zod validation and
  * results through the same `text()` serialization a real client sees.
  */
+import { expect } from "bun:test";
 import { Client } from "@modelcontextprotocol/sdk/client/index.js";
 import { InMemoryTransport } from "@modelcontextprotocol/sdk/inMemory.js";
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
@@ -35,15 +36,19 @@ export async function connectMcp(register: (server: McpServer) => void) {
       const result = await client.callTool({ name, arguments: args });
       const [block] = result.content as { type: string; text: string }[];
       const raw = block?.text ?? "";
-      return {
-        isError: result.isError === true,
-        data: JSON.parse(raw || "null"),
-        raw,
-      };
+      const data = JSON.parse(raw || "null");
+      // The structured mirror always carries the same data as the text.
+      if (result.structuredContent !== undefined) {
+        expect(result.structuredContent).toEqual(data);
+      }
+      return { isError: result.isError === true, data, raw };
+    },
+    /** The tools in `tools/list` order (which is part of the contract). */
+    async tools() {
+      return (await client.listTools()).tools;
     },
     async toolNames(): Promise<string[]> {
-      const { tools } = await client.listTools();
-      return tools.map((t) => t.name).sort();
+      return (await this.tools()).map((t) => t.name);
     },
     async close() {
       await client.close();

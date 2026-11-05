@@ -6,7 +6,6 @@
  * check forbids that inside `runtime/`.
  */
 import type { ServerContainer } from "../api/container.ts";
-import { ensureResuming, isResuming, waitForRunning } from "../api/wake.ts";
 import {
   ensureSharedSshPipeKey,
   getSharedSshPipeKeyOpenSSH,
@@ -52,15 +51,12 @@ export async function startSshGateway(
     // it (bounded; past that the connection is closed).
     if (container.runtime.getStatus(sandboxId) === "paused") {
       log.info({ sandboxId }, "ssh to a paused sandbox; resuming it");
-      ensureResuming(container, sandboxId);
-      const running = await waitForRunning(
-        () => container.runtime.getStatus(sandboxId),
-        {
-          waking: () => isResuming(container, sandboxId),
-          timeoutMs: WAKE_TIMEOUT_MS,
-        },
-      );
-      if (!running) return null;
+      try {
+        await container.sandboxOps.ensureRunning(sandboxId, WAKE_TIMEOUT_MS);
+      } catch (err) {
+        log.warn({ sandboxId, err }, "ssh wake-up did not complete");
+        return null;
+      }
     }
     return {
       host: `${resourceName(sandboxId)}.${namespace}.svc`,

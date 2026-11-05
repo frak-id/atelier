@@ -12,6 +12,7 @@ import {
   type EnrichmentOptions,
   enrichSpec,
   reattributeSpec,
+  resolveBootSpec,
 } from "./enrichment.ts";
 import { GitHubRepoService } from "./github-repos.ts";
 import { ApiKeyRepository, ApiKeyService } from "./modules/api-key/index.ts";
@@ -106,13 +107,16 @@ export function createControlContainer() {
     ownershipTransferService,
     /** `auth.defaultOrg`: default spawn org, auto-join, server admins. */
     defaultOrg,
-    /** Bound seam-crossing enrichment \u2014 the only function `api/` calls
-     * before handing a spec to `runtime.create()`. */
+    /** Create-time enrichment: what `api/` hands to `runtime.create()` and
+     * the runtime stores (`$secret` refs and no credentials in it). */
     enrichSpec: (
       spec: Parameters<typeof enrichSpec>[0],
-      orgId?: string,
       opts?: EnrichmentOptions,
-    ) => enrichSpec(spec, orgId, { secrets: secretService }, opts),
+    ) => enrichSpec(spec, opts),
+    /** Boot-time resolution, injected into the runtime: a stored spec in,
+     * the spec a boot runs with (secrets and fresh git files) out. */
+    resolveBootSpec: (spec: Parameters<typeof resolveBootSpec>[0]) =>
+      resolveBootSpec(spec, { secrets: secretService, users: userService }),
     /** Re-attribute a stored spec to a new owner (fork); pure, no deps. */
     reattributeSpec,
     /** The SSH public keys allowed into one sandbox (see sandbox-access.ts). */

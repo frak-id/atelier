@@ -22,11 +22,7 @@ import { recipeFingerprint } from "../control/index.ts";
 import type { JobRecord } from "../runtime/index.ts";
 import { ValidationError } from "../shared/errors.ts";
 import { createChildLogger } from "../shared/lib/logger.ts";
-import {
-  pruneToolboxVersions,
-  recordBuiltVersionLazily,
-  type ServerContainer,
-} from "./container.ts";
+import type { ServerContainer } from "./container.ts";
 
 const log = createChildLogger("toolbox-refresh");
 
@@ -133,7 +129,7 @@ async function currentDeliverable(
     undefined,
     onLog,
   );
-  await recordBuiltVersionLazily(container, tb, ref);
+  await container.toolboxOps.recordBuiltVersionLazily(tb, ref);
   const built = control.toolboxVersionService.findByRef(tb.id, ref);
   return { ref, ...(built ? { versionId: built.id } : {}) };
 }
@@ -243,7 +239,7 @@ export async function runToolboxRefresh(
     const pinned =
       control.toolboxService.getActiveVersionId(tb.id) === pinAtStart;
     if (pinned) control.toolboxService.setActiveVersionId(tb.id, version.id);
-    pruneToolboxVersions(container, tb.id);
+    container.toolboxOps.pruneVersions(tb.id);
     record({ outcome: "updated", versionId: version.id, pinned });
     log.info(
       {

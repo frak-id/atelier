@@ -86,7 +86,6 @@ describe("DockerBackend (integration)", () => {
       const input: BootInput = { image: IMAGE };
       const out = await backend.boot(id, minimalSpec(), input, agent);
 
-      expect(out.podName).toBe(`sandbox-${id}`);
       expect(out.podIp).toBe("127.0.0.1");
 
       // Endpoint resolves to mapped loopback host ports.

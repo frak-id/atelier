@@ -5,11 +5,10 @@
  * The runtime never imports control/ or sessions/.
  */
 import type { SandboxSpec } from "@atelier/spec";
-import { customAlphabet } from "nanoid";
 import { createChildLogger } from "../shared/lib/logger.ts";
 import { defaultVolumeSize } from "../shared/lib/runtime-config.ts";
 import type { AgentClient } from "./agent/index.ts";
-import { provisionAgent } from "./boot-agent.ts";
+import { generateAgentPassword, provisionAgent } from "./boot-agent.ts";
 import { cleanupSandboxResources } from "./cleanup.ts";
 import {
   buildPvc,
@@ -22,10 +21,6 @@ import { buildPortIngresses } from "./ports.ts";
 import { resourceName } from "./resource-name.ts";
 
 const log = createChildLogger("runtime-boot");
-
-const generatePassword = customAlphabet(
-  "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789",
-);
 
 const POD_DELETE_TIMEOUT_MS = 60_000;
 
@@ -63,8 +58,6 @@ export interface BootInput {
 }
 
 export interface BootOutput {
-  podName: string;
-  pvcName: string;
   agentPassword: string;
   podIp: string;
   /** The sandbox's sshd host public key line(s), as reported by the agent
@@ -90,7 +83,7 @@ export async function bootSandbox(
       ? `${spec.resources.diskGb}Gi`
       : defaultVolumeSize();
 
-  const agentPassword = generatePassword(32);
+  const agentPassword = generateAgentPassword();
   // The agent refuses calls without this token and the record doesn't exist
   // yet (nor does one for a throwaway build pod), so hand it to the client
   // before the first agent call.
@@ -158,7 +151,7 @@ export async function bootSandbox(
       );
     }
 
-    return { podName, pvcName, agentPassword, podIp, sshHostKeys };
+    return { agentPassword, podIp, sshHostKeys };
   } catch (error) {
     log.error(
       {

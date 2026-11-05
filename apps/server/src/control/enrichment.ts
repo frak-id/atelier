@@ -1,16 +1,23 @@
 /**
  * Bounded spec enrichment — the mutations control performs on a spec as it
- * crosses the seam (design.md §3.2):
- *   (a) secret resolution — replace `{"$secret": name}` references with values;
- *   plus the harness composition, the owner's git attribution, and the
- *   sandbox domain for dev servers' host checks (`injectDevServerHosts`).
+ * crosses the seam (design.md §3.2), in two steps:
+ *   - `enrichSpec`, at create: the harness composition, the owner stamp and
+ *     the sandbox domain for dev servers' host checks. Its output is what the
+ *     runtime STORES: `$secret` refs stay refs, and no credential is in it.
+ *   - `resolveBootSpec`, at EVERY boot (create, resume, fork): replace
+ *     `{"$secret": name}` references with values and add the owner's git
+ *     files with their current token. Its output only goes to the backend.
  *
  * No merger, no catalog, no fragment resolution — substitute/append steps,
  * deterministic, tiny. The api/ seam merges the spawn's toolboxes (their
  * `files` included) into the spec BEFORE this runs, so a toolbox file's
- * `$secret` refs are resolved here like any other.
+ * `$secret` refs are resolved at boot like any other.
  */
-import { isSecretRef, type SandboxSpec } from "@atelier/spec";
+import {
+  isSecretRef,
+  SANDBOX_ORG_ANNOTATION,
+  type SandboxSpec,
+} from "@atelier/spec";
 import { findHarness } from "../harnesses/index.ts";
 import { mergeSpecs } from "../harnesses/spec-merge.ts";
 import { config, dashboardUrl } from "../shared/lib/config.ts";
@@ -28,30 +35,32 @@ import { createChildLogger } from "../shared/lib/logger.ts";
 const HARNESS_ANNOTATION = "atelier.dev/harness";
 
 import type { SecretService } from "./modules/secret/index.ts";
+import type { UserService } from "./modules/user/index.ts";
 
 const log = createChildLogger("enrichment");
 
-export interface EnrichmentDeps {
+/** What `resolveBootSpec` reads: secret values and the owner's identity/token. */
+export interface BootSpecDeps {
   secrets: SecretService;
+  users: Pick<UserService, "getById" | "resolveGitHubToken">;
 }
 
 /**
- * The resolved sandbox owner (the git user). Carries the identity displayed on
- * the console and the GitHub token injected as a credential. Resolved by the
- * `api/` seam (control owns `UserService`); the runtime never sees it.
+ * The sandbox owner (the git user): the identity displayed on the console and
+ * stamped on the stored spec. Resolved by the `api/` seam (control owns
+ * `UserService`); the runtime never sees it.
  */
 export interface OwnerContext {
   id: string;
   username: string;
   email: string;
-  githubToken?: string;
 }
 
 /** Options carrying pre-resolved, per-request enrichment hints. */
 export interface EnrichmentOptions {
   /** The harness id resolved from the spawn's toolboxes (see `api/` seam). */
   toolboxHarnessId?: string;
-  /** The sandbox owner — injects git identity/credentials + owner display. */
+  /** The sandbox owner — stamps the owner annotations and owner-id. */
   owner?: OwnerContext;
 }
 
@@ -158,22 +167,17 @@ async function resolveSecrets(
 }
 
 /**
- * Inject sandbox git attribution: the owner's git identity + GitHub credential
- * as guest files, plus owner display annotations and an owner-id metadata tag
- * (so resume can re-resolve the token). No-op without an owner.
+ * Stamp the owner on the spec: display annotations and an owner-id metadata
+ * tag (so every boot can re-resolve the owner's git files and token). No-op
+ * without an owner.
  */
-function injectGitAttribution(
+function stampOwner(
   spec: SandboxSpec,
   owner: OwnerContext | undefined,
 ): SandboxSpec {
   if (!owner) return spec;
-  const gitFiles = buildGitAttributionFiles({
-    identity: { name: owner.username, email: owner.email },
-    githubToken: owner.githubToken,
-  });
   return {
     ...spec,
-    files: [...(spec.files ?? []), ...gitFiles],
     annotations: {
       ...spec.annotations,
       [OWNER_ANNOTATION]: owner.username,
@@ -188,10 +192,10 @@ function injectGitAttribution(
 
 /**
  * Re-attribute a stored (already enriched) spec to a new owner: drop the
- * previous owner's git identity/credential files, owner annotations and
- * metadata, then inject `owner`'s. `metadata` is the copy's own metadata
- * (the previous owner-id never carries over). Everything else, incl. secret
- * values resolved at the source's creation, is kept as stored.
+ * previous owner's owner annotations and metadata, then stamp `owner`'s.
+ * `metadata` is the copy's own metadata (the previous owner-id never carries
+ * over). Git files of specs stored before they were added at boot are dropped
+ * too. Everything else, `$secret` refs included, is kept as stored.
  */
 export function reattributeSpec(
   spec: SandboxSpec,
@@ -204,7 +208,7 @@ export function reattributeSpec(
     [OWNER_EMAIL_ANNOTATION]: _ownerEmail,
     ...annotations
   } = spec.annotations ?? {};
-  return injectGitAttribution(
+  return stampOwner(
     {
       ...spec,
       files: spec.files?.filter((f) => !gitPaths.has(f.path)),
@@ -215,17 +219,46 @@ export function reattributeSpec(
   );
 }
 
-/** The full enrichment pipeline applied at every seam crossing. */
-export async function enrichSpec(
+/** The enrichment applied once, when a spec is created. */
+export function enrichSpec(
   spec: SandboxSpec,
-  orgId: string | undefined,
-  deps: EnrichmentDeps,
   opts: EnrichmentOptions = {},
-): Promise<SandboxSpec> {
+): SandboxSpec {
   const withHarness = injectHarness(spec, opts.toolboxHarnessId);
   const withHosts = injectDevServerHosts(withHarness, config.domain.baseDomain);
-  const resolved = await resolveSecrets(withHosts, orgId, deps.secrets);
-  // Injected last: the credential file carries a GitHub token (not a `$secret`
-  // ref), so it must skip the secret-resolution pass entirely.
-  return injectGitAttribution(resolved, opts.owner);
+  return stampOwner(withHosts, opts.owner);
+}
+
+/**
+ * The spec a boot runs with, from the stored one: secrets resolved in the
+ * sandbox's org (its org annotation) and the owner's git files rebuilt from
+ * their CURRENT token, so a rotated secret or token applies on the next boot.
+ * The owner is the owner-id metadata, stable whoever triggers the boot; a
+ * sandbox without one gets no git files (never someone else's). Throws when a
+ * secret no longer exists.
+ */
+export async function resolveBootSpec(
+  spec: SandboxSpec,
+  { secrets, users }: BootSpecDeps,
+): Promise<SandboxSpec> {
+  const resolved = await resolveSecrets(
+    spec,
+    spec.annotations?.[SANDBOX_ORG_ANNOTATION],
+    secrets,
+  );
+  const ownerId = spec.metadata?.[OWNER_ID_METADATA];
+  const owner = ownerId ? users.getById(ownerId) : undefined;
+  const gitFiles = buildGitAttributionFiles({
+    identity: owner ? { name: owner.username, email: owner.email } : undefined,
+    githubToken: ownerId ? users.resolveGitHubToken(ownerId) : undefined,
+  });
+  const files = [
+    // Stale git files from a spec stored before they were added at boot are
+    // dropped even when no fresh one replaces them.
+    ...(resolved.files ?? []).filter(
+      (f) => f.path !== GITCONFIG_PATH && f.path !== GIT_CREDENTIALS_PATH,
+    ),
+    ...gitFiles,
+  ];
+  return files.length > 0 ? { ...resolved, files } : resolved;
 }

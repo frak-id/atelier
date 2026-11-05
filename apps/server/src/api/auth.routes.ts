@@ -37,7 +37,6 @@ import {
   WAKE_RETRY_AFTER_SECONDS,
   wakePage,
 } from "./forward-auth.ts";
-import { ensureResuming } from "./wake.ts";
 
 const log = createChildLogger("auth-routes");
 
@@ -108,7 +107,7 @@ export function createAuthRoutes(container: ServerContainer) {
       : undefined;
     const decision = decideWake(status, forwarded);
     if (decision.status === 200 || !sandboxId) return "";
-    ensureResuming(container, sandboxId);
+    container.sandboxOps.wake(sandboxId);
     set.status = 503;
     set.headers["retry-after"] = String(WAKE_RETRY_AFTER_SECONDS);
     if (!decision.page) {

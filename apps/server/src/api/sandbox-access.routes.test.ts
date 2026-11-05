@@ -88,6 +88,7 @@ beforeAll(async () => {
 
   const track = (_: unknown, fn: () => unknown) => fn();
   const runtime = {
+    getStatus: () => "running",
     getLabels: (id: string) => labels[id],
     // pause snapshot of `owned`, one of a destroyed sandbox, a shared prebuild
     snapshotOwner: (ref: string) =>
@@ -157,23 +158,39 @@ beforeAll(async () => {
     },
   };
 
+  const appControl = {
+    ...realControl,
+    authService: {
+      resolveToken: async (token?: string) => {
+        const user = token ? users[token] : undefined;
+        if (!user) throw new UnauthorizedError();
+        return user;
+      },
+    },
+    canAccessSandbox: realControl.canAccessSandbox,
+  };
+  const { SandboxOps } = await import("./app/sandbox-ops.ts");
+  const { ToolboxOps } = await import("./app/toolbox-ops.ts");
+  const toolboxOps = new ToolboxOps({
+    runtime,
+    control: appControl,
+    jobs,
+  } as never);
   const container = {
     runtime,
     jobs,
     sessions,
     terminal,
     idle,
-    control: {
-      ...realControl,
-      authService: {
-        resolveToken: async (token?: string) => {
-          const user = token ? users[token] : undefined;
-          if (!user) throw new UnauthorizedError();
-          return user;
-        },
-      },
-      canAccessSandbox: realControl.canAccessSandbox,
-    },
+    control: appControl,
+    sandboxOps: new SandboxOps({
+      runtime,
+      control: appControl,
+      jobs,
+      toolboxes: toolboxOps,
+      idle,
+    } as never),
+    toolboxOps,
   } as unknown as ServerContainer;
 
   const { createV1Routes } = await import("./v1.routes.ts");

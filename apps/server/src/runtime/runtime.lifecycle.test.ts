@@ -1080,3 +1080,118 @@ describe("fork()", () => {
     expect(sandboxes.get("dst")).toBeUndefined();
   });
 });
+
+describe("boot spec resolution", () => {
+  /** A backend that records the spec each boot was handed. */
+  class RecordingBackend extends FakeBackend {
+    booted: SandboxSpec[] = [];
+    override async boot(
+      id: string,
+      bootSpec: SandboxSpec,
+      input: Parameters<FakeBackend["boot"]>[2],
+      agent: Parameters<FakeBackend["boot"]>[3],
+    ) {
+      this.booted.push(bootSpec);
+      return super.boot(id, bootSpec, input, agent);
+    }
+  }
+
+  const withSecret: SandboxSpec = {
+    ...spec,
+    env: { KEY: { $secret: "KEY" } },
+  };
+
+  function makeResolvingRuntime() {
+    const backend = new RecordingBackend();
+    const sandboxes = new stores.DrizzleSandboxStore();
+    const values: Record<string, string> = { KEY: "v1" };
+    const runtime = new RuntimeService({
+      ...fakeRuntimeDeps(),
+      backend,
+      sandboxes,
+      snapshots: new stores.DrizzleSnapshotStore(),
+      toolsets: new stores.DrizzleToolsetStore(),
+      sandboxToolsetRefs: new stores.DrizzleSandboxToolsetRefStore(),
+      resolveBootSpec: async (s) => {
+        const env: Record<string, string> = {};
+        for (const [k, v] of Object.entries(s.env ?? {})) {
+          if (typeof v === "string") env[k] = v;
+          else {
+            const value = values[v.$secret];
+            if (value === undefined) throw new Error(`no secret ${k}`);
+            env[k] = value;
+          }
+        }
+        return {
+          ...s,
+          env,
+          files: [...(s.files ?? []), { path: "/etc/cred", content: "tok" }],
+        };
+      },
+    });
+    return { runtime, backend, sandboxes, values };
+  }
+
+  test("create boots the resolved spec and stores the unresolved one", async () => {
+    const { runtime, backend, sandboxes } = makeResolvingRuntime();
+    await runtime.create(withSecret, { id: "sb1" });
+    expect(backend.booted[0]?.env).toEqual({ KEY: "v1" });
+    const stored = sandboxes.get("sb1")?.spec;
+    expect(stored?.env).toEqual({ KEY: { $secret: "KEY" } });
+    expect(JSON.stringify(stored)).not.toContain("/etc/cred");
+  });
+
+  test("resume resolves again: a rotated secret applies, storage stays refs", async () => {
+    const { runtime, backend, sandboxes, values } = makeResolvingRuntime();
+    await runtime.create(withSecret, { id: "sb1" });
+    await runtime.pause("sb1");
+    values.KEY = "v2";
+    await runtime.resume("sb1");
+    expect(backend.booted[1]?.env).toEqual({ KEY: "v2" });
+    const stored = sandboxes.get("sb1")?.spec;
+    expect(stored?.env).toEqual({ KEY: { $secret: "KEY" } });
+    expect(JSON.stringify(stored)).not.toContain("/etc/cred");
+  });
+
+  test("a fork resolves for its boot and stores refs", async () => {
+    const { runtime, backend, sandboxes } = makeResolvingRuntime();
+    await runtime.create(withSecret, { id: "src" });
+    await runtime.fork(
+      "src",
+      {
+        derive: (source) => ({ spec: source }),
+        initial: { metadata: {}, annotations: {} },
+      },
+      { id: "dst" },
+    );
+    expect(backend.booted[1]?.env).toEqual({ KEY: "v1" });
+    expect(sandboxes.get("dst")?.spec.env).toEqual({
+      KEY: { $secret: "KEY" },
+    });
+  });
+
+  test("a secret that cannot be resolved fails the create with no record", async () => {
+    const { runtime, sandboxes, values } = makeResolvingRuntime();
+    delete values.KEY;
+    await expect(runtime.create(withSecret, { id: "sb1" })).rejects.toThrow(
+      "no secret",
+    );
+    expect(sandboxes.get("sb1")).toBeUndefined();
+  });
+
+  test("a resolver that leaves a ref behind is refused before boot", async () => {
+    const backend = new RecordingBackend();
+    const runtime = new RuntimeService({
+      ...fakeRuntimeDeps(),
+      backend,
+      sandboxes: new stores.DrizzleSandboxStore(),
+      snapshots: new stores.DrizzleSnapshotStore(),
+      toolsets: new stores.DrizzleToolsetStore(),
+      sandboxToolsetRefs: new stores.DrizzleSandboxToolsetRefStore(),
+    });
+    await expect(runtime.create(withSecret, { id: "sb1" })).rejects.toThrow(
+      "unresolved secret",
+    );
+    expect(backend.booted).toHaveLength(0);
+  });
+});

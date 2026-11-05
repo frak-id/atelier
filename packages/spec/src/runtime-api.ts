@@ -4,7 +4,7 @@
  */
 import { type Static, Type } from "@sinclair/typebox";
 import { SandboxIdleSummarySchema } from "./sandbox-activity.ts";
-import { ProcessSchema, SandboxSpecSchema } from "./sandbox-spec.ts";
+import { PortAuthSchema, SandboxSpecSchema } from "./sandbox-spec.ts";
 
 // ── generated values ─────────────────────────────────────────────────────────
 
@@ -249,20 +249,14 @@ export const PatchFilesRequestSchema = Type.Array(
 );
 export type PatchFilesRequest = Static<typeof PatchFilesRequestSchema>;
 
-export const PatchEnvRequestSchema = Type.Record(Type.String(), Type.String(), {
-  $id: "PatchEnvRequest",
-});
-export type PatchEnvRequest = Static<typeof PatchEnvRequestSchema>;
-
-/** Ad-hoc supervised process registered after boot. */
-export const AddProcessRequestSchema = ProcessSchema;
-export type AddProcessRequest = Static<typeof AddProcessRequestSchema>;
-
 export const AddPortRequestSchema = Type.Object(
   {
     name: Type.String(),
     port: Type.Number(),
     public: Type.Optional(Type.Boolean()),
+    // `forward`: the public URL asks for an Atelier login; `none` (default,
+    // the historical behaviour): anyone with the link.
+    auth: Type.Optional(PortAuthSchema),
   },
   { additionalProperties: false, $id: "AddPortRequest" },
 );

@@ -1,18 +1,15 @@
 /**
- * Control-plane config tools: prebuilds and toolboxes (+ their versions, the
- * toolbox/toolset merge point — see `list_toolboxes`). The "configure your
- * prebuilt/toolbox from your own dev env" surface.
+ * The admin MCP (`/mcp/admin`, server admins only): the tools for curating
+ * the environment (prebuilds, toolboxes and their versions, base images,
+ * server config). Agents doing everyday work never connect it; `whoami` on
+ * the sandbox MCP already lists the toolboxes and prebuilds they can use.
  *
- * Server-wide config is deliberately not exposed: it is operator business
- * (console / CLI), and no agent flow needs it.
- *
- * `list_toolboxes` comes in two sizes: the default ("simple") is what an
- * agent needs to pick and act on a toolbox; `detail: "advanced"` adds the
- * recipe and version history (ids that `pin_version` takes).
+ * Several tools mix reads and writes (`list` next to `delete`), so they carry
+ * the conservative annotations of their most dangerous action.
  *
  * `manage_toolbox` `action=refresh` runs a toolbox's update commands on the
- * server (docs/toolbox-versions.md section 10) and returns at once; the
- * outcome lands in `list_toolboxes` as `refresh.last`.
+ * server and returns at once; the outcome lands in `list` as `refresh.last`.
+ * `manage_prebuilds` `create`/`refresh` return at once with a `jobId` too.
  */
 import {
   type PrebuildRecord,
@@ -26,24 +23,18 @@ import {
 import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { z } from "zod";
 import type { AuthUser } from "../../../control/index.ts";
-import { recipeFingerprint } from "../../../control/index.ts";
-import { ValidationError } from "../../../shared/errors.ts";
-import { pruneToolboxVersions, type ServerContainer } from "../../container.ts";
-import {
-  requireSandboxAccess,
-  requireSourceAccess,
-} from "../../sandbox-guard.ts";
-import {
-  readableOrgIds,
-  requireToolboxAccess,
-  resolveToolboxOrg,
-} from "../../toolbox-access.ts";
+import { NotFoundError, ValidationError } from "../../../shared/errors.ts";
+import type { ServerContainer } from "../../container.ts";
+import { readableOrgIds, resolveToolboxOrg } from "../../toolbox-access.ts";
 import {
   activeRefreshJob,
   startToolboxRefresh,
 } from "../../toolbox-refresh.ts";
-import { safeTool, text } from "../format.ts";
+import { keepTail, safeTool, text } from "../format.ts";
 import { parseSpec } from "../validate.ts";
+
+/** The tail of an image build log returned by `manage_images`. */
+const LOG_CHARS = 8_000;
 
 const detailSchema = z
   .enum(["simple", "advanced"])
@@ -111,6 +102,12 @@ function rolesOf(control: Control, userId: string): Map<string, string> {
 
 /** Where an auto-included toolbox lands (see `resolveSpawnToolboxes`): only
  * into sandboxes created in its org. */
+/** The `versionId` an action needs, or a `ValidationError`. */
+function requireVersionId(versionId: string | null | undefined): string {
+  if (!versionId) throw new ValidationError("this action requires `versionId`");
+  return versionId;
+}
+
 function appliesTo(tb: ToolboxConfig) {
   return tb.autoInject ? "sandboxes-in-org" : "explicit-only";
 }
@@ -223,12 +220,12 @@ function injectionRank(tb: ToolboxConfig): number {
   return tb.autoInject ? 0 : 1;
 }
 
-export function registerConfigTools(
+export function registerAdminTools(
   server: McpServer,
   container: ServerContainer,
   user: AuthUser,
 ): void {
-  const { runtime, control } = container;
+  const { runtime, control, toolboxOps, sandboxOps, images } = container;
   const isRefreshing = (toolboxId: string) =>
     activeRefreshJob(container, toolboxId) !== undefined;
 
@@ -238,19 +235,17 @@ export function registerConfigTools(
     {
       title: "Manage prebuilds",
       description:
-        "List, create, or delete prebuilds: snapshots of a sandbox's " +
-        "expensive one-time setup (cloned repos, installs, build steps), " +
-        "baked once and reused by every sandbox booted from them (pass " +
-        "`ref` as `spec.source.snapshot` to `create_sandbox`). Prebuilds are " +
-        "shared server-wide. `list` returns {ref, createdAt, repos, " +
-        "metadata?, processes?, ports?} newest first: `metadata` names the " +
-        "prebuild (e.g. `workspace`), `processes` are the dev servers a " +
-        "sandbox from it gets and `ports` the URLs they serve. `create` " +
-        "bakes and blocks until done (minutes on a cold " +
-        "cache) and returns {ref}. `delete` refuses a prebuild that a " +
-        "sandbox boots from or another prebuild is chained on.",
+        "List, create, refresh or delete prebuilds: snapshots of a " +
+        "sandbox's expensive one-time setup (cloned repos, installs), baked " +
+        "once and shared server-wide (`ref` goes in `spec.source.snapshot` " +
+        "of `create_sandbox`). `list` returns `{prebuilds}` newest first: " +
+        "{ref, createdAt, repos, metadata?, processes?, ports?}. `create` " +
+        "and `refresh` (rebuild `ref` from its recipe, ignoring the cache) " +
+        "bake in the background: they return `{jobId}` at once, then `list` " +
+        "shows the new `ref`. `delete` refuses a prebuild that a sandbox " +
+        "boots from or another is chained on.",
       inputSchema: {
-        action: z.enum(["list", "create", "delete"]),
+        action: z.enum(["list", "create", "refresh", "delete"]),
         repo: z
           .string()
           .optional()
@@ -268,7 +263,10 @@ export function registerConfigTools(
               "and `ports` (dev servers every sandbox from it gets), " +
               "`metadata`.",
           ),
-        ref: z.string().optional().describe("action=delete: the prebuild ref"),
+        ref: z
+          .string()
+          .optional()
+          .describe("action=refresh|delete: the prebuild ref"),
         force: z
           .boolean()
           .optional()
@@ -276,19 +274,31 @@ export function registerConfigTools(
             "action=create: rebuild even if an identical one is cached",
           ),
       },
+      outputSchema: {
+        prebuilds: z.array(z.object({}).passthrough()).optional(),
+        jobId: z.string().optional(),
+        status: z.string().optional(),
+        ref: z.string().optional(),
+      },
+      annotations: {
+        readOnlyHint: false,
+        destructiveHint: true,
+        idempotentHint: false,
+        openWorldHint: false,
+      },
     },
-    safeTool(async ({ action, repo, spec, ref, force }) => {
+    safeTool("manage_prebuilds", async ({ action, repo, spec, ref, force }) => {
       switch (action) {
         case "list":
-          return text(
-            runtime
+          return text({
+            prebuilds: runtime
               .listPrebuilds()
               .filter(
                 (p) =>
                   !repo || p.spec?.repos?.some((r) => r.url.includes(repo)),
               )
               .map(prebuildView),
-          );
+          });
         case "create": {
           if (!spec) {
             throw new ValidationError("action=create requires `spec`");
@@ -298,17 +308,20 @@ export function registerConfigTools(
             spec,
             "PrebuildSpec",
           );
-          requireSourceAccess(container, user.id, prebuildSpec.source);
-          const { ref: created, parent } = await runtime.prebuild(
-            prebuildSpec,
-            {
-              force,
-              githubToken: control.userService.resolveGitHubToken(user.id),
-              createdBy: user.id,
-              saveSurface: true,
-            },
-          );
-          return text({ ref: created, ...(parent ? { parent } : {}) });
+          const job = sandboxOps.startPrebuild(user, prebuildSpec, { force });
+          return text({ jobId: job.id, status: "started" });
+        }
+        case "refresh": {
+          if (!ref) throw new ValidationError("action=refresh requires `ref`");
+          const recipe = runtime.listPrebuilds().find((p) => p.ref === ref);
+          if (!recipe) throw new NotFoundError("Prebuild", ref);
+          if (!recipe.spec) {
+            throw new ValidationError(`prebuild ${ref} has no stored recipe`);
+          }
+          const job = sandboxOps.startPrebuild(user, recipe.spec, {
+            force: true,
+          });
+          return text({ ref, jobId: job.id, status: "started" });
         }
         case "delete":
           if (!ref) throw new ValidationError("action=delete requires `ref`");
@@ -320,82 +333,29 @@ export function registerConfigTools(
 
   // ── toolboxes (+ versions — the toolset merge point) ──────────────────
   server.registerTool(
-    "list_toolboxes",
-    {
-      title: "List toolboxes",
-      description:
-        "List the toolboxes you can use: those of every organization you " +
-        "belong to, your personal org included (narrow with `owner`). A " +
-        "toolbox " +
-        "bundles tools and config baked into sandboxes. `autoInclude: true` " +
-        "ones are added to new sandboxes automatically: `appliesTo` " +
-        "`sandboxes-in-org` (only sandboxes created in that org, `orgId`; " +
-        "your default org is in `whoami`). `explicit-only` ones apply " +
-        "only when passed to " +
-        "`create_sandbox` as `toolboxes: [selector]`. Auto-included ones " +
-        "come first, in application order. `activeVersion` is the pinned " +
-        "build (null: built from the recipe at spawn). `canManage` says " +
-        "whether `manage_toolbox` works on it. `refresh` (when set up) " +
-        "holds the update commands a refresh runs, its cron `schedule` " +
-        "(UTC) and `nextRunAt`, whether one is `running`, and the `last` " +
-        "outcome: `updated` (a new version, pinned unless `pinned: " +
-        "false`), `unchanged` (nothing new to save) or `failed` (`error`). " +
-        "detail=advanced adds the recipe (source, build, paths, processes, " +
-        "ports) and version history.",
-      inputSchema: {
-        owner: z
-          .string()
-          .optional()
-          .describe(
-            "all (default) | me | org:<orgId>. `me` is your personal org.",
-          ),
-        detail: detailSchema,
-      },
-    },
-    safeTool(async ({ owner, detail }) => {
-      const scopes =
-        owner === undefined || owner === "all"
-          ? readableOrgIds(control, user.id)
-          : [resolveToolboxOrg(control, user.id, owner)];
-      const roles = rolesOf(control, user.id);
-      const advanced = detail === "advanced";
-      const toolboxes = scopes
-        .flatMap((scope) => control.toolboxService.list(scope))
-        .sort(
-          (a, b) =>
-            injectionRank(a) - injectionRank(b) ||
-            a.createdAt.localeCompare(b.createdAt),
-        );
-      return text(
-        toolboxes.map((tb) =>
-          toolboxView(control, tb, roles, advanced, isRefreshing),
-        ),
-      );
-    }),
-  );
-
-  server.registerTool(
     "manage_toolbox",
     {
       title: "Manage toolbox",
       description:
-        "Create, update or delete a toolbox; capture a running sandbox's " +
-        "toolbox paths as a new version; refresh it; pin/unpin the active " +
-        "version; publish or delete a version. `refresh` updates a toolbox " +
-        "without a sandbox: the server runs its update commands " +
-        "(`config.refresh`, e.g. `pi update --all`) over the current " +
-        "version in a throwaway pod, saves the toolbox paths as a new " +
-        "version and pins it (published, for an org toolbox); when nothing " +
-        "changed no version is made. It returns at once with a `jobId` " +
-        "(minutes of work); read the outcome later in `list_toolboxes` " +
-        "(`refresh.running`, then `refresh.last`). Any member of a " +
-        "toolbox's org can manage it. New toolboxes are auto-included by " +
-        "default " +
-        "(`config.autoInject`). To roll out a captured version org-wide: " +
-        "`capture`, `publish`, then `pin_version`. create/update return " +
-        "the toolbox like `list_toolboxes`.",
+        "A toolbox bundles tools and config baked into sandboxes. " +
+        "`list` returns `{toolboxes}` of every org you belong to (narrow " +
+        "with `owner`): `selector`, `autoInclude` (added to new sandboxes " +
+        "of its org automatically; `explicit-only` ones only via " +
+        "`create_sandbox` `toolboxes`), `activeVersion` (the pinned build; " +
+        "null: built from the recipe at spawn), `refresh` state. " +
+        "detail=advanced adds the recipe and version history (the " +
+        "`versionId`s). Other actions: `create`/`update`/`delete`; " +
+        "`capture` a sandbox's toolbox paths as a new private version; " +
+        "`refresh` (the server runs `config.refresh` commands over the " +
+        "current version in a throwaway pod, saves and pins the result; " +
+        "returns `{jobId}` at once, outcome in `list` `refresh.last`); " +
+        "`pin_version` (null unpins), `publish`, `delete_version`; " +
+        "`transfer` moves toolboxes/secrets between orgs you own/belong to " +
+        "(`dryRun` previews). To roll a captured version out org-wide: " +
+        "`capture`, `publish`, `pin_version`.",
       inputSchema: {
         action: z.enum([
+          "list",
           "create",
           "update",
           "delete",
@@ -404,18 +364,21 @@ export function registerConfigTools(
           "pin_version",
           "publish",
           "delete_version",
+          "transfer",
         ]),
         owner: z
           .string()
           .optional()
           .describe(
-            "action=create: me (default, your personal org) | org:<orgId>",
+            "list: all (default) | me | org:<orgId>. create: me (default, " +
+              "your personal org) | org:<orgId>",
           ),
+        detail: detailSchema,
         id: z
           .string()
           .optional()
           .describe(
-            "Toolbox id (from list_toolboxes); every action but create",
+            "Toolbox id (from list); every action but list, create, transfer",
           ),
         config: z
           .record(z.string(), z.unknown())
@@ -448,29 +411,107 @@ export function registerConfigTools(
           .optional()
           .describe(
             "pin_version (null unpins), publish, delete_version: a version " +
-              "id from `list_toolboxes` detail=advanced or `capture`",
+              "id from `list` detail=advanced or `capture`",
           ),
+        from: z.string().optional().describe("action=transfer: source orgId"),
+        to: z.string().optional().describe("action=transfer: target orgId"),
+        toolboxIds: z
+          .array(z.string())
+          .optional()
+          .describe("action=transfer: toolbox ids to move"),
+        secretIds: z
+          .array(z.string())
+          .optional()
+          .describe(
+            "action=transfer: secret ids to move (needs ownership of `to`)",
+          ),
+        dryRun: z
+          .boolean()
+          .optional()
+          .describe("action=transfer: only preview what could move"),
+      },
+      outputSchema: {
+        toolboxes: z.array(z.object({}).passthrough()).optional(),
+        id: z.string().optional(),
+        status: z.string().optional(),
+        jobId: z.string().optional(),
+      },
+      annotations: {
+        readOnlyHint: false,
+        destructiveHint: true,
+        idempotentHint: false,
+        openWorldHint: false,
       },
     },
     safeTool(
-      async ({ action, owner, id, config, sandboxId, note, versionId }) => {
+      "manage_toolbox",
+      async ({
+        action,
+        owner,
+        detail,
+        id,
+        config,
+        sandboxId,
+        note,
+        versionId,
+        from,
+        to,
+        toolboxIds,
+        secretIds,
+        dryRun,
+      }) => {
         const roles = rolesOf(control, user.id);
+
+        if (action === "list") {
+          const scopes =
+            owner === undefined || owner === "all"
+              ? readableOrgIds(control, user.id)
+              : [resolveToolboxOrg(control, user.id, owner)];
+          const advanced = detail === "advanced";
+          return text({
+            toolboxes: scopes
+              .flatMap((scope) => control.toolboxService.list(scope))
+              .sort(
+                (a, b) =>
+                  injectionRank(a) - injectionRank(b) ||
+                  a.createdAt.localeCompare(b.createdAt),
+              )
+              .map((tb) =>
+                toolboxView(control, tb, roles, advanced, isRefreshing),
+              ),
+          });
+        }
+
+        if (action === "transfer") {
+          if (!from || !to) {
+            throw new ValidationError(
+              "action=transfer requires `from` and `to`",
+            );
+          }
+          if (dryRun) {
+            return text(toolboxOps.previewTransfer(user.id, from, to));
+          }
+          return text(
+            toolboxOps.transfer(user.id, from, to, {
+              toolboxes: toolboxIds ?? [],
+              secrets: secretIds ?? [],
+            }),
+          );
+        }
 
         if (action === "create") {
           if (!config) {
             throw new ValidationError("action=create requires `config`");
           }
-          const orgId = resolveToolboxOrg(control, user.id, owner);
           const input = parseSpec(
             ToolboxConfigInputSchema,
             config,
             "ToolboxConfigInput",
           );
-          requireSourceAccess(container, user.id, input.source);
           return text(
             toolboxView(
               control,
-              control.toolboxService.create(orgId, input),
+              toolboxOps.create(user.id, owner, input),
               roles,
               false,
               isRefreshing,
@@ -479,24 +520,7 @@ export function registerConfigTools(
         }
 
         if (!id) throw new ValidationError(`action=${action} requires \`id\``);
-        const tb = control.toolboxService.get(id);
-        requireToolboxAccess(control, tb, user.id);
-
-        /** A version of THIS toolbox, or a ValidationError. */
-        const versionOf = (vid: string | null | undefined) => {
-          if (!vid) {
-            throw new ValidationError(
-              `action=${action} requires \`versionId\``,
-            );
-          }
-          const version = control.toolboxVersionService.get(vid);
-          if (version.toolboxId !== tb.id) {
-            throw new ValidationError(
-              "version does not belong to this toolbox",
-            );
-          }
-          return version;
-        };
+        const tb = toolboxOps.authorize(user.id, id);
 
         switch (action) {
           case "update": {
@@ -508,11 +532,10 @@ export function registerConfigTools(
               config,
               "ToolboxConfigPatch",
             );
-            requireSourceAccess(container, user.id, patch.source);
             return text(
               toolboxView(
                 control,
-                control.toolboxService.update(id, patch),
+                toolboxOps.update(user.id, id, patch),
                 roles,
                 false,
                 isRefreshing,
@@ -521,7 +544,7 @@ export function registerConfigTools(
           }
 
           case "delete":
-            control.toolboxService.delete(id);
+            toolboxOps.delete(user.id, id);
             return text({ id, status: "deleted" });
 
           case "refresh": {
@@ -542,47 +565,22 @@ export function registerConfigTools(
                 "action=pin_version requires `versionId` (or null to unpin)",
               );
             }
-            if (versionId === null) {
-              control.toolboxService.setActiveVersionId(id, null);
-              return text({ id, activeVersionId: null });
-            }
-            const version = versionOf(versionId);
-            // Org publish-before-pin guard (docs/toolbox-versions.md §5):
-            // a private capture pinned org-wide would replay one user's
-            // config (and possibly secrets) into every future spawn.
-            const entry = runtime.getToolsetEntry(version.ref);
-            if (entry?.private === true) {
-              throw new ValidationError(
-                "publish this version (action=publish) before pinning a " +
-                  "toolbox org-wide",
-              );
-            }
-            control.toolboxService.setActiveVersionId(id, version.id);
-            return text({ id, activeVersionId: version.id });
-          }
-
-          case "publish": {
-            const version = versionOf(versionId);
-            const entry = runtime.publishToolset(version.ref);
             return text({
               id,
-              versionId: version.id,
-              private: entry.private === true,
+              activeVersionId: toolboxOps.pin(user.id, id, versionId),
             });
           }
 
+          case "publish":
+            return text({
+              id,
+              ...toolboxOps.publish(user.id, id, requireVersionId(versionId)),
+            });
+
           case "delete_version": {
-            const version = versionOf(versionId);
-            if (
-              control.toolboxService.getActiveVersionId(tb.id) === version.id
-            ) {
-              throw new ValidationError(
-                "cannot delete the active version; unpin it first " +
-                  "(action=pin_version with versionId null)",
-              );
-            }
-            control.toolboxVersionService.delete(tb.id, version.id);
-            return text({ id, versionId: version.id, status: "deleted" });
+            const vid = requireVersionId(versionId);
+            toolboxOps.deleteVersion(user.id, id, vid);
+            return text({ id, versionId: vid, status: "deleted" });
           }
 
           case "capture": {
@@ -591,34 +589,10 @@ export function registerConfigTools(
                 "action=capture requires `sandboxId` and `note`",
               );
             }
-            if (tb.paths.length === 0) {
-              throw new ValidationError("toolbox has no paths to capture");
-            }
-            // Server-authoritative capture inputs (docs/toolbox-versions.md
-            // §2 invariant): capture the toolbox's OWN paths[], never
-            // caller-supplied ones.
-            requireSandboxAccess(container, user.id, sandboxId);
-            const { ref } = await runtime.captureToolset(sandboxId, {
-              name: toolboxArtifactName(tb),
-              paths: tb.paths,
-              exclude: [],
-              overrides: [],
-            });
-            const sourceImage = await runtime
-              .getSandboxImage(sandboxId)
-              .catch(() => undefined);
-            const version = control.toolboxVersionService.create(tb.id, {
-              ref,
+            const version = await toolboxOps.captureAndWait(user.id, id, {
+              sandboxId,
               description: note,
-              provenance: {
-                kind: "captured",
-                capturedFrom: sandboxId,
-                capturedBy: user.id,
-                ...(sourceImage ? { sourceImage } : {}),
-              },
-              recipeFingerprint: recipeFingerprint(tb),
             });
-            pruneToolboxVersions(container, tb.id);
             return text({
               id,
               versionId: version.id,
@@ -630,5 +604,129 @@ export function registerConfigTools(
         }
       },
     ),
+  );
+
+  // ── base images ───────────────────────────────────────────────────────
+  server.registerTool(
+    "manage_images",
+    {
+      title: "Manage base images",
+      description:
+        "Base images sandboxes boot from. `list` returns `{images, seeds}`: " +
+        "the built/registered images (name, status, ref, error) and the " +
+        "embedded seeds that `rebuild` takes (e.g. after a dependency " +
+        "update; a seed's parents must be ready). `rebuild` starts the " +
+        "build and returns the image record (`building`); poll with `logs` " +
+        "or `list`. `logs` returns an image's build log tail.",
+      inputSchema: {
+        action: z.enum(["list", "rebuild", "logs"]),
+        name: z
+          .string()
+          .optional()
+          .describe("rebuild: the seed id; logs: the image name"),
+        force: z
+          .boolean()
+          .optional()
+          .describe("rebuild: rebuild even if the image is already built"),
+      },
+      outputSchema: {
+        images: z.array(z.object({}).passthrough()).optional(),
+        seeds: z.array(z.object({}).passthrough()).optional(),
+        name: z.string().optional(),
+        status: z.string().optional(),
+        log: z.string().optional(),
+      },
+      annotations: {
+        readOnlyHint: false,
+        destructiveHint: false,
+        idempotentHint: false,
+        openWorldHint: true,
+      },
+    },
+    safeTool("manage_images", async ({ action, name, force }) => {
+      switch (action) {
+        case "list":
+          return text({
+            images: images.listImages().map((i) => ({
+              name: i.name,
+              status: i.status,
+              provenance: i.provenance,
+              ...(i.ref ? { ref: i.ref } : {}),
+              ...(i.error ? { error: i.error } : {}),
+              updatedAt: i.updatedAt,
+            })),
+            seeds: images.listTemplates().map((seed) => ({
+              id: seed.id,
+              dependsOn: seed.dependsOn,
+            })),
+          });
+        case "rebuild": {
+          if (!name)
+            throw new ValidationError("action=rebuild requires `name`");
+          const record = await images.buildSeed(name, { force });
+          return text({ name: record.name, status: record.status });
+        }
+        case "logs": {
+          if (!name) throw new ValidationError("action=logs requires `name`");
+          const record = images.getImage(name);
+          if (!record) throw new NotFoundError("Image", name);
+          return text({
+            name,
+            status: record.status,
+            log: keepTail(images.getBuildLog(name), LOG_CHARS).text,
+          });
+        }
+      }
+    }),
+  );
+
+  // ── server config ─────────────────────────────────────────────────────
+  server.registerTool(
+    "server_config",
+    {
+      title: "Server config",
+      description:
+        "The server's runtime config. `list` returns `{entries}` (key, " +
+        "description, type, value, default, `locked` when set by env/file); " +
+        "`get` one `key`; `set` a `key` to `value` (a boolean, number or " +
+        "string; takes effect live).",
+      inputSchema: {
+        action: z.enum(["list", "get", "set"]),
+        key: z.string().optional().describe("get/set: the config key"),
+        value: z
+          .union([z.boolean(), z.number(), z.string()])
+          .optional()
+          .describe("set: the new value"),
+      },
+      outputSchema: {
+        entries: z.array(z.object({}).passthrough()).optional(),
+        key: z.string().optional(),
+      },
+      annotations: {
+        readOnlyHint: false,
+        destructiveHint: false,
+        idempotentHint: true,
+        openWorldHint: false,
+      },
+    },
+    safeTool("server_config", async ({ action, key, value }) => {
+      const service = control.serverConfigService;
+      switch (action) {
+        case "list":
+          return text({ entries: service.list() });
+        case "get": {
+          if (!key) throw new ValidationError("action=get requires `key`");
+          const entry = service.list().find((e) => e.key === key);
+          if (!entry) throw new NotFoundError("Config key", key);
+          return text({ ...entry });
+        }
+        case "set": {
+          if (!key || value === undefined) {
+            throw new ValidationError("action=set requires `key` and `value`");
+          }
+          return text({ key, value: service.set(key, value) });
+        }
+      }
+    }),
   );
 }

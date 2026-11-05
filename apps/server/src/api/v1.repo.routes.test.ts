@@ -55,6 +55,8 @@ beforeAll(async () => {
     "../shared/errors.ts"
   );
   const { createV1Routes } = await import("./v1.routes.ts");
+  const { SandboxOps } = await import("./app/sandbox-ops.ts");
+  const { ToolboxOps } = await import("./app/toolbox-ops.ts");
 
   runtime = new RuntimeService({
     ...fakeRuntimeDeps(),
@@ -82,19 +84,33 @@ beforeAll(async () => {
   }) as never;
   jobs = new JobService();
   const control = createControlContainer();
+  const appControl = {
+    ...control,
+    authService: {
+      resolveToken: async (token?: string) => {
+        const user = token ? users[token] : undefined;
+        if (!user) throw new UnauthorizedError();
+        return user;
+      },
+    },
+  };
+  const toolboxes = new ToolboxOps({
+    runtime,
+    control: appControl,
+    jobs,
+  } as never);
   const container = {
     runtime,
     jobs,
-    control: {
-      ...control,
-      authService: {
-        resolveToken: async (token?: string) => {
-          const user = token ? users[token] : undefined;
-          if (!user) throw new UnauthorizedError();
-          return user;
-        },
-      },
-    },
+    control: appControl,
+    sandboxOps: new SandboxOps({
+      runtime,
+      control: appControl,
+      jobs,
+      toolboxes,
+      idle: { setKeepAwake: () => undefined },
+    } as never),
+    toolboxOps: toolboxes,
   } as unknown as Parameters<typeof createV1Routes>[0];
   app = new Elysia()
     .onError(({ error, set }) => {
