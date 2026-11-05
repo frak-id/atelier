@@ -17,7 +17,9 @@
 # demand via the in-cluster BuildKit (imageBuilder.kind=buildkit), so these are
 # NOT part of "all". Build them explicitly only to bootstrap a fresh registry
 # or force a base-image rebuild outside the app pipeline. Note: dev-base COPYs
-# the agent from Zot, so build agent before dev-base.
+# the agent from Zot (AGENT_IMAGE build arg), so build agent before dev-base.
+# The server's own seed builds use `sandbox.agentImage`; on this cluster it is
+# set (console > Settings > Config) to the same Zot image.
 #
 set -euo pipefail
 
@@ -133,6 +135,7 @@ set -e
 cd /devbase && tar xzf /tmp/devbase.tgz && printf '\n' > .dockerignore
 $BUILDCTL build --frontend dockerfile.v0 --local context=/devbase --local dockerfile=/devbase \
   --opt platform=linux/amd64 --no-cache \
+  --opt build-arg:AGENT_IMAGE=$REGISTRY/sandbox-agent:latest \
   --output type=image,name=$REGISTRY/dev-base:latest,$OUT_OPTS
 "
 }

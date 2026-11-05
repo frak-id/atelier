@@ -380,6 +380,12 @@ the MCP surface. Follow this order.
    infra/k8s/deploy.sh server console
    ```
 
+   The pinned tag exists only once a `v<version>` git tag has been pushed:
+   pushes to `main` publish `nightly` tags only. If `sandbox.agentImage`
+   points at your own registry instead (the Frak cluster sets it to
+   `zot.zot.svc:5000/sandbox-agent:latest` from the console), build the agent
+   in the same run: `infra/k8s/deploy.sh agent server console`.
+
    Then rebuild `dev-base` and the other seeds from Library > Images (or
    `infra/k8s/deploy.sh agent dev-base`), and refresh your prebuilds.
 6. **Verify.** Open the console, check the server log for the migration, and
