@@ -3,23 +3,15 @@
  * (runtime/control/sessions) are wired together. Manual-wiring convention
  * (no DI framework).
  */
-import { setTimeout as sleep } from "node:timers/promises";
-import {
-  type PortEntry,
-  type ProcessEntry,
-  type RuntimeSurface,
-  SANDBOX_NAME_ANNOTATION,
-  type ToolboxConfig,
-  type ToolboxOwner,
-  type ToolsetRef,
+import type {
+  PortEntry,
+  ProcessEntry,
+  RuntimeSurface,
+  ToolboxConfig,
+  ToolboxOwner,
+  ToolsetRef,
 } from "@atelier/spec";
 import { createControlContainer, recipeFingerprint } from "../control/index.ts";
-import {
-  createIntegrationRegistry,
-  INTEGRATIONS,
-  IntegrationHub,
-  type IntegrationRegistry,
-} from "../integrations/index.ts";
 import {
   AgentClient,
   createImageBuilder,
@@ -35,28 +27,25 @@ import {
   RuntimeService,
 } from "../runtime/index.ts";
 import {
-  AcpSessionSurface,
   AgentDispatch,
   AgentTaskService,
   registerHarnessDispatch,
   SessionService,
   TerminalService,
 } from "../sessions/index.ts";
-import { OWNER_ID_METADATA } from "../shared/lib/git-attribution.ts";
 import { createChildLogger } from "../shared/lib/logger.ts";
 import { registryUrl } from "../shared/lib/runtime-config.ts";
 import { IdleReaper } from "./idle-reaper.ts";
 
 /**
  * Wire the built-in harnesses. Two independent, both OPTIONAL, extension
- * points — any ACP-speaking harness works with neither (the session surface
- * is one generic ACP-over-attach view for every harness):
+ * points — any ACP-speaking harness works with neither (the session API is
+ * one generic ACP-over-attach view for every harness):
  *  - compose-side `registerHarness`: server-side fallback composition when a
  *    toolbox/org-policy names a harness (client-composed specs bypass it);
- *  - `registerHarnessDispatch`: only for harnesses that translate a
- *    model/agent selection into ACP `session/set_config_option` (opencode)
- *    or send status text of their own as message chunks (pi), which tasks
- *    leave out of the agent's reply; unknown harnesses dispatch as is.
+ *  - `registerHarnessDispatch`: only for harnesses that send status text of
+ *    their own as message chunks (pi), which tasks leave out of the agent's
+ *    reply; unknown harnesses dispatch as is.
  */
 async function registerBuiltinHarnesses(container: ServerContainer) {
   const {
@@ -68,13 +57,6 @@ async function registerBuiltinHarnesses(container: ServerContainer) {
   } = await import("@atelier/compose");
   registerHarness(opencodeHarness);
   registerHarness(piHarness);
-  const { opencodeSessionConfig } = await import(
-    "@atelier/compose/harnesses/opencode"
-  );
-  container.registerHarnessDispatch({
-    id: "opencode",
-    sessionConfig: opencodeSessionConfig,
-  });
   container.registerHarnessDispatch({
     id: "pi",
     startupNotice: piStartupNotice,
@@ -85,8 +67,6 @@ async function registerBuiltinHarnesses(container: ServerContainer) {
 const log = createChildLogger("container");
 
 export function createServerContainer() {
-  // The integrations the operator enabled (environment, read once at boot).
-  const integrations = createIntegrationRegistry(INTEGRATIONS);
   const control = createControlContainer();
   // Construct the backend once and dial its resolved endpoint from the agent
   // (pod IP on k8s, mapped host ports on Docker) — the same instance is shared
@@ -116,32 +96,12 @@ export function createServerContainer() {
     // Lazy so a live edit to jobs.concurrency re-bounds the pool.
     concurrency: () => control.serverConfigService.get("jobs.concurrency"),
   });
-  // Permission prompts also go to the sandbox owner's connected integrations;
-  // sessions/ only sees the notifier seam.
-  const notifier = new IntegrationHub({
-    registry: integrations,
-    ownerOf: (sandboxId) =>
-      runtime.getLabels(sandboxId)?.metadata?.[OWNER_ID_METADATA],
-    sandboxName: (sandboxId) =>
-      runtime.getLabels(sandboxId)?.annotations?.[SANDBOX_NAME_ANNOTATION] ??
-      sandboxId,
-    connectionsOf: (userId) =>
-      control.integrationConnectionService.connectionsOf(userId),
-    sleep: (ms, signal) => sleep(ms, undefined, { signal }),
-    log: createChildLogger("integration-hub"),
-  });
   const dispatch = new AgentDispatch({
     agentClient: agent,
-    notifier,
     // sessions/ only sees a callback; the idle rules live in control/.
     onActivity: (sandboxId) => runtime.touch(sandboxId, "agent"),
   });
-  const sessions = new SessionService({
-    runtime,
-    // One surface for every harness: they all speak ACP over the attach
-    // bridge, so there is nothing per-harness to resolve.
-    surface: (sandboxId) => new AcpSessionSurface(dispatch, sandboxId),
-  });
+  const sessions = new SessionService({ runtime, dispatch });
   // Fire-and-forget agent prompts (MCP `send_prompt`): server-driven ACP
   // sessions with captured replies. In-memory; see task.service.ts.
   const tasks = new AgentTaskService({ runtime, dispatch });
@@ -189,7 +149,6 @@ export function createServerContainer() {
     runtime,
     jobs,
     agent,
-    integrations,
     dispatch,
     sessions,
     tasks,
@@ -207,8 +166,6 @@ export interface ServerContainer {
   jobs: JobService;
   images: ImageBuilderService;
   agent: AgentClient;
-  /** The enabled integrations (environment, read once at boot). */
-  integrations: IntegrationRegistry;
   dispatch: AgentDispatch;
   sessions: SessionService;
   tasks: AgentTaskService;

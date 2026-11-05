@@ -1,7 +1,6 @@
 /**
  * AES-256-GCM secret-value encryption. Free-floating crypto util — called
- * by `secret.service.ts` and `integration-connection.service.ts` (both
- * encrypt a write-only value at rest).
+ * by `secret.service.ts` (encrypts a write-only value at rest).
  */
 import { isMock } from "../../../shared/lib/config.ts";
 import { createChildLogger } from "../../../shared/lib/logger.ts";

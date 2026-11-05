@@ -161,35 +161,6 @@ describe("agent task tools", () => {
     expect((await call("get_task", {})).data).toEqual([]);
   });
 
-  test("a permission request surfaces and manage_task reply_permission answers it", async () => {
-    const { fake, tasks } = setup();
-    const call = await connect(tasks, "user-1");
-    const { data } = await call("send_prompt", {
-      sandboxId: SANDBOX,
-      prompt: "x",
-    });
-    fake.askPermission("perm-1");
-
-    const blocked = await call("get_task", { taskId: data.taskId });
-    expect(blocked.data.status).toBe("waiting_permission");
-    expect(blocked.data.pendingPermissions[0]).toMatchObject({
-      requestId: "perm-1",
-    });
-
-    const answered = await call("manage_task", {
-      taskId: data.taskId,
-      action: "reply_permission",
-      requestId: "perm-1",
-      decision: "once",
-    });
-    expect(answered.data).toEqual({ taskId: data.taskId, status: "running" });
-    expect(fake.replies).toEqual([{ id: "perm-1", reply: "once" }]);
-
-    // Nothing pending any more: the field is left out, not an empty list.
-    const after = await call("get_task", { taskId: data.taskId });
-    expect(after.data).not.toHaveProperty("pendingPermissions");
-  });
-
   test("a running turn reports progress, not a reply", async () => {
     const { fake, tasks } = setup();
     const call = await connect(tasks, "user-1");
@@ -341,17 +312,13 @@ describe("agent task tools", () => {
     });
     fake.finish();
 
-    // A silently ignored autoApprove would leave the caller waiting on a
-    // permission prompt it believes is auto-answered.
     const res = await call("send_prompt", {
       taskId: data.taskId,
       prompt: "more",
-      autoApprove: true,
       cwd: "/tmp",
     });
     expect(res.isError).toBe(true);
     expect(res.data).toMatchObject({ error: "VALIDATION_ERROR" });
-    expect(res.data.message).toContain("`autoApprove`");
     expect(res.data.message).toContain("`cwd`");
     expect(tasks.list("user-1")[0]?.turns).toBe(1);
   });
@@ -386,35 +353,26 @@ describe("agent task tools", () => {
     );
   });
 
-  test("manage_task checks the params of the chosen action", async () => {
-    const { fake, tasks } = setup();
+  test("manage_task only offers cancel and close", async () => {
+    const { tasks } = setup();
     const call = await connect(tasks, "user-1");
     const { data } = await call("send_prompt", {
       sandboxId: SANDBOX,
       prompt: "x",
     });
-    fake.askPermission("perm-1");
 
-    const missing = await call("manage_task", {
+    // Depending on SDK version an unknown enum value is an isError result
+    // or a thrown protocol error; either way the call must not succeed.
+    const outcome = await call("manage_task", {
       taskId: data.taskId,
       action: "reply_permission",
-      requestId: "perm-1",
-    });
-    expect(missing.isError).toBe(true);
-    expect(missing.data).toMatchObject({ error: "VALIDATION_ERROR" });
-    expect(missing.data.message).toContain("`decision`");
-
-    const stray = await call("manage_task", {
-      taskId: data.taskId,
-      action: "cancel",
-      decision: "reject",
-    });
-    expect(stray.isError).toBe(true);
-    expect(stray.data).toMatchObject({ error: "VALIDATION_ERROR" });
-    // Neither bad call answered the permission or cancelled the turn.
-    expect(fake.replies).toEqual([]);
+    }).then(
+      (r) => r.isError,
+      () => true,
+    );
+    expect(outcome).toBe(true);
     expect((await call("get_task", { taskId: data.taskId })).data.status).toBe(
-      "waiting_permission",
+      "running",
     );
   });
 });

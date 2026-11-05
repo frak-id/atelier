@@ -5,8 +5,7 @@
  * also serves the activity view and the `idle` decoration of list rows.
  *
  * Lives in api/ because it composes all three modules: runtime (activity
- * clocks, pause), control (the rule) and sessions (ACP turns and permission
- * requests in flight).
+ * clocks, pause), control (the rule) and sessions (ACP turns in flight).
  */
 import {
   SANDBOX_IDLE_PAUSED_ANNOTATION,

@@ -3,8 +3,8 @@
  * agent served over a WebSocket (same approach as `acp/agent-dispatch.test.ts`).
  * `task.service.test.ts` stubs the dispatch for logic; this file proves the
  * wiring the stub can't: real `session/update` notifications reach the task's
- * reply capture, and a real `session/request_permission` round-trips through
- * `autoApprove` / `replyPermission`.
+ * reply capture, and a real `session/request_permission` is auto-approved
+ * without the task ever blocking on it.
  */
 import { afterEach, beforeAll, describe, expect, test } from "bun:test";
 import {
@@ -178,9 +178,9 @@ function setup() {
   const tasks = new AgentTaskService({
     dispatch,
     runtime: {
-      get: async () => ({
-        id: SANDBOX,
-        status: "running",
+      getStatus: () => "running",
+      getLabels: () => ({
+        metadata: {},
         annotations: { "atelier.dev/harness": "opencode" },
       }),
     } as unknown as ConstructorParameters<
@@ -223,55 +223,16 @@ describe("AgentTaskService over real ACP", () => {
     expect(second.turns).toHaveLength(2);
   });
 
-  test("autoApprove answers a real permission request", async () => {
+  test("a real permission request is auto-approved", async () => {
     const { tasks } = setup();
     const { taskId } = await tasks.dispatchTask(OWNER, {
       sandboxId: SANDBOX,
       prompt: "needs-permission",
-      autoApprove: true,
     });
 
     const done = await tasks.get(OWNER, taskId, { waitMs: 10_000 });
 
     expect(done.status).toBe("idle");
     expect(done.turn.reply).toBe("permission:allow-1");
-    expect(done.pendingPermissions).toEqual([]);
-  });
-
-  test("without autoApprove the task blocks until replyPermission", async () => {
-    const { tasks } = setup();
-    const { taskId } = await tasks.dispatchTask(OWNER, {
-      sandboxId: SANDBOX,
-      prompt: "needs-permission",
-    });
-
-    const blocked = await tasks.get(OWNER, taskId, { waitMs: 10_000 });
-    expect(blocked.status).toBe("waiting_permission");
-    expect(blocked.pendingPermissions).toHaveLength(1);
-    expect(blocked.pendingPermissions[0]?.permission).toBe("Run ls");
-
-    const requestId = blocked.pendingPermissions[0]?.id ?? "";
-    await tasks.replyPermission(OWNER, taskId, requestId, "reject");
-
-    const done = await tasks.get(OWNER, taskId, { waitMs: 10_000 });
-    expect(done.status).toBe("idle");
-    expect(done.turn.reply).toBe("permission:reject-1");
-  });
-
-  test("cancelling while blocked on a permission unblocks the agent", async () => {
-    const { tasks } = setup();
-    const { taskId } = await tasks.dispatchTask(OWNER, {
-      sandboxId: SANDBOX,
-      prompt: "needs-permission",
-    });
-    const blocked = await tasks.get(OWNER, taskId, { waitMs: 10_000 });
-    expect(blocked.status).toBe("waiting_permission");
-
-    // The scripted agent ignores `session/cancel`, but the pending request is
-    // answered (rejected) so it is no longer stuck on it and finishes.
-    await tasks.cancel(OWNER, taskId);
-    const done = await tasks.get(OWNER, taskId, { waitMs: 10_000 });
-    expect(done.pendingPermissions).toEqual([]);
-    expect(done.turn.reply).toBe("permission:reject-1");
   });
 });

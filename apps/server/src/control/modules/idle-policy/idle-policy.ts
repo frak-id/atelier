@@ -62,7 +62,7 @@ export interface IdleInput {
   /** The keep-awake annotation, raw. */
   keepAwakeUntil?: string;
   /** Server-driven ACP work in flight. */
-  work: { turns: number; permissions: number };
+  work: { turns: number };
   jobActive: boolean;
   opPending: boolean;
 }
@@ -101,7 +101,6 @@ export function evaluateIdle(rule: IdleRule, input: IdleInput): IdleEvaluation {
     blockers.push("keep-awake");
   }
   if (input.work.turns > 0) blockers.push("agent-turn");
-  if (input.work.permissions > 0) blockers.push("permission-pending");
   if (input.jobActive) blockers.push("job");
   if (input.opPending) blockers.push("lifecycle-op");
   if (

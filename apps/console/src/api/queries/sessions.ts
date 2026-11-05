@@ -1,4 +1,3 @@
-import type { AgentPermissionReply } from "@frak/atelier-shared";
 import {
   queryOptions,
   useMutation,
@@ -54,104 +53,7 @@ export function sessionTodosQuery(sandboxId: string, sessionId: string | null) {
   });
 }
 
-export function permissionsQuery(sandboxId: string) {
-  return queryOptions({
-    queryKey: queryKeys.sessions.permissions(sandboxId),
-    queryFn: async () => {
-      const { data, error } = await api.sessions
-        .sandboxes({ id: sandboxId })
-        .agent.permissions.get();
-      if (error)
-        throw new Error(errorMessage(error, "Failed to load permissions"));
-      return data;
-    },
-  });
-}
-
-export function questionsQuery(sandboxId: string) {
-  return queryOptions({
-    queryKey: queryKeys.sessions.questions(sandboxId),
-    queryFn: async () => {
-      const { data, error } = await api.sessions
-        .sandboxes({ id: sandboxId })
-        .agent.questions.get();
-      if (error)
-        throw new Error(errorMessage(error, "Failed to load questions"));
-      return data;
-    },
-  });
-}
-
 // ── mutations ────────────────────────────────────────────────────────────
-
-export function useReplyPermission(sandboxId: string) {
-  const queryClient = useQueryClient();
-  return useMutation({
-    mutationFn: async ({
-      requestId,
-      reply,
-    }: {
-      requestId: string;
-      reply: AgentPermissionReply;
-    }) => {
-      const { error } = await api.sessions
-        .sandboxes({ id: sandboxId })
-        .agent.permissions({ requestId })
-        .reply.post({ reply });
-      if (error) throw new Error(errorMessage(error, "Failed to reply"));
-    },
-    onSuccess: () => {
-      queryClient.invalidateQueries({
-        queryKey: queryKeys.sessions.permissions(sandboxId),
-      });
-    },
-    onError: (error) => toast.error(error.message),
-  });
-}
-
-export function useReplyQuestion(sandboxId: string) {
-  const queryClient = useQueryClient();
-  return useMutation({
-    mutationFn: async ({
-      requestId,
-      answers,
-    }: {
-      requestId: string;
-      answers: string[][];
-    }) => {
-      const { error } = await api.sessions
-        .sandboxes({ id: sandboxId })
-        .agent.questions({ requestId })
-        .reply.post({ answers });
-      if (error) throw new Error(errorMessage(error, "Failed to answer"));
-    },
-    onSuccess: () => {
-      queryClient.invalidateQueries({
-        queryKey: queryKeys.sessions.questions(sandboxId),
-      });
-    },
-    onError: (error) => toast.error(error.message),
-  });
-}
-
-export function useRejectQuestion(sandboxId: string) {
-  const queryClient = useQueryClient();
-  return useMutation({
-    mutationFn: async (requestId: string) => {
-      const { error } = await api.sessions
-        .sandboxes({ id: sandboxId })
-        .agent.questions({ requestId })
-        .reject.post();
-      if (error) throw new Error(errorMessage(error, "Failed to reject"));
-    },
-    onSuccess: () => {
-      queryClient.invalidateQueries({
-        queryKey: queryKeys.sessions.questions(sandboxId),
-      });
-    },
-    onError: (error) => toast.error(error.message),
-  });
-}
 
 /**
  * Abort/delete take `{ sandboxId, sessionId }` as the mutation argument (not a

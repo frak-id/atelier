@@ -224,33 +224,3 @@ export const settings = sqliteTable("settings", {
   value: text("value", { mode: "json" }).notNull(),
   updatedAt: text("updated_at").notNull(),
 });
-
-const minRiskValues = ["low", "medium", "high"] as const;
-
-/**
- * One person's connection to one compiled-in integration (see
- * `integrations/integration.ts`). The credential is the person's key at the
- * integration's service, encrypted, never returned.
- */
-export const integrationConnections = sqliteTable(
-  "integration_connections",
-  {
-    id: text("id").primaryKey(),
-    userId: text("user_id").notNull(),
-    integrationId: text("integration_id").notNull(),
-    credential: text("credential"),
-    enabled: integer("enabled", { mode: "boolean" }).notNull().default(true),
-    minRisk: text("min_risk", { enum: minRiskValues })
-      .notNull()
-      .default("high"),
-    delaySeconds: integer("delay_seconds").notNull().default(0),
-    createdAt: text("created_at").notNull(),
-    updatedAt: text("updated_at").notNull(),
-  },
-  (t) => [
-    uniqueIndex("idx_integration_connections_user_integration").on(
-      t.userId,
-      t.integrationId,
-    ),
-  ],
-);

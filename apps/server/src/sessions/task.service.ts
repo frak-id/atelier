@@ -3,8 +3,8 @@
  * result". A task is ONE server-driven ACP session (opened through
  * {@link AgentDispatch.openSession}) plus the bookkeeping a fire-and-forget
  * caller (an MCP client, a script) needs and the interactive dashboard does
- * not: per-turn status, the captured reply, pending permission requests, and
- * automatic cleanup.
+ * not: per-turn status, the captured reply and automatic cleanup. The agent
+ * never waits on a permission: {@link AgentDispatch} auto-approves.
  *
  * Why this exists: `session/prompt` blocks until the whole agent turn ends
  * and ACP streams the answer as `session/update` notifications the hub does
@@ -21,7 +21,7 @@
  *
  * State is IN-MEMORY and per server process: a restart forgets every task
  * (the agent-side session survives in the sandbox and stays visible through
- * the session surface, it just can't be prompted through its task id again).
+ * the console's session list, it just can't be prompted through its task id again).
  *
  * `ownerId` is an opaque string supplied by the caller (api/ passes the
  * authenticated user id) — sessions/ never imports control/. A task is only
@@ -29,11 +29,7 @@
  * task ids don't leak existence.
  */
 import type { SessionNotification } from "@agentclientprotocol/sdk";
-import type {
-  AgentPermissionReply,
-  AgentPermissionRequest,
-  AgentTodo,
-} from "@frak/atelier-shared";
+import type { AgentTodo } from "@frak/atelier-shared";
 import { VM } from "@frak/atelier-shared/constants";
 import type { RuntimeService } from "../runtime/index.ts";
 import {
@@ -75,13 +71,7 @@ const CANCEL_SETTLE_MS = 5_000;
 /** What the caller sees. `idle` = last turn finished and the task accepts
  * another prompt; `failed`/`cancelled` accept one too (a dead session just
  * fails the next turn fast). Only `closed` is terminal. */
-type TaskStatus =
-  | "running"
-  | "waiting_permission"
-  | "idle"
-  | "failed"
-  | "cancelled"
-  | "closed";
+type TaskStatus = "running" | "idle" | "failed" | "cancelled" | "closed";
 
 type TurnStatus = "running" | "completed" | "failed" | "cancelled";
 
@@ -118,13 +108,11 @@ interface TaskView {
   sessionId: string;
   cwd: string;
   status: TaskStatus;
-  autoApprove: boolean;
   createdAt: string;
   updatedAt: string;
   /** The selected turn (the latest unless one was requested). */
   turn: TaskTurnView;
   turns: { index: number; status: TurnStatus; prompt: string }[];
-  pendingPermissions: AgentPermissionRequest[];
   todos: AgentTodo[];
 }
 
@@ -145,14 +133,11 @@ interface DispatchTaskInput {
   /** Absolute working directory for the agent session (default: the dev
    * user's home, same as the dashboard). */
   cwd?: string;
-  /** Answer every permission request of this task with "allow once"
-   * instead of leaving it pending for `replyPermission`. */
-  autoApprove?: boolean;
 }
 
 interface GetTaskOptions {
   /** Block up to this long while a turn is `running`. Returns early when it
-   * finishes or needs a permission decision. */
+   * finishes. */
   waitMs?: number;
   /** Which turn to detail (default: the latest). */
   turn?: number;
@@ -184,7 +169,6 @@ interface TaskRecord {
   sandboxId: string;
   sessionId: string;
   cwd: string;
-  autoApprove: boolean;
   harnessId: string;
   createdAt: number;
   updatedAt: number;
@@ -196,21 +180,13 @@ interface TaskRecord {
   parking?: Promise<void>;
   turns: TaskTurn[];
   closed: boolean;
-  unsubscribe: () => void;
   /** Parked `get` waiters, resolved on any status-relevant change. */
   waiters: Set<() => void>;
 }
 
 export interface AgentTaskServiceDeps {
-  runtime: Pick<RuntimeService, "get">;
-  dispatch: Pick<
-    AgentDispatch,
-    | "openSession"
-    | "permissionsFor"
-    | "replyPermission"
-    | "subscribe"
-    | "todosFor"
-  >;
+  runtime: Pick<RuntimeService, "getStatus" | "getLabels">;
+  dispatch: Pick<AgentDispatch, "openSession" | "todosFor">;
   idleTtlMs?: number;
   retainMs?: number;
   sweepMs?: number;
@@ -258,13 +234,17 @@ export class AgentTaskService {
     const prompt = this.validatePrompt(input.prompt);
     this.makeRoomFor(ownerId);
 
-    const state = await this.deps.runtime.get(input.sandboxId);
-    if (state.status !== "running") {
+    // Store reads, no agent round-trip.
+    const status = this.deps.runtime.getStatus(input.sandboxId);
+    if (!status) throw new NotFoundError("Sandbox", input.sandboxId);
+    if (status !== "running") {
       throw new ConflictError(
-        `Sandbox ${input.sandboxId} is ${state.status}; it must be running to accept agent tasks`,
+        `Sandbox ${input.sandboxId} is ${status}; it must be running to accept agent tasks`,
       );
     }
-    const harnessId = state.annotations?.[HARNESS_ANNOTATION];
+    const harnessId = this.deps.runtime.getLabels(input.sandboxId)?.annotations[
+      HARNESS_ANNOTATION
+    ];
     if (!harnessId) {
       throw new ConflictError(
         `Sandbox ${input.sandboxId} has no agent harness (no ${HARNESS_ANNOTATION} annotation); agent tasks are unavailable`,
@@ -293,25 +273,15 @@ export class AgentTaskService {
       sandboxId: input.sandboxId,
       sessionId: handle.sessionId,
       cwd,
-      autoApprove: input.autoApprove ?? false,
       harnessId,
       createdAt: now,
       updatedAt: now,
       handle,
       turns: [],
       closed: false,
-      unsubscribe: () => {},
       waiters: new Set(),
     };
     task = record;
-    // Subscribe BEFORE the first prompt so no permission request can slip
-    // past the auto-approve / waiter wake-up. Watching never dials.
-    record.unsubscribe = this.deps.dispatch.subscribe(
-      record.sandboxId,
-      (event) => {
-        if (event.resource === "permissions") this.onPermissionsChanged(record);
-      },
-    );
     this.tasks.set(record.id, record);
     this.armSweep();
 
@@ -381,35 +351,11 @@ export class AgentTaskService {
       }));
   }
 
-  /** Answer one of the task's pending permission requests. */
-  async replyPermission(
-    ownerId: string,
-    taskId: string,
-    requestId: string,
-    reply: AgentPermissionReply,
-  ): Promise<TaskView> {
-    const task = this.requireTask(ownerId, taskId);
-    // Only requests belonging to THIS task's session: the permission buffer
-    // is per sandbox, so without this a caller could answer another session's
-    // (or another user's) request by id.
-    const pending = this.pendingFor(task).find((p) => p.id === requestId);
-    if (!pending) throw new NotFoundError("Permission request", requestId);
-    const result = this.deps.dispatch.replyPermission(
-      task.sandboxId,
-      requestId,
-      reply,
-    );
-    if (!result.ok) throw new NotFoundError("Permission request", requestId);
-    task.updatedAt = Date.now();
-    this.wake(task);
-    return this.view(task, {});
-  }
-
   /** Cancel the in-flight turn. The task stays open for further prompts. */
   async cancel(ownerId: string, taskId: string): Promise<TaskView> {
     const task = this.requireTask(ownerId, taskId);
     const status = this.statusOf(task);
-    if (status !== "running" && status !== "waiting_permission") {
+    if (status !== "running") {
       throw new ConflictError(
         `Task ${taskId} has no turn in flight (${status})`,
       );
@@ -452,7 +398,7 @@ export class AgentTaskService {
   private assertCanPrompt(task: TaskRecord): void {
     if (task.closed) throw new NotFoundError("Task", task.id);
     const status = this.statusOf(task);
-    if (status === "running" || status === "waiting_permission") {
+    if (status === "running") {
       throw new ConflictError(
         `Task ${task.id} is ${status}; wait for the current turn to finish (get_task) or cancel it first`,
       );
@@ -495,12 +441,6 @@ export class AgentTaskService {
       await task.handle?.cancel();
     } catch (err) {
       log.warn({ taskId: task.id, err }, "Agent task cancel failed");
-    }
-    // ACP: a cancelled turn must answer its outstanding permission requests
-    // as cancelled/rejected, otherwise the agent (and the shared connection's
-    // idle-close) stays blocked on a request nobody will answer.
-    for (const pending of this.pendingFor(task)) {
-      this.deps.dispatch.replyPermission(task.sandboxId, pending.id, "reject");
     }
     task.updatedAt = Date.now();
   }
@@ -592,26 +532,6 @@ export class AgentTaskService {
     }
   }
 
-  // ── permissions ───────────────────────────────────────────────────────────
-
-  private pendingFor(task: TaskRecord): AgentPermissionRequest[] {
-    return this.deps.dispatch
-      .permissionsFor(task.sandboxId)
-      .filter((p) => p.sessionId === task.sessionId);
-  }
-
-  private onPermissionsChanged(task: TaskRecord): void {
-    if (task.closed) return;
-    if (task.autoApprove) {
-      // `permissionsFor` returns a fresh array; replying re-emits this event
-      // synchronously, by which point the answered request is already gone.
-      for (const pending of this.pendingFor(task)) {
-        this.deps.dispatch.replyPermission(task.sandboxId, pending.id, "once");
-      }
-    }
-    this.wake(task);
-  }
-
   // ── status / waiting ──────────────────────────────────────────────────────
 
   private statusOf(task: TaskRecord): TaskStatus {
@@ -620,9 +540,7 @@ export class AgentTaskService {
     if (!turn) return "idle";
     switch (turn.status) {
       case "running":
-        return this.pendingFor(task).length > 0
-          ? "waiting_permission"
-          : "running";
+        return "running";
       case "failed":
         return "failed";
       case "cancelled":
@@ -638,8 +556,7 @@ export class AgentTaskService {
     for (const resolve of waiters) resolve();
   }
 
-  /** Park until the task leaves `running` (finished, or blocked on a
-   * permission) or the deadline passes. */
+  /** Park until the task leaves `running` or the deadline passes. */
   private async waitWhileRunning(
     task: TaskRecord,
     waitMs: number,
@@ -675,7 +592,6 @@ export class AgentTaskService {
       sessionId: task.sessionId,
       cwd: task.cwd,
       status: this.statusOf(task),
-      autoApprove: task.autoApprove,
       createdAt: new Date(task.createdAt).toISOString(),
       updatedAt: new Date(task.updatedAt).toISOString(),
       turn: this.turnView(turn, options.full ?? false),
@@ -684,7 +600,6 @@ export class AgentTaskService {
         status: t.status,
         prompt: preview(t.prompt),
       })),
-      pendingPermissions: this.pendingFor(task),
       todos: task.closed
         ? []
         : await this.deps.dispatch.todosFor(task.sandboxId, task.sessionId),
@@ -735,10 +650,11 @@ export class AgentTaskService {
   /** Reopen a parked (or disconnected) task's agent session by id, so the
    * next turn continues the same conversation. */
   private async reopen(task: TaskRecord): Promise<void> {
-    const state = await this.deps.runtime.get(task.sandboxId);
-    if (state.status !== "running") {
+    const status = this.deps.runtime.getStatus(task.sandboxId);
+    if (!status) throw new NotFoundError("Sandbox", task.sandboxId);
+    if (status !== "running") {
       throw new ConflictError(
-        `Sandbox ${task.sandboxId} is ${state.status}; resume it (sandbox_lifecycle action=resume), then send the follow-up again: the task keeps its conversation`,
+        `Sandbox ${task.sandboxId} is ${status}; resume it (sandbox_lifecycle action=resume), then send the follow-up again: the task keeps its conversation`,
       );
     }
     // Closing the old handle drops the session's update handler, so it must
@@ -798,8 +714,7 @@ export class AgentTaskService {
     const status = this.statusOf(task);
     task.closed = true;
     this.tasks.delete(task.id);
-    task.unsubscribe();
-    if (status === "running" || status === "waiting_permission") {
+    if (status === "running") {
       await this.cancelInFlight(task);
     }
     await task.parking;
@@ -824,8 +739,8 @@ export class AgentTaskService {
   private sweep(): void {
     const now = Date.now();
     for (const task of [...this.tasks.values()]) {
-      // A turn in flight is working, however quiet; everything else (incl. a
-      // permission nobody answered) is reclaimable once it goes stale.
+      // A turn in flight is working, however quiet; everything else is
+      // reclaimable once it goes stale.
       if (this.statusOf(task) === "running" || task.reopening) continue;
       if (task.handle && task.updatedAt < now - this.idleTtlMs) {
         log.info({ taskId: task.id }, "Parking idle agent task");
@@ -838,29 +753,18 @@ export class AgentTaskService {
   }
 
   /** Let go of an idle task's agent session, keeping the task. The handle is
-   * detached at once (a prompt arriving now reopens rather than using it);
-   * a permission nobody answered is rejected first, as a cancel would. */
+   * detached at once (a prompt arriving now reopens rather than using it). */
   private park(task: TaskRecord): void {
     const handle = task.handle;
     if (!handle) return;
     task.handle = undefined;
-    const waiting = this.statusOf(task) === "waiting_permission";
-    task.parking = (async () => {
-      if (waiting) {
-        await handle.cancel().catch(() => {});
-        for (const pending of this.pendingFor(task)) {
-          this.deps.dispatch.replyPermission(
-            task.sandboxId,
-            pending.id,
-            "reject",
-          );
-        }
-      }
-      await handle.close().catch((err) => {
+    task.parking = handle
+      .close()
+      .catch((err) => {
         log.warn({ taskId: task.id, err }, "Agent task close failed");
+      })
+      .finally(() => {
+        task.parking = undefined;
       });
-    })().finally(() => {
-      task.parking = undefined;
-    });
   }
 }

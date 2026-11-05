@@ -13,18 +13,6 @@ const HOME = "/home/dev";
 const OPENCODE_CONFIG_PATH = `${HOME}/.config/opencode/opencode.json`;
 const OPENCODE_AUTH_PATH = `${HOME}/.local/share/opencode/auth.json`;
 
-/** The model/agent selection a session was configured with, harness-neutral. */
-export interface AgentModelSelection {
-  model?: { providerID: string; modelID: string };
-  agent?: string;
-}
-
-/** An ACP `session/set_config_option` assignment. */
-export interface SessionConfigAssignment {
-  configId: string;
-  value: string;
-}
-
 /**
  * Merge cliproxy-style provider configs into opencode's config schema
  * (`{ provider: {...} }`). Throws on malformed existing JSON so the caller
@@ -41,27 +29,6 @@ export function opencodeMergeProxyProviders(
   const existingProvider = (parsed.provider as Record<string, unknown>) ?? {};
   parsed.provider = { ...existingProvider, ...providers };
   return JSON.stringify(parsed);
-}
-
-/**
- * OpenCode selects model/agent via `session/set_config_option` (verified
- * against opencode 1.17.10): configId "model" takes a flat "provider/model"
- * value id, and its "mode" option is the analog of a named agent.
- */
-export function opencodeSessionConfig(
-  selection: AgentModelSelection,
-): SessionConfigAssignment[] {
-  const assignments: SessionConfigAssignment[] = [];
-  if (selection.model) {
-    assignments.push({
-      configId: "model",
-      value: `${selection.model.providerID}/${selection.model.modelID}`,
-    });
-  }
-  if (selection.agent) {
-    assignments.push({ configId: "mode", value: selection.agent });
-  }
-  return assignments;
 }
 
 export interface ComposeOpencodeOptions {
@@ -91,9 +58,12 @@ const OPENCODE_SERVE_PORT = 4096;
 export function composeOpencode(
   opts: ComposeOpencodeOptions = {},
 ): SpecFragment {
+  // Sandbox agents auto-approve: the micro-VM is the boundary, so opencode
+  // never asks (the server answers any ACP permission request with an allow
+  // anyway). An explicit `permission` in `opts.config` still wins.
   const configContent = opencodeMergeProxyProviders(
     opts.providers ?? {},
-    opts.config ? JSON.stringify(opts.config) : undefined,
+    JSON.stringify({ permission: "allow", ...opts.config }),
   );
 
   const corsFlag = opts.webUiCorsOrigin

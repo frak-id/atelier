@@ -41,7 +41,9 @@ export interface ComposePiOptions {
 /**
  * Compose pi's spec fragment: the `acp` process (`pi-acp`, stdio-bridged,
  * primary — the sandbox's health gate) plus its display annotations. The
- * pi-web UI is NOT here — a toolbox owns that surface.
+ * pi-web UI is NOT here — a toolbox owns that surface. pi has no tool
+ * approval step, so there is nothing to turn off for auto-approve (the
+ * server allows any ACP permission request regardless).
  */
 export function composePi(opts: ComposePiOptions = {}): SpecFragment {
   return {

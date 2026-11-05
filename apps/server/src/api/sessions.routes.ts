@@ -2,8 +2,9 @@
  * `/sessions/*` — the agent app-tier HTTP surface (design.md §3.1 api/
  * table: "/sessions/* → sessions"). Thin Elysia binding over
  * `SessionService`/`TerminalService`; all mechanism lives in `sessions/`.
+ * Agent sessions are read-only here (plus abort/delete): sandbox agents
+ * auto-approve, so there is nothing to answer.
  */
-import { AgentPermissionReplyBodySchema } from "@frak/atelier-shared";
 import { Elysia, sse, t } from "elysia";
 import { createChildLogger } from "../shared/lib/logger.ts";
 import { createAuthPlugin } from "./auth.plugin.ts";
@@ -29,11 +30,6 @@ export function createSessionsRoutes(container: ServerContainer) {
     .use(authPlugin)
     .onBeforeHandle(accessGuard)
     .get("/sessions", ({ params }) => sessions.listSessions(params.id))
-    .post(
-      "/sessions",
-      ({ params, body }) => sessions.createSession(params.id, body.directory),
-      { body: t.Object({ directory: t.Optional(t.String()) }) },
-    )
     .get("/sessions/:sessionId", ({ params }) =>
       sessions.getSession(params.id, params.sessionId),
     )
@@ -48,27 +44,6 @@ export function createSessionsRoutes(container: ServerContainer) {
     )
     .get("/session-statuses", ({ params }) =>
       sessions.sessionStatuses(params.id),
-    )
-    .get("/permissions", ({ params }) => sessions.listPermissions(params.id))
-    .post(
-      "/permissions/:requestId/reply",
-      ({ params, body }) =>
-        sessions.replyPermission(
-          params.id,
-          params.requestId,
-          "reply" in body ? body.reply : { optionId: body.optionId },
-        ),
-      { body: AgentPermissionReplyBodySchema },
-    )
-    .get("/questions", ({ params }) => sessions.listQuestions(params.id))
-    .post(
-      "/questions/:requestId/reply",
-      ({ params, body }) =>
-        sessions.replyQuestion(params.id, params.requestId, body.answers),
-      { body: t.Object({ answers: t.Array(t.Array(t.String())) }) },
-    )
-    .post("/questions/:requestId/reject", ({ params }) =>
-      sessions.rejectQuestion(params.id, params.requestId),
     )
     .get("/events", async function* ({ params, request }) {
       const controller = new AbortController();

@@ -2,17 +2,11 @@
  * AgentDispatch against a fake ACP agent (no real sandbox/attach bridge): a
  * Bun WebSocket server wired to an `agent()` app from the SDK. Exercises the
  * `session/list`-backed surface, the busy/todos/title overlays, the
- * capability-gated fallback for agents without `session/list`, and the
- * hold/idle-TTL connection lifecycle.
+ * capability-gated fallback for agents without `session/list`, the
+ * hold/idle-TTL connection lifecycle and auto-approved permission requests.
  */
 import { afterEach, beforeAll, describe, expect, test } from "bun:test";
 import type { ServerWebSocket } from "bun";
-// Type-only (erased at runtime), so it does not load the module before the env
-// below is set.
-import type {
-  PermissionNotifier,
-  PermissionPrompt,
-} from "../permission-notifier.ts";
 
 process.env.ACP_IDLE_TTL_MS = "40";
 
@@ -24,6 +18,11 @@ let PROTOCOL_VERSION: typeof import("@agentclientprotocol/sdk").PROTOCOL_VERSION
 let RequestError: typeof import("@agentclientprotocol/sdk").RequestError;
 type AgentContext = import("@agentclientprotocol/sdk").AgentContext;
 type AgentClientType = import("../../runtime/index.ts").AgentClient;
+type PermissionOptionKind =
+  | "allow_once"
+  | "allow_always"
+  | "reject_once"
+  | "reject_always";
 
 beforeAll(async () => {
   // ACP_IDLE_TTL_MS is read once at module load, so set it before importing.
@@ -118,9 +117,6 @@ class FakeAcpAgent {
         this.sessions.delete(ctx.params.sessionId);
         return {};
       })
-      .onRequest(methods.agent.session.setConfigOption, () => ({
-        configOptions: [],
-      }))
       .onRequest(methods.agent.session.prompt, async (ctx) => {
         const say = (text: string, meta?: Record<string, unknown>) =>
           ctx.client.notify(methods.client.session.update, {
@@ -161,17 +157,21 @@ class FakeAcpAgent {
     });
   }
 
-  /** Fires a `session/request_permission` the client must reply to. Resolves
-   * once answered — call without awaiting to leave it pending. */
-  requestPermission(sessionId: string): Promise<unknown> {
+  /** Fires a `session/request_permission`; resolves with the client's
+   * answer. */
+  requestPermission(
+    sessionId: string,
+    options: PermissionOptionKind[] = ["allow_once", "reject_once"],
+  ): Promise<unknown> {
     if (!this.clientCtx) throw new Error("no client connected yet");
     return this.clientCtx.request(methods.client.session.requestPermission, {
       sessionId,
       toolCall: { toolCallId: "tc-1", title: "Run a thing", kind: "execute" },
-      options: [
-        { optionId: "allow-once", name: "Allow", kind: "allow_once" },
-        { optionId: "reject-once", name: "Reject", kind: "reject_once" },
-      ],
+      options: options.map((kind) => ({
+        optionId: kind.replace("_", "-"),
+        name: kind,
+        kind,
+      })),
     });
   }
 }
@@ -262,7 +262,6 @@ interface FakeAcpProcess {
 
 function makeDispatch(
   fakeAgent: FakeAcpAgent,
-  notifier?: PermissionNotifier,
   onActivity?: (sandboxId: string) => void,
   replay?: { seed: string },
   acp?: FakeAcpProcess,
@@ -286,7 +285,6 @@ function makeDispatch(
   } as unknown as AgentClientType;
   const dispatch = new AgentDispatch({
     agentClient: fakeAgentClient,
-    notifier,
     onActivity,
     runWatchMs: 20,
   });
@@ -406,9 +404,7 @@ describe("AgentDispatch × session/list", () => {
     ]
       .map((m) => `${JSON.stringify(m)}\n`)
       .join("");
-    const { dispatch, stop } = makeDispatch(fakeAgent, undefined, undefined, {
-      seed,
-    });
+    const { dispatch, stop } = makeDispatch(fakeAgent, undefined, { seed });
     cleanups.push(stop);
     const live = (dispatch as unknown as { live: Map<string, unknown> }).live;
     const open = () =>
@@ -420,11 +416,10 @@ describe("AgentDispatch × session/list", () => {
     expect(live.has(SANDBOX_ID)).toBe(false);
 
     // The redial gets the failure above replayed too; the fixed agent's
-    // answer must win, and no replayed permission may surface as pending.
+    // answer must win.
     fakeAgent.failNewSession = undefined;
     const session = await open();
     expect(session.sessionId).toBe("sess-1");
-    expect(dispatch.permissionsFor(SANDBOX_ID)).toEqual([]);
   });
 
   test("resumeSessionId reopens the session with session/load, history unseen", async () => {
@@ -497,7 +492,6 @@ describe("AgentDispatch × session/list", () => {
       fakeAgent,
       undefined,
       undefined,
-      undefined,
       acp,
     );
     cleanups.push(stop);
@@ -511,7 +505,7 @@ describe("AgentDispatch × session/list", () => {
 
     await expect(turn).rejects.toThrow(/agent process \(acp\) restarted/);
     expect(session.live).toBe(false);
-    expect(dispatch.workFor(SANDBOX_ID)).toEqual({ turns: 0, permissions: 0 });
+    expect(dispatch.workFor(SANDBOX_ID)).toEqual({ turns: 0 });
   });
 
   test("stillLive asks the agent; a gone acp run drops the connection", async () => {
@@ -519,7 +513,6 @@ describe("AgentDispatch × session/list", () => {
     const acp: FakeAcpProcess = { run: { pid: 10, startedAt: "t1" } };
     const { dispatch, stop } = makeDispatch(
       fakeAgent,
-      undefined,
       undefined,
       undefined,
       acp,
@@ -551,13 +544,9 @@ describe("AgentDispatch × session/list", () => {
 
   test("dialing a sandbox whose acp process isn't running fails fast", async () => {
     const fakeAgent = new FakeAcpAgent();
-    const { dispatch, stop } = makeDispatch(
-      fakeAgent,
-      undefined,
-      undefined,
-      undefined,
-      { run: null },
-    );
+    const { dispatch, stop } = makeDispatch(fakeAgent, undefined, undefined, {
+      run: null,
+    });
     cleanups.push(stop);
     await expect(
       dispatch.openSession({ sandboxId: SANDBOX_ID, cwd: "/home/dev" }),
@@ -640,7 +629,7 @@ describe("AgentDispatch × session/list", () => {
   test("idle activity: prompts and permission requests count, updates don't", async () => {
     const fakeAgent = new FakeAcpAgent();
     let touches = 0;
-    const { dispatch, stop } = makeDispatch(fakeAgent, undefined, () => {
+    const { dispatch, stop } = makeDispatch(fakeAgent, () => {
       touches++;
     });
     cleanups.push(stop);
@@ -662,12 +651,8 @@ describe("AgentDispatch × session/list", () => {
     await session.prompt("do the thing");
     expect(touches).toBe(2); // the turn starting and ending
 
-    const permission = fakeAgent.requestPermission(session.sessionId);
-    await settle();
+    await fakeAgent.requestPermission(session.sessionId);
     expect(touches).toBe(3);
-    const [pending] = dispatch.permissionsFor(SANDBOX_ID);
-    dispatch.replyPermission(SANDBOX_ID, pending?.id ?? "", "once");
-    await permission;
   });
 
   test("retries once when the agent returns a null sessions on the first call", async () => {
@@ -704,14 +689,17 @@ describe("AgentDispatch × session/list", () => {
     const { dispatch, stop } = makeDispatch(fakeAgent);
     cleanups.push(stop);
 
-    const created = await dispatch.createSession(SANDBOX_ID, "/home/dev/work");
+    const created = await dispatch.openSession({
+      sandboxId: SANDBOX_ID,
+      cwd: "/home/dev/work",
+    });
     const sessions = await dispatch.sessionsFor(SANDBOX_ID);
 
     expect(sessions.map((s) => s.sessionId)).toEqual([created.sessionId]);
     expect(sessions.map((s) => s.sessionId)).not.toContain("terminal-3");
   });
 
-  test("idle TTL closes the connection once the last hold releases; a pending permission keeps it open", async () => {
+  test("idle TTL closes the connection once the last hold releases", async () => {
     const fakeAgent = new FakeAcpAgent();
     const { dispatch, stop } = makeDispatch(fakeAgent);
     cleanups.push(stop);
@@ -724,177 +712,48 @@ describe("AgentDispatch × session/list", () => {
     await new Promise((resolve) => setTimeout(resolve, 150));
     expect(live.has(SANDBOX_ID)).toBe(false);
 
-    // An open session holds the connection for its lifetime; close it so the
-    // ONLY thing keeping the socket open is the pending permission below.
+    // An open session holds the connection for its lifetime.
     const session = await dispatch.openSession({
       sandboxId: SANDBOX_ID,
       cwd: "/home/dev/work",
     });
-    const permissionPromise = fakeAgent.requestPermission(session.sessionId);
-    // Let the permission request land before we let the connection go idle.
-    await new Promise((resolve) => setTimeout(resolve, 15));
-    expect(dispatch.permissionsFor(SANDBOX_ID)).toHaveLength(1);
-    await session.close();
-
-    // The session hold is released, but the pending permission must still keep
-    // the connection open past the idle TTL.
     await new Promise((resolve) => setTimeout(resolve, 150));
     expect(live.has(SANDBOX_ID)).toBe(true);
 
-    const permissions = dispatch.permissionsFor(SANDBOX_ID);
-    expect(permissions).toHaveLength(1);
-    dispatch.replyPermission(SANDBOX_ID, permissions[0]?.id ?? "", "once");
-    await permissionPromise;
-
-    // Nothing holds it now → idle-closes.
+    // Nothing holds it once the session closes → idle-closes.
+    await session.close();
     await new Promise((resolve) => setTimeout(resolve, 150));
     expect(live.has(SANDBOX_ID)).toBe(false);
   });
 });
 
-describe("AgentDispatch × permission notifier race", () => {
-  /** Records every notify() call so a test can answer / inspect it. */
-  function recordingNotifier() {
-    const calls: {
-      prompt: PermissionPrompt;
-      answer: (optionId: string) => void;
-      signal: AbortSignal;
-    }[] = [];
-    const notifier: PermissionNotifier = {
-      notify: (prompt, answer, signal) => {
-        calls.push({ prompt, answer, signal });
-      },
-    };
-    return { calls, notifier };
-  }
-
-  async function pendingPrompt(
-    fakeAgent: FakeAcpAgent,
-    dispatch: AgentDispatchT,
-  ) {
+describe("AgentDispatch × auto-approve", () => {
+  async function ask(options: PermissionOptionKind[]) {
+    const fakeAgent = new FakeAcpAgent();
+    const { dispatch, stop } = makeDispatch(fakeAgent);
+    cleanups.push(stop);
     const session = await dispatch.openSession({
       sandboxId: SANDBOX_ID,
       cwd: "/home/dev/work",
     });
-    const answered = fakeAgent.requestPermission(session.sessionId);
-    await new Promise((resolve) => setTimeout(resolve, 15));
-    return { session, answered };
+    return fakeAgent.requestPermission(session.sessionId, options);
   }
-  type AgentDispatchT = InstanceType<typeof AgentDispatch>;
 
-  test("the prompt carries requestId, kind and options; list is lossless", async () => {
-    const fakeAgent = new FakeAcpAgent();
-    const { calls, notifier } = recordingNotifier();
-    const { dispatch, stop } = makeDispatch(fakeAgent, notifier);
-    cleanups.push(stop);
-    await pendingPrompt(fakeAgent, dispatch);
-
-    const [pending] = dispatch.permissionsFor(SANDBOX_ID);
-    expect(calls[0]?.prompt.requestId).toBe(pending?.id ?? "missing");
-    expect(calls[0]?.prompt.kind).toBe("execute");
-    expect(pending?.toolKind).toBe("execute");
-    expect(pending?.options).toEqual([
-      { optionId: "allow-once", name: "Allow", kind: "allow_once" },
-      { optionId: "reject-once", name: "Reject", kind: "reject_once" },
-    ]);
+  test("prefers a persistent allow, so the agent stops asking", async () => {
+    expect(await ask(["allow_once", "allow_always", "reject_once"])).toEqual({
+      outcome: { outcome: "selected", optionId: "allow-always" },
+    });
   });
 
-  test("a notifier answer settles the prompt", async () => {
-    const fakeAgent = new FakeAcpAgent();
-    const { calls, notifier } = recordingNotifier();
-    const { dispatch, stop } = makeDispatch(fakeAgent, notifier);
-    cleanups.push(stop);
-    const { answered } = await pendingPrompt(fakeAgent, dispatch);
-
-    calls[0]?.answer("reject-once");
-
-    expect(await answered).toEqual({
-      outcome: { outcome: "selected", optionId: "reject-once" },
-    });
-    expect(dispatch.permissionsFor(SANDBOX_ID)).toHaveLength(0);
-    // Settled by the notifier itself: nothing to withdraw.
-    expect(calls[0]?.signal.aborted).toBe(false);
-  });
-
-  test("a console reply aborts the notifier signal", async () => {
-    const fakeAgent = new FakeAcpAgent();
-    const { calls, notifier } = recordingNotifier();
-    const { dispatch, stop } = makeDispatch(fakeAgent, notifier);
-    cleanups.push(stop);
-    const { answered } = await pendingPrompt(fakeAgent, dispatch);
-
-    const id = dispatch.permissionsFor(SANDBOX_ID)[0]?.id ?? "";
-    expect(dispatch.replyPermission(SANDBOX_ID, id, "once")).toEqual({
-      ok: true,
-    });
-
-    expect(calls[0]?.signal.aborted).toBe(true);
-    expect(await answered).toEqual({
+  test("falls back to a once-allow", async () => {
+    expect(await ask(["reject_once", "allow_once"])).toEqual({
       outcome: { outcome: "selected", optionId: "allow-once" },
     });
   });
 
-  test("closing the connection aborts the notifier signal", async () => {
-    const fakeAgent = new FakeAcpAgent();
-    const { calls, notifier } = recordingNotifier();
-    const { dispatch, stop } = makeDispatch(fakeAgent, notifier);
-    cleanups.push(stop);
-    const { session } = await pendingPrompt(fakeAgent, dispatch);
-    expect(calls[0]?.signal.aborted).toBe(false);
-
-    await session.close();
-    await dispatch.closeAll();
-
-    expect(calls[0]?.signal.aborted).toBe(true);
-  });
-
-  test("an optionId the agent did not offer is rejected (400)", async () => {
-    const fakeAgent = new FakeAcpAgent();
-    const { dispatch, stop } = makeDispatch(fakeAgent);
-    cleanups.push(stop);
-    await pendingPrompt(fakeAgent, dispatch);
-    const id = dispatch.permissionsFor(SANDBOX_ID)[0]?.id ?? "";
-
-    let thrown: unknown;
-    try {
-      dispatch.replyPermission(SANDBOX_ID, id, { optionId: "nope" });
-    } catch (err) {
-      thrown = err;
-    }
-    expect((thrown as { statusCode?: number }).statusCode).toBe(400);
-    // Still pending; an offered option works.
-    expect(dispatch.permissionsFor(SANDBOX_ID)).toHaveLength(1);
-    expect(
-      dispatch.replyPermission(SANDBOX_ID, id, { optionId: "allow-once" }),
-    ).toEqual({ ok: true });
-  });
-
-  test("a notifier answer after the prompt settled is ignored", async () => {
-    const fakeAgent = new FakeAcpAgent();
-    const { calls, notifier } = recordingNotifier();
-    const { dispatch, stop } = makeDispatch(fakeAgent, notifier);
-    cleanups.push(stop);
-    const { answered } = await pendingPrompt(fakeAgent, dispatch);
-    const id = dispatch.permissionsFor(SANDBOX_ID)[0]?.id ?? "";
-
-    dispatch.replyPermission(SANDBOX_ID, id, "once");
-    calls[0]?.answer("reject-once");
-
-    expect(await answered).toEqual({
-      outcome: { outcome: "selected", optionId: "allow-once" },
+  test("never rejects: no allow option answers cancelled", async () => {
+    expect(await ask(["reject_once", "reject_always"])).toEqual({
+      outcome: { outcome: "cancelled" },
     });
-    expect(dispatch.permissionsFor(SANDBOX_ID)).toHaveLength(0);
-  });
-
-  test("a notifier answer with an unoffered optionId is ignored", async () => {
-    const fakeAgent = new FakeAcpAgent();
-    const { calls, notifier } = recordingNotifier();
-    const { dispatch, stop } = makeDispatch(fakeAgent, notifier);
-    cleanups.push(stop);
-    await pendingPrompt(fakeAgent, dispatch);
-
-    calls[0]?.answer("nope");
-
-    expect(dispatch.permissionsFor(SANDBOX_ID)).toHaveLength(1);
   });
 });

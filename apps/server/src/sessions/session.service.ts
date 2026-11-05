@@ -1,156 +1,139 @@
 /**
- * The console/CLI-facing agent session facade. The routing/Elysia concerns
- * live in `api/`; this class is the framework-agnostic mechanism.
- * Harness-neutral: every harness speaks ACP over the attach bridge
- * (the `acp` process convention), so ONE surface factory serves all of them —
- * a sandbox only needs the `atelier.dev/harness` annotation, no per-harness
- * server registration. A sandbox without the annotation has no agent surface
- * and gets a clean error instead of a silently-wrong default.
+ * The console-facing agent session API for a sandbox: a thin, stateless view
+ * over the ACP hub ({@link AgentDispatch}), which owns all live state
+ * (connection, live overlay, event emitter). The Elysia binding lives in
+ * `api/sessions.routes.ts`.
  *
- * A privileged CLIENT of runtime (design.md §3.1): resolves connection info
- * via `RuntimeService.get()`, same data any API caller could read.
+ * Harness-neutral: every harness speaks ACP over the attach bridge (the `acp`
+ * process convention), so a sandbox only needs the `atelier.dev/harness`
+ * annotation. A sandbox without it has no agent and gets a clean error. ACP
+ * has no session hierarchy, so `parentID` is always absent.
  */
 import type {
   AgentEvent,
-  AgentPermissionAnswer,
-  AgentPermissionRequest,
-  AgentQuestionRequest,
   AgentSession,
   AgentSessionStatus,
   AgentTodo,
 } from "@frak/atelier-shared";
 import type { RuntimeService } from "../runtime/index.ts";
 import { ConflictError, NotFoundError } from "../shared/errors.ts";
-import type {
-  CreateSessionResult,
-  HarnessSessionSurface,
-  InterventionResult,
-} from "./session-surface.ts";
+import { createChildLogger } from "../shared/lib/logger.ts";
+import type { AgentDispatch, SessionMeta } from "./acp/agent-dispatch.ts";
+
+const log = createChildLogger("session-service");
+
+const HARNESS_ANNOTATION = "atelier.dev/harness";
 
 export class SessionService {
   constructor(
     private readonly deps: {
-      runtime: RuntimeService;
-      /** ACP goes over the runtime attach bridge, so a surface needs only
-       * the sandbox id — no ip/password connection details. One factory
-       * for every harness — they all speak ACP. */
-      surface: (sandboxId: string) => HarnessSessionSurface;
+      runtime: Pick<RuntimeService, "getLabels">;
+      dispatch: Pick<
+        AgentDispatch,
+        | "sessionsFor"
+        | "sessionFor"
+        | "statusesFor"
+        | "todosFor"
+        | "closeSession"
+        | "abortSession"
+        | "subscribe"
+      >;
     },
   ) {}
 
-  private async surfaceFor(sandboxId: string): Promise<HarnessSessionSurface> {
-    // Fetch state only to check the harness annotation (does this sandbox
-    // have an agent at all?); the surface reaches the sandbox over the
-    // runtime attach bridge, not a pod IP. Throws NotFound for an unknown
-    // sandbox, same as any op.
-    const state = await this.deps.runtime.get(sandboxId);
-    if (!state.annotations?.["atelier.dev/harness"]) {
+  /** Check the sandbox has an agent at all: a store read of its harness
+   * annotation, no agent round-trip (the console polls these routes). */
+  private requireHarness(sandboxId: string): void {
+    const labels = this.deps.runtime.getLabels(sandboxId);
+    if (!labels) throw new NotFoundError("Sandbox", sandboxId);
+    if (!labels.annotations[HARNESS_ANNOTATION]) {
       throw new ConflictError(
-        `Sandbox ${sandboxId} has no agent harness (no atelier.dev/harness annotation); agent sessions are unavailable`,
+        `Sandbox ${sandboxId} has no agent harness (no ${HARNESS_ANNOTATION} annotation); agent sessions are unavailable`,
       );
     }
-    return this.deps.surface(sandboxId);
   }
 
   async listSessions(sandboxId: string): Promise<AgentSession[]> {
-    const sessions = await (await this.surfaceFor(sandboxId)).listSessions();
-    return sessions.map((s) => ({ ...s, sandboxId }));
+    this.requireHarness(sandboxId);
+    // Reads dial `session/list`; a transient ACP disruption degrades to an
+    // empty list rather than 500ing the dashboard poll into a retry storm.
+    try {
+      const sessions = await this.deps.dispatch.sessionsFor(sandboxId);
+      return sessions.map((meta) => toSession(sandboxId, meta));
+    } catch (err) {
+      log.warn({ sandboxId, err }, "listSessions failed");
+      return [];
+    }
   }
 
   async getSession(
     sandboxId: string,
     sessionId: string,
   ): Promise<AgentSession> {
-    const session = await (await this.surfaceFor(sandboxId)).getSession(
-      sessionId,
-    );
-    if (!session) throw new NotFoundError("Session", sessionId);
-    return { ...session, sandboxId };
-  }
-
-  async createSession(
-    sandboxId: string,
-    directory?: string,
-  ): Promise<CreateSessionResult> {
-    return (await this.surfaceFor(sandboxId)).createSession(directory);
+    this.requireHarness(sandboxId);
+    let meta: SessionMeta | undefined;
+    try {
+      meta = await this.deps.dispatch.sessionFor(sandboxId, sessionId);
+    } catch (err) {
+      log.warn({ sandboxId, err }, "getSession failed");
+    }
+    if (!meta) throw new NotFoundError("Session", sessionId);
+    return toSession(sandboxId, meta);
   }
 
   async deleteSession(sandboxId: string, sessionId: string): Promise<boolean> {
-    return (await this.surfaceFor(sandboxId)).deleteSession(sessionId);
+    this.requireHarness(sandboxId);
+    return this.deps.dispatch.closeSession(sandboxId, sessionId);
   }
 
   async abortSession(sandboxId: string, sessionId: string): Promise<boolean> {
-    return (await this.surfaceFor(sandboxId)).abortSession(sessionId);
+    this.requireHarness(sandboxId);
+    return this.deps.dispatch.abortSession(sandboxId, sessionId);
   }
 
   async getTodos(sandboxId: string, sessionId: string): Promise<AgentTodo[]> {
-    return (await this.surfaceFor(sandboxId)).getTodos(sessionId);
+    this.requireHarness(sandboxId);
+    return this.deps.dispatch.todosFor(sandboxId, sessionId);
   }
 
   async sessionStatuses(
     sandboxId: string,
   ): Promise<Record<string, AgentSessionStatus>> {
-    return (await this.surfaceFor(sandboxId)).sessionStatuses();
-  }
-
-  async listPermissions(sandboxId: string): Promise<AgentPermissionRequest[]> {
-    return (await this.surfaceFor(sandboxId)).listPermissions();
-  }
-
-  async replyPermission(
-    sandboxId: string,
-    requestId: string,
-    reply: AgentPermissionAnswer,
-  ): Promise<InterventionResult> {
-    const result = await (await this.surfaceFor(sandboxId)).replyPermission(
-      requestId,
-      reply,
-    );
-    if (!result.ok && result.status === 404) {
-      throw new NotFoundError("Permission request", requestId);
+    this.requireHarness(sandboxId);
+    try {
+      return await this.deps.dispatch.statusesFor(sandboxId);
+    } catch (err) {
+      log.warn({ sandboxId, err }, "sessionStatuses failed");
+      return {};
     }
-    return result;
   }
 
-  async listQuestions(sandboxId: string): Promise<AgentQuestionRequest[]> {
-    return (await this.surfaceFor(sandboxId)).listQuestions();
-  }
-
-  async replyQuestion(
-    sandboxId: string,
-    requestId: string,
-    answers: string[][],
-  ): Promise<InterventionResult> {
-    const result = await (await this.surfaceFor(sandboxId)).replyQuestion(
-      requestId,
-      answers,
-    );
-    if (!result.ok && result.status === 404) {
-      throw new NotFoundError("Question", requestId);
-    }
-    return result;
-  }
-
-  async rejectQuestion(
-    sandboxId: string,
-    requestId: string,
-  ): Promise<InterventionResult> {
-    const result = await (await this.surfaceFor(sandboxId)).rejectQuestion(
-      requestId,
-    );
-    if (!result.ok && result.status === 404) {
-      throw new NotFoundError("Question", requestId);
-    }
-    return result;
-  }
-
-  /** Stream neutral agent events for a sandbox until `signal` aborts. */
+  /** Forward the hub's coarse invalidation signals until `signal` aborts.
+   * Watching is free: it never opens or holds the ACP socket. */
   async subscribeEvents(
     sandboxId: string,
     signal: AbortSignal,
     onEvent: (event: Omit<AgentEvent, "sandboxId">) => void,
   ): Promise<void> {
-    const surface = await this.surfaceFor(sandboxId);
-    return surface.subscribeEvents(signal, onEvent);
+    this.requireHarness(sandboxId);
+    if (signal.aborted) return;
+    const unsubscribe = this.deps.dispatch.subscribe(sandboxId, onEvent);
+    try {
+      await new Promise<void>((resolve) => {
+        signal.addEventListener("abort", () => resolve(), { once: true });
+      });
+    } finally {
+      unsubscribe();
+    }
   }
+}
+
+function toSession(sandboxId: string, meta: SessionMeta): AgentSession {
+  return {
+    sandboxId,
+    id: meta.sessionId,
+    title: meta.title,
+    directory: meta.directory,
+    time: { created: meta.created, updated: meta.updated },
+  };
 }

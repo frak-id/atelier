@@ -125,7 +125,10 @@ beforeAll(async () => {
     },
     get: (id: string) => ({ id, status: "running" }),
   };
-  const sessions = { listSessions: async () => [] };
+  const sessions = {
+    listSessions: async () => [],
+    sessionStatuses: async () => ({}),
+  };
   const terminal = {
     listSessions: async () => [],
     getOwnedSession: async () => ({}),
@@ -222,7 +225,7 @@ const SANDBOX_ROUTES: [string, string, unknown?][] = [
   ["POST", "/v1/sandboxes/owned/ports", { name: "web", port: 3000 }],
   ["POST", "/v1/sandboxes/owned/processes/web/start"],
   ["GET", "/sessions/sandboxes/owned/agent/sessions"],
-  ["GET", "/sessions/sandboxes/owned/agent/permissions"],
+  ["GET", "/sessions/sandboxes/owned/agent/session-statuses"],
   ["GET", "/sessions/sandboxes/owned/terminal/sessions"],
 ];
 

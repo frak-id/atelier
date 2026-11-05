@@ -30,7 +30,7 @@ function input(patch: Partial<IdleInput> = {}): IdleInput {
     since: NOW - 300 * MIN,
     last: {},
     agentReporting: true,
-    work: { turns: 0, permissions: 0 },
+    work: { turns: 0 },
     jobActive: false,
     opPending: false,
     ...patch,
@@ -101,8 +101,7 @@ describe("evaluateIdle", () => {
   test("each blocker holds the pause, whatever the clock says", () => {
     const cases: [Partial<IdleInput>, string][] = [
       [{ keepAwakeUntil: new Date(NOW + MIN).toISOString() }, "keep-awake"],
-      [{ work: { turns: 1, permissions: 0 } }, "agent-turn"],
-      [{ work: { turns: 0, permissions: 1 } }, "permission-pending"],
+      [{ work: { turns: 1 } }, "agent-turn"],
       [{ jobActive: true }, "job"],
       [{ opPending: true }, "lifecycle-op"],
       [{ agentReporting: false }, "agent-unreported"],

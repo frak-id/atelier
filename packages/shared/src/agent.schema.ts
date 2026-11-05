@@ -1,16 +1,11 @@
 import { type Static, Type } from "@sinclair/typebox";
 
 /**
- * Harness-neutral agent-session types exposed by the manager facade.
+ * Harness-neutral agent-session types exposed by the server's session API.
  *
- * The dashboard consumes ONLY these shapes (never a harness SDK). For opencode
- * the manager's OpencodeSessionSurface maps `opencode serve`'s REST responses
- * onto them; a future ACP-only harness would map its ACP session store onto the
- * same shapes (with the known gaps: no hierarchy, no separate questions).
- *
- * Field set is the minimum the dashboard actually reads (see recon), with a few
- * zero-cost passthrough fields kept optional. Session ids are normalized to
- * `sessionId` (serve uses `sessionID`).
+ * The dashboard consumes ONLY these shapes (never a harness SDK); the server
+ * maps the ACP session store of every harness onto them (ACP has no session
+ * hierarchy, so `parentID` is always absent).
  */
 
 export const AgentSessionSchema = Type.Object({
@@ -52,68 +47,6 @@ export const AgentTodoSchema = Type.Object({
 });
 export type AgentTodo = Static<typeof AgentTodoSchema>;
 
-export const AgentPermissionRequestSchema = Type.Object({
-  id: Type.String(),
-  sessionId: Type.String(),
-  /** Human-readable label for what is being requested. */
-  permission: Type.String(),
-  patterns: Type.Optional(Type.Array(Type.String())),
-  metadata: Type.Optional(Type.Record(Type.String(), Type.Unknown())),
-  always: Type.Optional(Type.Array(Type.String())),
-  /** The ACP tool kind (`edit`, `execute`, `fetch`, …), when given. */
-  toolKind: Type.Optional(Type.String()),
-  /** The answers the agent offers, in its order. */
-  options: Type.Optional(
-    Type.Array(
-      Type.Object({
-        optionId: Type.String(),
-        name: Type.String(),
-        kind: Type.String(),
-      }),
-    ),
-  ),
-});
-export type AgentPermissionRequest = Static<
-  typeof AgentPermissionRequestSchema
->;
-
-/** Reply to a permission request. `always` = allow this kind for the session. */
-export const AgentPermissionReplySchema = Type.Union([
-  Type.Literal("once"),
-  Type.Literal("always"),
-  Type.Literal("reject"),
-]);
-export type AgentPermissionReply = Static<typeof AgentPermissionReplySchema>;
-
-/** Reply body: a coarse `reply`, or the exact `optionId` the agent offered. */
-export const AgentPermissionReplyBodySchema = Type.Union([
-  Type.Object({ reply: AgentPermissionReplySchema }),
-  Type.Object({ optionId: Type.String({ minLength: 1 }) }),
-]);
-
-/** What `replyPermission` takes: a coarse reply or an offered option id. */
-export type AgentPermissionAnswer = AgentPermissionReply | { optionId: string };
-
-export const AgentQuestionRequestSchema = Type.Object({
-  id: Type.String(),
-  sessionId: Type.String(),
-  questions: Type.Array(
-    Type.Object({
-      question: Type.String(),
-      header: Type.String(),
-      options: Type.Array(
-        Type.Object({
-          label: Type.String(),
-          description: Type.String(),
-        }),
-      ),
-      multiple: Type.Optional(Type.Boolean()),
-      custom: Type.Optional(Type.Boolean()),
-    }),
-  ),
-});
-export type AgentQuestionRequest = Static<typeof AgentQuestionRequestSchema>;
-
 /**
  * A cache-invalidation signal fanned out over the facade SSE stream. The
  * dashboard invalidates the query for `(resource, sandboxId[, sessionId])`; it
@@ -126,8 +59,6 @@ export const AgentEventSchema = Type.Object({
   resource: Type.Union([
     Type.Literal("sessions"),
     Type.Literal("sessionStatuses"),
-    Type.Literal("permissions"),
-    Type.Literal("questions"),
     Type.Literal("todos"),
   ]),
   sessionId: Type.Optional(Type.String()),

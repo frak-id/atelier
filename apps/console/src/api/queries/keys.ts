@@ -23,10 +23,6 @@ export const queryKeys = {
       [...queryKeys.sessions.all(sandboxId), "statuses"] as const,
     todos: (sandboxId: string, sessionId: string) =>
       [...queryKeys.sessions.all(sandboxId), "todos", sessionId] as const,
-    permissions: (sandboxId: string) =>
-      [...queryKeys.sessions.all(sandboxId), "permissions"] as const,
-    questions: (sandboxId: string) =>
-      [...queryKeys.sessions.all(sandboxId), "questions"] as const,
   },
   terminal: {
     all: (sandboxId: string) => ["terminal", sandboxId] as const,
@@ -36,10 +32,6 @@ export const queryKeys = {
   apiKeys: {
     all: ["api-keys"] as const,
     list: () => [...queryKeys.apiKeys.all, "list"] as const,
-  },
-  integrations: {
-    all: ["integrations"] as const,
-    list: () => [...queryKeys.integrations.all, "list"] as const,
   },
   sshKeys: {
     all: ["ssh-keys"] as const,

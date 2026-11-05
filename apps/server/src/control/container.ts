@@ -16,10 +16,6 @@ import { GitHubRepoService } from "./github-repos.ts";
 import { ApiKeyRepository, ApiKeyService } from "./modules/api-key/index.ts";
 import { IdlePolicyService } from "./modules/idle-policy/index.ts";
 import {
-  IntegrationConnectionRepository,
-  IntegrationConnectionService,
-} from "./modules/integration-connection/index.ts";
-import {
   OrgMemberRepository,
   OrgMemberService,
 } from "./modules/org-member/index.ts";
@@ -85,9 +81,6 @@ export function createControlContainer() {
   const ownershipTransferService = new OwnershipTransferService(
     new OwnershipTransferRepository(),
   );
-  const integrationConnectionService = new IntegrationConnectionService(
-    new IntegrationConnectionRepository(),
-  );
   const authService = new AuthService({ apiKeyService, userService });
   const gitHubRepoService = new GitHubRepoService({ userService });
 
@@ -112,7 +105,6 @@ export function createControlContainer() {
     authService,
     gitHubRepoService,
     ownershipTransferService,
-    integrationConnectionService,
     /** Bound seam-crossing enrichment \u2014 the only function `api/` calls
      * before handing a spec to `runtime.create()`. */
     enrichSpec: (

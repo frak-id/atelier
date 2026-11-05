@@ -8,12 +8,7 @@
  *     the runtime API);
  *   - sessions/ may import runtime/'s interface, never its internals (same
  *     rule as control/ below — the barrel is the only stable surface);
- *   - control/  may import runtime/'s interface, never its internals;
- *   - integrations/ imports none of control/, sessions/, runtime/ (it gets
- *     everything through arguments wired in api/container.ts);
- *   - a vendor directory integrations/<id>/ imports only ../integration.ts
- *     (plus shared/ and the workspace packages), and only
- *     integrations/catalog.ts imports a vendor directory.
+ *   - control/  may import runtime/'s interface, never its internals.
  */
 import { Glob } from "bun";
 
@@ -48,38 +43,7 @@ const RULES: Rule[] = [
     reason:
       "control/ imports runtime/'s interface (index), never its internals",
   },
-  {
-    module: "integrations",
-    forbidden: [/from\s+["'](?:\.\.\/)+(?:control|sessions|runtime)\//],
-    reason:
-      "integrations/ gets control/sessions/runtime only through arguments " +
-      "wired in api/container.ts",
-  },
 ];
-
-/** A vendor directory: `integrations/<id>/…`. */
-const VENDOR_FILE = /^integrations\/[^/]+\//;
-
-/** Only `integrations/catalog.ts` names a vendor directory; a vendor file
- * reaches its siblings only through `../integration.ts`. Checked over the
- * whole tree, so it is a pass of its own. */
-function vendorViolations(rel: string, text: string): string | undefined {
-  if (VENDOR_FILE.test(rel)) {
-    return /from\s+["']\.\.\/(?!integration\.ts["'])(?!\.\.\/)[^"']+["']/.test(
-      text,
-    )
-      ? "a vendor integration imports only ../integration.ts among " +
-          "integrations/ files"
-      : undefined;
-  }
-  if (rel === "integrations/catalog.ts") return undefined;
-  const vendorImport = rel.startsWith("integrations/")
-    ? /from\s+["']\.\/[^"']+\//
-    : /from\s+["'][^"']*\bintegrations\/[^"'/]+\//;
-  return vendorImport.test(text)
-    ? "only integrations/catalog.ts imports a vendor integration"
-    : undefined;
-}
 
 const root = new URL("../src", import.meta.url).pathname;
 let violations = 0;
@@ -95,15 +59,6 @@ for (const rule of RULES) {
         violations++;
       }
     }
-  }
-}
-
-for await (const rel of new Glob("**/*.ts").scan(root)) {
-  const text = await Bun.file(`${root}/${rel}`).text();
-  const reason = vendorViolations(rel, text);
-  if (reason) {
-    console.error(`✗ ${rel}: ${reason}`);
-    violations++;
   }
 }
 

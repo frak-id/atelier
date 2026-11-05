@@ -59,16 +59,6 @@ function invalidateForResource(
     case "sessionStatuses":
       queryClient.invalidateQueries({ queryKey: sessions.statuses(sandboxId) });
       break;
-    case "permissions":
-      queryClient.invalidateQueries({
-        queryKey: sessions.permissions(sandboxId),
-      });
-      break;
-    case "questions":
-      queryClient.invalidateQueries({
-        queryKey: sessions.questions(sandboxId),
-      });
-      break;
     case "todos":
       queryClient.invalidateQueries({
         queryKey: event.sessionId
