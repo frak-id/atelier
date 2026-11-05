@@ -397,7 +397,7 @@ describe("sandbox routes", () => {
     expect(res.status).toBe(401);
   });
 
-  test("auth bypass (local/mock) lets any caller through", async () => {
+  test("auth bypass (local) lets any caller through", async () => {
     const previous = config.server.mode;
     config.server.mode = "local";
     try {

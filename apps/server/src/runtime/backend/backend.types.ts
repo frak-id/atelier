@@ -1,9 +1,9 @@
 /**
  * The runtime's backend port. `RuntimeService` keeps the backend-neutral logic
  * (op-locks, content-hash dedup, phase ordering, GC guards, snapshot/toolset
- * bookkeeping); every leaf container/disk/URL call goes through this seam, so a
- * Docker or local-process backend can replace the Kubernetes one without
- * touching policy. See docs/proposals/portable-runtime-backends.md §3.
+ * bookkeeping); every leaf container/disk/URL call goes through this seam, so
+ * the Docker backend (local mode) can replace the Kubernetes one without
+ * touching policy.
  */
 import type { PortEntry, SandboxSpec } from "@atelier/spec";
 import type { AgentClient } from "../agent/index.ts";
@@ -33,19 +33,14 @@ export interface AgentEndpoint {
 }
 
 /**
- * Storage plane: disk snapshot / clone / existence. Varies independently of
- * the sandbox orchestrator (CSI VolumeSnapshot today; btrfs/zfs/reflink/copy
- * or an OCI-tar materialization later — see proposal §5-6).
+ * Storage plane: disk snapshot / clone / existence (CSI VolumeSnapshot on
+ * Kubernetes, Docker volume copies in local mode).
  */
 export interface VolumeBackend {
   /**
    * Snapshot `pvcName` into `ref` and wait until it is ready. Idempotent on
    * `ref`: a forced rebuild can resolve to a name that already exists, so any
    * prior snapshot of that name is replaced instead of colliding.
-   *
-   * NOTE (proposal §5, step 3): this returns `void` today because the ref is
-   * computed by the caller and passed in. An OCI-tar backend will need to
-   * return what it produced (a ref/locator) — expect this signature to grow.
    */
   snapshot(
     pvcName: string,

@@ -4,25 +4,13 @@
  * one" from `resourceExists` — so an API blip (e.g. the k3s restart during a
  * kata-deploy upgrade) must surface as an error, never as "not there".
  */
-import { afterEach, beforeEach, describe, expect, spyOn, test } from "bun:test";
+import { afterEach, describe, expect, spyOn, test } from "bun:test";
+import { KubeApiError, KubeClient } from "./kube.client.ts";
 
-process.env.ATELIER_SERVER_MODE = "mock";
-
-const { config } = await import("../../shared/lib/config.ts");
-const { KubeApiError, KubeClient } = await import("./kube.client.ts");
-
-// The client short-circuits every call under mock mode; these tests exercise
-// the real code paths with `get`/`request` stubbed, so run them as production.
-let previousMode: typeof config.server.mode;
-beforeEach(() => {
-  previousMode = config.server.mode;
-  config.server.mode = "production";
-});
-
+// These tests exercise the real code paths with `get`/`request` stubbed.
 const spies: Array<{ mockRestore: () => void }> = [];
 afterEach(() => {
   for (const s of spies.splice(0)) s.mockRestore();
-  config.server.mode = previousMode;
 });
 
 function client() {

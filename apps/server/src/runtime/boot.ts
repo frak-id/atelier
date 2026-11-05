@@ -1,14 +1,11 @@
 /**
  * Mechanism-only boot, with every Workspace/policy leak removed:
  *   - no `Workspace` param — takes a resolved `SandboxSpec`;
- *   - no `ports.sshKeys.getValidPublicKeys()` — `authorizedKeys` is an explicit
- *     input (an SSH pubkey is content the caller resolved);
  *   - no `sandboxHasDev` workspace lookup — URLs come from `spec.ports`.
  * The runtime never imports control/ or sessions/.
  */
 import type { SandboxSpec } from "@atelier/spec";
 import { customAlphabet } from "nanoid";
-import { isMock } from "../shared/lib/config.ts";
 import { createChildLogger } from "../shared/lib/logger.ts";
 import { defaultVolumeSize } from "../shared/lib/runtime-config.ts";
 import type { AgentClient } from "./agent/index.ts";
@@ -18,11 +15,10 @@ import {
   buildPvc,
   buildSandboxPod,
   buildSandboxService,
-  type KubeResource,
+  ensureSharedSshPipeKey,
   kubeClient,
 } from "./kube/index.ts";
 import { buildPortIngresses } from "./ports.ts";
-import { resolveSshGatewayBoot, sshAuthKeysSecretName } from "./ssh-gateway.ts";
 
 const log = createChildLogger("runtime-boot");
 
@@ -42,12 +38,10 @@ export interface BootInput {
    * a snapshot clone) is the boot source and a create would 409. */
   reusePvc?: boolean;
   /** On boot failure, tear down only the restartable resources (pod/service/
-   * pipe/ingresses) instead of the full label sweep — the resume path: the
+   * ingresses) instead of the full label sweep — the resume path: the
    * PVC and the pause VolumeSnapshot both carry the sandbox label, and a
    * full sweep would destroy the paused disk a retry needs. */
   preserveDisk?: boolean;
-  /** SSH public keys authorized on the sshpiper Pipe. Content, resolved by the caller. */
-  authorizedKeys?: string[];
   /**
    * Full, digest-pinned toolset pull references to materialize into the home
    * before the files/env phase (toolset-overlay-squashfs.md §5-6). Set on
@@ -101,10 +95,9 @@ export async function bootSandbox(
   let createdPvcUid: string | undefined;
 
   try {
-    // The SSH gateway strategy decides which secret the pod trusts as its
-    // authorized_keys and what extra SSH resources to emit (Pipe / per-sandbox
-    // key Secret) — sshpiper is optional (proposal §5).
-    const ssh = await resolveSshGatewayBoot(sandboxId, input.authorizedKeys);
+    // The pod trusts the shared key's public half as its authorized_keys:
+    // the in-server SSH gateway (ssh/) dials `dev@pod` with the private half.
+    const sshKey = await ensureSharedSshPipeKey();
 
     // The PVC is created FIRST, on its own, and everything else only after
     // the API server confirmed it. If that create fails (409: a same-name PVC
@@ -130,16 +123,15 @@ export async function bootSandbox(
     }
 
     // The rest create in one concurrent batch.
-    await Promise.all([
-      ...createSandboxResources(sandboxId, spec, {
+    await Promise.all(
+      createSandboxResources(sandboxId, spec, {
         image: input.image,
         agentPassword,
         pvcName,
         freshVolume,
-        podAuthKeysSecret: ssh.podAuthKeysSecret,
-        sshResources: ssh.resources,
+        sshKeySecret: sshKey.secretName,
       }),
-    ]);
+    );
 
     // Backend-neutral tail (wait for agent -> materialize -> config -> files);
     // shared with the Docker backend via provisionAgent.
@@ -150,20 +142,15 @@ export async function bootSandbox(
       agent,
     );
 
-    // Pin the sandbox's real sshd host key(s) now that the agent reported
-    // them: the sshpiper Pipe created above is patched; the in-server proxy
-    // reads them off the record. Host keys regenerate every boot
-    // (sandbox-boot.sh), so every boot and resume re-pins. A gateway-fronted
-    // sandbox that can't be pinned fails the boot rather than exposing SSH
-    // unverified (mock mode has no sshd, so nothing to pin).
-    if (ssh.verifiesHostKey && !isMock()) {
-      if (sshHostKeys.length === 0) {
-        throw new Error(
-          `Sandbox ${sandboxId} reported no sshd host keys; refusing to ` +
-            "expose SSH without host-key verification",
-        );
-      }
-      await ssh.pinHostKey(sshHostKeys);
+    // The SSH gateway pins the sandbox's real sshd host key(s), read off the
+    // record (host keys regenerate every boot, see sandbox-boot.sh). A
+    // sandbox that reports none fails the boot rather than exposing SSH
+    // unverified.
+    if (sshHostKeys.length === 0) {
+      throw new Error(
+        `Sandbox ${sandboxId} reported no sshd host keys; refusing to ` +
+          "expose SSH without host-key verification",
+      );
     }
 
     return { podName, pvcName, agentPassword, podIp, sshHostKeys };
@@ -238,11 +225,9 @@ interface ResourceSpec {
   pvcName: string;
   /** The PVC was just created blank — the only case the guest may mkfs it. */
   freshVolume: boolean;
-  /** Secret the pod mounts as its authorized_keys source (resolved by the SSH
-   * gateway strategy); undefined disables in-pod SSH. */
-  podAuthKeysSecret?: string;
-  /** SSH gateway resources to create alongside the pod (Pipe / key Secret). */
-  sshResources: KubeResource[];
+  /** Secret the pod mounts as its authorized_keys source (the shared key the
+   * SSH gateway dials with). */
+  sshKeySecret: string;
 }
 
 function createSandboxResources(
@@ -258,7 +243,7 @@ function createSandboxResources(
         agentPassword: r.agentPassword,
         pvcName: r.pvcName,
         freshVolume: r.freshVolume,
-        sshPipeKeySecret: r.podAuthKeysSecret,
+        sshPipeKeySecret: r.sshKeySecret,
         requests: {
           cpu: `${Math.max(250, spec.resources.vcpus * 250)}m`,
           memory: `${spec.resources.memoryMb}Mi`,
@@ -275,7 +260,6 @@ function createSandboxResources(
     ...buildPortIngresses(sandboxId, spec.ports).map((resource) =>
       kubeClient.createResource(resource),
     ),
-    ...r.sshResources.map((resource) => kubeClient.createResource(resource)),
   ];
 }
 
@@ -286,11 +270,6 @@ export async function deleteRestartableResources(
   const deletions: Array<[string, string]> = [
     ["Pod", podName],
     ["Service", `sandbox-${sandboxId}`],
-    // Both SSH-gateway restartable resources: the sshpiper Pipe and the `none`
-    // strategy's per-sandbox authorized-keys Secret. Deleting a non-existent
-    // one is a no-op (swallowed below), so this is strategy-agnostic.
-    ["Pipe", `ssh-${sandboxId}`],
-    ["Secret", sshAuthKeysSecretName(sandboxId)],
   ];
   for (const [kind, name] of deletions) {
     try {

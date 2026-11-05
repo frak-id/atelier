@@ -2,20 +2,34 @@
  * AES-256-GCM secret-value encryption. Free-floating crypto util — called
  * by `secret.service.ts` (encrypts a write-only value at rest).
  */
-import { isMock } from "../../../shared/lib/config.ts";
+import { isProduction } from "../../../shared/lib/config.ts";
 import { createChildLogger } from "../../../shared/lib/logger.ts";
 
 const log = createChildLogger("secret-crypto");
 const ENCRYPTION_PREFIX = "enc:";
+/** Local-mode fallback only: production refuses to start without a key
+ * (`assertSecretsKeyConfigured`), so this public value never encrypts a
+ * production secret. */
+const DEV_SECRETS_KEY = "default-dev-key-change-in-production";
 
-async function getEncryptionKey(): Promise<CryptoKey> {
-  const secretKey =
-    process.env.SANDBOX_SECRETS_KEY || "default-dev-key-change-in-production";
-  if (secretKey === "default-dev-key-change-in-production" && !isMock()) {
-    log.warn(
-      "Using default secrets key - set SANDBOX_SECRETS_KEY in production!",
+/**
+ * Fail fast at server startup when production has no `SANDBOX_SECRETS_KEY`:
+ * every stored secret would otherwise be encrypted with a key published in
+ * this repository. Local mode keeps the dev default (with a warning).
+ */
+export function assertSecretsKeyConfigured(): void {
+  if (process.env.SANDBOX_SECRETS_KEY) return;
+  if (isProduction()) {
+    throw new Error(
+      "SANDBOX_SECRETS_KEY is required in production mode (it encrypts " +
+        "stored secrets at rest)",
     );
   }
+  log.warn("SANDBOX_SECRETS_KEY is unset; using the public dev key");
+}
+
+async function getEncryptionKey(): Promise<CryptoKey> {
+  const secretKey = process.env.SANDBOX_SECRETS_KEY || DEV_SECRETS_KEY;
   const keyData = new TextEncoder().encode(secretKey);
   const hash = await crypto.subtle.digest("SHA-256", keyData);
   return crypto.subtle.importKey("raw", hash, { name: "AES-GCM" }, false, [
@@ -25,9 +39,6 @@ async function getEncryptionKey(): Promise<CryptoKey> {
 }
 
 export async function encryptSecretValue(value: string): Promise<string> {
-  if (isMock()) {
-    return `${ENCRYPTION_PREFIX}${Buffer.from(value).toString("base64")}`;
-  }
   const key = await getEncryptionKey();
   const iv = crypto.getRandomValues(new Uint8Array(12));
   const encoded = new TextEncoder().encode(value);
@@ -48,9 +59,6 @@ export async function decryptSecretValue(encrypted: string): Promise<string> {
     return encrypted;
   }
   const data = encrypted.slice(ENCRYPTION_PREFIX.length);
-  if (isMock()) {
-    return Buffer.from(data, "base64").toString("utf-8");
-  }
   const key = await getEncryptionKey();
   const combined = Buffer.from(data, "base64");
   const iv = combined.subarray(0, 12);

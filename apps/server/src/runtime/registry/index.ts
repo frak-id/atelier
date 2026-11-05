@@ -5,4 +5,3 @@ export {
   ImageRegistryService,
   RegistryUnreachableError,
 } from "./image-registry.service.ts";
-export { readContextDockerfile, unpackZipContext } from "./zip-context.ts";

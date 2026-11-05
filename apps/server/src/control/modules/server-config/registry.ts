@@ -183,7 +183,7 @@ const CONFIG_REGISTRY = {
       "OCI registry host[:port] where sandbox and prebuild images live. No " +
       "scheme — it is concatenated as `<registry>/<image>`. Empty (the " +
       "default) means no external registry: images are built into and run " +
-      "from the local Docker daemon (the `atelier local up` path). A cluster " +
+      "from the local Docker daemon (local mode). A cluster " +
       "sets it to its in-cluster registry (e.g. the bundled Zot).",
     envVar: "ATELIER_K8S_REGISTRY_URL",
     default: "",
@@ -196,10 +196,9 @@ const CONFIG_REGISTRY = {
     options: builderKinds,
     label: "Image builder",
     description:
-      "Which build backend to use: docker (shell out to a Docker daemon) " +
-      "or buildkit (recommended for in-cluster builds — runs daemonless " +
-      "with no endpoint set, or dispatches to an existing buildkitd if you set " +
-      "one below).",
+      "Which build backend to use: docker (shell out to a Docker daemon, " +
+      "local mode) or buildkit (in-cluster builds, dispatched to the " +
+      "buildkitd endpoint set below).",
     envVar: "ATELIER_IMAGE_BUILDER_KIND",
     default: "docker",
     parseEnv: validateBuilderKind,
@@ -210,8 +209,8 @@ const CONFIG_REGISTRY = {
     type: "string",
     label: "Builder image override",
     description:
-      "Override the buildkit builder image (client or daemonless). Empty " +
-      "uses the sensible default. Ignored for the docker backend.",
+      "Override the buildkit buildctl client image. Empty uses the pinned " +
+      "default. Ignored for the docker backend.",
     envVar: "ATELIER_IMAGE_BUILDER_IMAGE",
     default: "",
     parseEnv: optionalString,
@@ -222,10 +221,9 @@ const CONFIG_REGISTRY = {
     type: "string",
     label: "BuildKit endpoint",
     description:
-      "Address of an existing buildkitd daemon (e.g. " +
-      "tcp://buildkitd.buildkit.svc:1234). Only used when the builder is " +
-      "buildkit. Leave empty (the default) to run BuildKit daemonless in " +
-      "the one-shot build Job instead — no external daemon needed.",
+      "Address of the buildkitd daemon (e.g. " +
+      "tcp://buildkitd.buildkit.svc:1234). Required when the builder is " +
+      "buildkit; ignored for the docker backend.",
     envVar: "ATELIER_IMAGE_BUILDER_ENDPOINT",
     default: "",
     parseEnv: optionalString,

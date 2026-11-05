@@ -93,7 +93,7 @@ const PREBUILDS: PrebuildRecord[] = [
 ];
 
 /** Every sandbox is owned by `ownerId`, so `capture` passes the real access
- * rule whatever the server mode (no reliance on the mock-mode bypass). */
+ * rule whatever the server mode (no reliance on the local-mode auth bypass). */
 function fakeRuntime(ownerId: string) {
   const toolsets = new Map<string, { private: boolean }>();
   const calls = { deleted: [] as string[], published: [] as string[] };

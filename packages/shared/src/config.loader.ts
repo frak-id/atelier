@@ -1,4 +1,5 @@
 import { existsSync, readFileSync } from "node:fs";
+import { Kind, type TSchema } from "@sinclair/typebox";
 import { Value } from "@sinclair/typebox/value";
 import {
   type AtelierConfig,
@@ -50,17 +51,57 @@ function loadFromEnv(): Record<string, unknown> {
   return config;
 }
 
+/** Read the config file. A missing file is fine (env + defaults apply); an
+ * unparsable one or one with keys the schema doesn't know throws, so a typo
+ * can't silently revert every value to its default. */
 function loadFromFile(filePath: string): Record<string, unknown> {
   if (!existsSync(filePath)) {
     return {};
   }
 
+  const content = readFileSync(filePath, "utf-8");
+  let parsed: unknown;
   try {
-    const content = readFileSync(filePath, "utf-8");
-    return JSON.parse(content);
-  } catch {
-    return {};
+    parsed = JSON.parse(content);
+  } catch (err) {
+    const reason = err instanceof Error ? err.message : String(err);
+    throw new Error(`Config file ${filePath} is not valid JSON: ${reason}`);
   }
+  if (!isPlainObject(parsed)) {
+    throw new Error(`Config file ${filePath} must hold a JSON object`);
+  }
+  const unknown = unknownConfigKeys(AtelierConfigSchema, parsed, "");
+  if (unknown.length > 0) {
+    throw new Error(
+      `Config file ${filePath} has unknown keys: ${unknown.join(", ")}`,
+    );
+  }
+  return parsed;
+}
+
+function isPlainObject(value: unknown): value is Record<string, unknown> {
+  return typeof value === "object" && value !== null && !Array.isArray(value);
+}
+
+/** Dotted paths in `value` that `schema` has no property for. Only descends
+ * through `Type.Object`s: a record (e.g. ingress annotations) takes any key. */
+function unknownConfigKeys(
+  schema: TSchema,
+  value: unknown,
+  path: string,
+): string[] {
+  if (schema[Kind] !== "Object" || !isPlainObject(value)) return [];
+  const properties = schema.properties as Record<string, TSchema>;
+  const unknown: string[] = [];
+  for (const [key, child] of Object.entries(value)) {
+    // `$schema` points editors at the generated JSON schema.
+    if (path === "" && key === "$schema") continue;
+    const childPath = path ? `${path}.${key}` : key;
+    const childSchema = properties[key];
+    if (!childSchema) unknown.push(childPath);
+    else unknown.push(...unknownConfigKeys(childSchema, child, childPath));
+  }
+  return unknown;
 }
 
 function deepMerge(
@@ -116,16 +157,6 @@ export interface LoadConfigOptions {
   configFile?: string;
   skipEnv?: boolean;
   skipFile?: boolean;
-}
-
-export function getDefaultConfig(): AtelierConfig {
-  const base = { server: { mode: "mock" } };
-  const withDefaults = Value.Default(AtelierConfigSchema, base);
-  const converted = Value.Convert(AtelierConfigSchema, withDefaults);
-  const cleaned = Value.Clean(AtelierConfigSchema, converted);
-  const config = cleaned as AtelierConfig;
-  deriveDomainFields(config);
-  return config;
 }
 
 export function loadConfig(options: LoadConfigOptions = {}): AtelierConfig {

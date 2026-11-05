@@ -103,7 +103,7 @@ describe("canAccessSandbox", () => {
     ).toBe(false);
   });
 
-  test("a bypassed-auth (local/mock) server allows everything", () => {
+  test("a bypassed-auth (local) server allows everything", () => {
     expect(canAccessSandbox(deps(true), "mallory", owned)).toBe(true);
   });
 });

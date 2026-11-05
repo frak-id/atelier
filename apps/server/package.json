@@ -5,7 +5,7 @@
   "private": true,
   "type": "module",
   "scripts": {
-    "dev": "ATELIER_SERVER_MODE=mock bun run --watch src/index.ts",
+    "dev": "ATELIER_SERVER_MODE=local ATELIER_RUNTIME_BACKEND=docker bun run --watch src/index.ts",
     "start": "bun run src/index.ts",
     "build": "bun build src/index.ts --target=bun --outfile=dist/server.js --minify --external cpu-features --external '*.node'",
     "db:generate": "drizzle-kit generate",

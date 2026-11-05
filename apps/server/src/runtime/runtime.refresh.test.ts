@@ -1,23 +1,14 @@
 /**
- * `RuntimeService.refreshToolset` in mock mode with a scripted agent: the
+ * `RuntimeService.refreshToolset` over the test doubles with a scripted
+ * agent: the
  * base toolset is mounted, the steps run, and the capture only happens when
  * the fingerprint moved (or could not be told).
  */
-import { beforeAll, describe, expect, test } from "bun:test";
+import { describe, expect, test } from "bun:test";
 import type { ToolsetRefreshRequest } from "@atelier/spec";
-
-// Config is read once at module load: force mock mode before importing.
-process.env.ATELIER_SERVER_MODE = "mock";
-
-let RuntimeService: typeof import("./runtime.service.ts").RuntimeService;
-let AgentClient: typeof import("./agent/index.ts").AgentClient;
-let stores: typeof import("./store.ts");
-
-beforeAll(async () => {
-  ({ RuntimeService } = await import("./runtime.service.ts"));
-  ({ AgentClient } = await import("./agent/index.ts"));
-  stores = await import("./store.ts");
-});
+import { RuntimeService } from "./runtime.service.ts";
+import { FakeAgentClient, fakeRuntimeDeps } from "./runtime.test-support.ts";
+import * as stores from "./store.ts";
 
 const BASE_REF = `toolsets/tb/org/o1/pi-web@sha256:${"a".repeat(64)}`;
 const NEW_DIGEST = `sha256:${"b".repeat(64)}`;
@@ -33,8 +24,7 @@ const request: ToolsetRefreshRequest = {
 /** A runtime whose agent answers each fingerprint exec with the next value
  * of `fingerprints` and fails the steps listed in `failing`. */
 function makeRuntime(fingerprints: string[], failing: string[] = []) {
-  // Mock mode: the agent never dials, so no endpoint is ever resolved.
-  const agent = new AgentClient(async () => null);
+  const agent = new FakeAgentClient();
   const calls = {
     steps: [] as string[],
     captures: 0,
@@ -59,6 +49,7 @@ function makeRuntime(fingerprints: string[], failing: string[] = []) {
   };
   const toolsets = new stores.InMemoryToolsetStore();
   const runtime = new RuntimeService({
+    ...fakeRuntimeDeps(),
     agent,
     toolsets,
     sandboxes: new stores.InMemorySandboxStore(),

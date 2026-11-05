@@ -24,15 +24,12 @@ export type { InServerSshGateway } from "./proxy.ts";
 const log = createChildLogger("ssh-gateway");
 
 /**
- * Boot the in-server ssh2 gateway from the composition root. No-op-returns
- * `null` for any strategy other than `in-server`. Requires the shared ssh-pipe
- * key to exist (the caller ensures it before this on non-`none` strategies).
+ * Boot the in-server ssh2 gateway from the composition root (production mode
+ * only; local mode has no SSH gateway).
  */
 export async function startSshGateway(
   container: ServerContainer,
-): Promise<InServerSshGateway | null> {
-  if (config.domain.ssh.gateway !== "in-server") return null;
-
+): Promise<InServerSshGateway> {
   // The pod trusts the shared key's public half; the proxy dials the pod with
   // its private half. Ensure it exists, then read its OpenSSH material.
   await ensureSharedSshPipeKey();
@@ -41,8 +38,8 @@ export async function startSshGateway(
 
   const namespace = config.kubernetes.namespace;
   const resolveUpstream = (sandboxId: string): UpstreamTarget | null => {
-    // Dial the sandbox's Service DNS on port 22 — the same target the sshpiper
-    // `Pipe` used (stable across pod restarts, no pod-IP race).
+    // Dial the sandbox's Service DNS on port 22 (stable across pod restarts,
+    // no pod-IP race).
     if (!/^[a-z0-9-]+$/i.test(sandboxId)) return null;
     return {
       host: `sandbox-${sandboxId}.${namespace}.svc`,

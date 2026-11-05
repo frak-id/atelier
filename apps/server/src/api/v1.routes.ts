@@ -4,10 +4,6 @@
  * two seam mutations) → call `runtime.*(spec)` once. The runtime itself never
  * sees an unresolved secret or an unauthenticated caller.
  */
-import { randomUUID } from "node:crypto";
-import { rm } from "node:fs/promises";
-import { tmpdir } from "node:os";
-import { join } from "node:path";
 import {
   AddPortRequestSchema,
   buildRepoPrebuildSpec,
@@ -36,11 +32,7 @@ import {
   UpdateSandboxRequestSchema,
 } from "@atelier/spec";
 import { Elysia, sse, t } from "elysia";
-import {
-  type JobRecord,
-  readContextDockerfile,
-  unpackZipContext,
-} from "../runtime/index.ts";
+import type { JobRecord } from "../runtime/index.ts";
 import {
   ForbiddenError,
   NotFoundError,
@@ -52,11 +44,7 @@ import {
 } from "../shared/lib/git-attribution.ts";
 import { safeNanoid } from "../shared/lib/id.ts";
 import { createChildLogger } from "../shared/lib/logger.ts";
-import {
-  defaultMemoryMb,
-  defaultVcpus,
-  imageBuilderConfig,
-} from "../shared/lib/runtime-config.ts";
+import { defaultMemoryMb, defaultVcpus } from "../shared/lib/runtime-config.ts";
 import { createAuthPlugin } from "./auth.plugin.ts";
 import {
   harnessForToolset,
@@ -83,32 +71,9 @@ import {
 const log = createChildLogger("v1-routes");
 
 /**
- * H7: the cluster-native builder (buildkit) packages the whole
- * build context as a single base64'd ConfigMap and refuses anything whose
- * encoded size nears the Kubernetes API server's ~1MiB object cap — see
- * `MAX_CONTEXT_BYTES` in `../runtime/registry/builder/k8s-build-job.ts`
- * (kept in sync here; not re-exported through the runtime barrel, so this is
- * a duplicated literal, not an import — see that file for the source of
- * truth). `zip-context.ts`'s 100MB cap is for the docker backend; a BYO/zip
- * context over this much smaller ceiling would previously be accepted
- * (`202`) and only fail asynchronously mid-build. Reject it synchronously at
- * accept time instead when buildkit is the active builder.
- */
-const MAX_K8S_NATIVE_CONTEXT_BYTES = 900_000;
-
-/** Rough base64-inflated size estimate for a raw (pre-tar) context, used to
- * fail fast before even unpacking/tarring — tar + base64 only ever grows the
- * byte count (tar adds block-alignment padding, base64 adds ~33%), so an
- * input already over the ceiling can be rejected immediately. */
-function exceedsK8sNativeContextCeiling(rawBytes: number): boolean {
-  return rawBytes > MAX_K8S_NATIVE_CONTEXT_BYTES;
-}
-
-/**
- * S3: `/v1/images*` accepts an arbitrary Dockerfile and (with the default
- * `imageBuilder.kind=docker`) runs it as a root-equivalent build against the
- * host's docker daemon — gate build/upload/register/delete behind an
- * elevated role. There is genuinely no server-wide admin/operator role today
+ * S3: `/v1/images*` builds seed images on the operator's builder and
+ * registers external refs — gate build/register/delete behind an elevated
+ * role. There is genuinely no server-wide admin/operator role today
  * (see `control.routes.ts`'s `configRoutes` comment: "no server-admin role
  * yet"). This reuses control's existing org-scoped RBAC primitive
  * (`OrgMemberService.requireRole`, `OrgMemberRole = owner|admin|member|
@@ -387,9 +352,7 @@ export async function createSandboxForUser(
         }
       : {}),
   };
-  // Keys of the people who may reach it (its owner, its org's members).
-  const authorizedKeys = control.sandboxSshKeys(withToolboxes);
-  return runtime.create(withToolboxes, { authorizedKeys, id, onProgress });
+  return runtime.create(withToolboxes, { id, onProgress });
 }
 
 /**
@@ -436,10 +399,9 @@ export function forkSandboxForUser(
           ...(name ? { [SANDBOX_NAME_ANNOTATION]: name } : {}),
         },
       },
-      derive: (sourceSpec) => {
-        const spec = control.reattributeSpec(sourceSpec, owner, body.metadata);
-        return { spec, authorizedKeys: control.sandboxSshKeys(spec) };
-      },
+      derive: (sourceSpec) => ({
+        spec: control.reattributeSpec(sourceSpec, owner, body.metadata),
+      }),
     },
     { id, onProgress },
   );
@@ -579,96 +541,16 @@ export function createV1Routes(container: ServerContainer) {
         "/images",
         async ({ body, user, set }) => {
           requireImageOperator(control, user.id);
-          // H7: a plain-dockerfile build's context is just the Dockerfile
-          // text itself — still worth bounding against the k8s-native
-          // ceiling up front when that's the active builder, for the same
-          // reason as the zip-upload path below.
-          if (
-            imageBuilderConfig().kind === "buildkit" &&
-            "dockerfile" in body &&
-            exceedsK8sNativeContextCeiling(Buffer.byteLength(body.dockerfile))
-          ) {
-            throw new ValidationError(
-              `Dockerfile (${Buffer.byteLength(body.dockerfile)} bytes) ` +
-                `exceeds the ${MAX_K8S_NATIVE_CONTEXT_BYTES} byte ceiling ` +
-                `of the active buildkit builder.`,
-            );
-          }
-          const record =
-            "seed" in body
-              ? await container.images.buildSeed(body.seed, {
-                  force: body.force,
-                })
-              : await container.images.buildDockerfile(
-                  body.name,
-                  body.dockerfile,
-                );
+          const record = await container.images.buildSeed(body.seed, {
+            force: body.force,
+          });
           set.status = 202;
           return record;
         },
         {
-          body: t.Union([
-            t.Object({ seed: t.String(), force: t.Optional(t.Boolean()) }),
-            t.Object({ name: t.String(), dockerfile: t.String() }),
-          ]),
-        },
-      )
-      .post(
-        "/images/upload",
-        async ({ body, user, set }) => {
-          requireImageOperator(control, user.id);
-          // H7: reject a BYO/zip context over the active k8s-native builder's
-          // real ceiling synchronously, at accept time — before this would
-          // otherwise answer `202` and only fail once `stageContextTarball`
-          // discovers it mid-build.
-          if (
-            imageBuilderConfig().kind === "buildkit" &&
-            exceedsK8sNativeContextCeiling(body.file.size)
-          ) {
-            throw new ValidationError(
-              `Uploaded context (${body.file.size} bytes) exceeds the ` +
-                `${MAX_K8S_NATIVE_CONTEXT_BYTES} byte ceiling of the active ` +
-                `buildkit builder. Slim the context or use the docker ` +
-                `builder for large uploads.`,
-            );
-          }
-          const zipPath = join(
-            tmpdir(),
-            `atelier-image-upload-${Date.now()}-${randomUUID()}.zip`,
-          );
-          await Bun.write(zipPath, body.file);
-          let contextDir: string | undefined;
-          try {
-            contextDir = await unpackZipContext(zipPath);
-            const dockerfile = await readContextDockerfile(contextDir);
-            // On success the service takes ownership of `contextDir` (the
-            // background build still needs it) and cleans it up when the
-            // build settles — so DON'T delete it here.
-            const record = await container.images.buildDockerfile(
-              body.name,
-              dockerfile,
-              contextDir,
-            );
-            set.status = 202;
-            return record;
-          } catch (err) {
-            // buildDockerfile threw before taking ownership (e.g. invalid
-            // name) — the context is ours to clean.
-            if (contextDir)
-              await rm(contextDir, { recursive: true, force: true });
-            throw err;
-          } finally {
-            await rm(zipPath, { force: true });
-          }
-        },
-        {
-          // S1: bound the raw multipart body itself, not just the unpacked
-          // context — a generous margin over the 100MB unpacked cap (zip
-          // overhead, non-compressible content) while still refusing an
-          // unbounded upload.
           body: t.Object({
-            name: t.String(),
-            file: t.File({ maxSize: "150m" }),
+            seed: t.String(),
+            force: t.Optional(t.Boolean()),
           }),
         },
       )

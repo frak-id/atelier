@@ -1,6 +1,7 @@
 /**
  * `POST /v1/sandboxes/:id/fork` through the real route, real RuntimeService
- * (mock mode) and JobService: the id in the 202 resolves at once as a
+ * (over the runtime test doubles, local mode so auth is bypassed) and
+ * JobService: the id in the 202 resolves at once as a
  * `creating` sandbox, and a source that cannot be snapshotted is refused
  * before any job exists.
  */
@@ -11,7 +12,8 @@ import { join } from "node:path";
 import type { SandboxSpec } from "@atelier/spec";
 import { Elysia } from "elysia";
 
-process.env.ATELIER_SERVER_MODE = "mock";
+// Local mode: auth bypassed. Set before anything loads the server config.
+process.env.ATELIER_SERVER_MODE = "local";
 
 const spec: SandboxSpec = {
   source: { image: "registry.test/base:1" },
@@ -36,11 +38,13 @@ beforeAll(async () => {
   const { createControlContainer } = await import("../control/index.ts");
   const { RuntimeService, JobService } = await import("../runtime/index.ts");
   const stores = await import("../runtime/store.ts");
-  const { KubernetesBackend } = await import("../runtime/backend/index.ts");
+  const { FakeBackend, fakeRuntimeDeps } = await import(
+    "../runtime/runtime.test-support.ts"
+  );
   const { SandboxError } = await import("../shared/errors.ts");
   const { createV1Routes } = await import("./v1.routes.ts");
 
-  const backend = new KubernetesBackend();
+  const backend = new FakeBackend();
   const gate = new Promise<void>((resolve) => {
     releaseSnapshot = resolve;
   });
@@ -50,6 +54,7 @@ beforeAll(async () => {
   };
   sandboxes = new stores.InMemorySandboxStore();
   runtime = new RuntimeService({
+    ...fakeRuntimeDeps(),
     backend,
     sandboxes,
     snapshots: new stores.InMemorySnapshotStore(),

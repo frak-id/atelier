@@ -7,12 +7,12 @@
  *
  * Context delivery — the hard part on a stock k3s node with no shared
  * filesystem or object store — is done WITHOUT any external dependency: the
- * prepared context (seed dir / unpacked zip / synthetic single-Dockerfile
- * dir, with the service-rewritten Dockerfile written in as `./Dockerfile`) is
+ * prepared seed context (with the service-rewritten Dockerfile written in as
+ * `./Dockerfile`) is
  * `tar`-gzipped, base64'd into a ConfigMap, and an init container untars it
  * into an `emptyDir` the build container then reads. Seed contexts are a few
- * KB; a hard cap (`MAX_CONTEXT_BYTES`) rejects oversized uploads with a clear
- * error rather than tripping the API server's ~1MiB object limit.
+ * KB; a hard cap (`MAX_CONTEXT_BYTES`) rejects an oversized context with a
+ * clear error rather than tripping the API server's ~1MiB object limit.
  *
  * Digest read-back also avoids pod exec: the build container writes the bare
  * pushed digest (`sha256:<hex>`) to `/dev/termination-log`, which Kubernetes
@@ -24,7 +24,6 @@ import { mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { SandboxError } from "../../../shared/errors.ts";
-import { isMock } from "../../../shared/lib/config.ts";
 import { createChildLogger } from "../../../shared/lib/logger.ts";
 import { kubeClient } from "../../kube/index.ts";
 
@@ -42,10 +41,7 @@ const BUILD_CONTAINER = "build";
 /**
  * ConfigMaps are capped at ~1MiB by the API server and base64 inflates ~33%,
  * so refuse anything whose encoded size approaches that. Seed contexts are
- * ~10-90KB; only a large zip upload would ever hit this. The upload/accept
- * path (H7: `v1.routes.ts`) mirrors this ceiling to reject an over-ceiling
- * BYO/zip context synchronously, before a `202`, instead of discovering it
- * here mid-build.
+ * ~10-90KB.
  */
 const MAX_CONTEXT_BYTES = 900_000;
 
@@ -56,16 +52,11 @@ const POLL_INTERVAL_MS = 2_000;
  * wedged API server can't hang the build's teardown. */
 const LOG_CAPTURE_TIMEOUT_MS = 10_000;
 
-/** The build container both backends inject into the shared Job scaffold. */
+/** The build container the buildkit builder injects into the Job scaffold. */
 export interface BuildContainerSpec {
   image: string;
   command?: string[];
   args: string[];
-  env?: { name: string; value: string }[];
-  /** Container-level `securityContext` override (e.g. the seccomp/AppArmor
-   * Unconfined + non-root UID rootless BuildKit needs — see
-   * `buildkit.builder.ts`'s `ROOTLESS_SECURITY_CONTEXT`). */
-  securityContext?: Record<string, unknown>;
   /** Extra volumes (e.g. a buildkit client-TLS secret) merged into the pod. */
   volumes?: unknown[];
   /** Extra mounts for the build container, paired with `volumes`. */
@@ -160,8 +151,7 @@ export async function stageContextTarball(
       throw new SandboxError(
         `build context is too large for the cluster-native builder ` +
           `(${Math.round(encoded.length / 1024)}KB encoded > ` +
-          `${Math.round(MAX_CONTEXT_BYTES / 1024)}KB). Slim the context or ` +
-          `use the docker builder for large uploads.`,
+          `${Math.round(MAX_CONTEXT_BYTES / 1024)}KB). Slim the context.`,
         "IMAGE_CONTEXT_TOO_LARGE",
         413,
       );
@@ -217,10 +207,6 @@ export function buildJobManifest(
               image: container.image,
               ...(container.command ? { command: container.command } : {}),
               args: container.args,
-              ...(container.env ? { env: container.env } : {}),
-              ...(container.securityContext
-                ? { securityContext: container.securityContext }
-                : {}),
               terminationMessagePolicy: "File",
               volumeMounts: [
                 { name: "workspace", mountPath: BUILD_CONTEXT_DIR },
@@ -277,11 +263,6 @@ export async function runKubeBuildJob(
   onLog: (chunk: string) => void,
   signal: AbortSignal,
 ): Promise<{ digest: string }> {
-  if (isMock()) {
-    onLog(`[mock] build job ${spec.name} skipped\n`);
-    return { digest: `sha256:${"0".repeat(64)}` };
-  }
-
   const ns = kubeClient.namespace;
   const configMapName = `${spec.name}-ctx`;
   const encoded = await stageContextTarball(spec.contextDir, spec.dockerfile);

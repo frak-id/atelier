@@ -1,9 +1,7 @@
 /**
- * The Kubernetes + CSI implementation of the runtime backend port — today's
- * behavior verbatim. It delegates to the existing boot/cleanup/ports/kube
- * modules and holds no policy of its own; the mock-mode short-circuits live in
- * `kubeClient.*` (so this backend is mock-safe without an `isMock()` branch of
- * its own — see the implementation log, step 1).
+ * The Kubernetes + CSI implementation of the runtime backend port. It
+ * delegates to the existing boot/cleanup/ports/kube modules and holds no
+ * policy of its own.
  */
 import type { PortEntry, SandboxSpec } from "@atelier/spec";
 import { config } from "../../shared/lib/config.ts";
@@ -30,26 +28,8 @@ const log = createChildLogger("runtime-backend-kube");
 /** WS attach-bridge port the agent listens on (agent `attach::ATTACH_PORT`). */
 const ATTACH_PORT = 9997;
 
-/**
- * Select the volume storage plane from `config.storage.provider`. Only `csi`
- * is implemented today; the host-FS ladder (`btrfs`/`reflink`/`copy`) and the
- * OCI-tar prebuild materialization are the deferred, infra-gated pieces (see
- * docs/proposals/portable-runtime-implementation-log.md, step 3). Fail fast
- * at construction rather than silently degrading a misconfigured provider.
- */
-export function createVolumeBackend(
-  provider: (typeof config.storage)["provider"] = config.storage.provider,
-): VolumeBackend {
-  if (provider === "csi") return new CsiVolumeBackend();
-  throw new Error(
-    `storage.provider="${provider}" is not yet implemented; only "csi" is ` +
-      "available today (the btrfs/reflink/copy + OCI-tar backends are the " +
-      "deferred portability follow-up). Set storage.provider=csi.",
-  );
-}
-
 /** CSI VolumeSnapshot / PVC storage plane. */
-export class CsiVolumeBackend implements VolumeBackend {
+class CsiVolumeBackend implements VolumeBackend {
   async snapshot(
     pvcName: string,
     ref: string,
@@ -85,7 +65,7 @@ export class CsiVolumeBackend implements VolumeBackend {
 
 /** Kubernetes sandbox orchestration plane. */
 export class KubernetesBackend implements SandboxBackend {
-  readonly volumes: VolumeBackend = createVolumeBackend();
+  readonly volumes: VolumeBackend = new CsiVolumeBackend();
 
   boot(
     id: string,

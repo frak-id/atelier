@@ -9,8 +9,8 @@
  * dev-base sandbox image, so it is stubbed here; that path is a full-image
  * smoke test, not this orchestration test.
  *
- * OPT-IN — never runs in the normal (mock) suite. Requires a Docker daemon, the
- * agent image, and an explicit flag, and forces non-mock mode only then:
+ * OPT-IN — never runs in the normal suite. Requires a Docker daemon, the
+ * agent image, and an explicit flag:
  *   docker build -t atelier-agent:local apps/agent
  *   ATELIER_DOCKER_IT=1 bun test src/runtime/backend/docker.backend.test.ts
  */
@@ -34,12 +34,10 @@ function dockerReady(): boolean {
 
 const RUN_IT = process.env.ATELIER_DOCKER_IT === "1" && dockerReady();
 
-// Only when opted in: force non-mock (so waitForAgent really dials) and load
-// the runtime modules dynamically. Guarded so the standard mock suite neither
-// imports these nor sees the env change. A single `const` keeps TS narrowing
-// clean (no non-null assertions).
+// Only when opted in: load the runtime modules dynamically, so the standard
+// suite never imports them. A single `const` keeps TS narrowing clean (no
+// non-null assertions).
 async function loadMods() {
-  process.env.ATELIER_SERVER_MODE ??= "production";
   return {
     AgentClient: (await import("../agent/index.ts")).AgentClient,
     DockerBackend: (await import("./docker.backend.ts")).DockerBackend,

@@ -5,10 +5,9 @@
  * Policy, not mechanism: this reads the user's own OAuth token (identity),
  * so it lives in control/. The token is ALWAYS the caller's own.
  *
- * Mock mode serves a fixed fixture so the whole flow is demoable without
- * GitHub. Local mode uses the host token `atelier local up` injects
- * (`ATELIER_GITHUB_TOKEN`). No token at all is not an error: the listing
- * reports `connected: false` and the console explains why.
+ * Local mode uses the operator's host token (`ATELIER_GITHUB_TOKEN`). No
+ * token at all is not an error: the listing reports `connected: false` and
+ * the console explains why.
  */
 import { detectSetupSteps } from "@atelier/spec/repo-prebuild";
 import {
@@ -16,7 +15,7 @@ import {
   SandboxError,
   ValidationError,
 } from "../shared/errors.ts";
-import { isAuthBypassed, isMock } from "../shared/lib/config.ts";
+import { isAuthBypassed } from "../shared/lib/config.ts";
 import { createChildLogger } from "../shared/lib/logger.ts";
 import { githubApiGet } from "./github-api.ts";
 import type { UserService } from "./modules/user/index.ts";
@@ -138,7 +137,7 @@ export class GitHubRepoService {
       fetch?: Fetch;
       now?: () => number;
       /** Test seam; defaults to the server mode. */
-      mode?: () => "mock" | "bypassed" | "real";
+      mode?: () => "bypassed" | "real";
     },
   ) {}
 
@@ -150,9 +149,8 @@ export class GitHubRepoService {
     return this.deps.now?.() ?? Date.now();
   }
 
-  private mode(): "mock" | "bypassed" | "real" {
+  private mode(): "bypassed" | "real" {
     if (this.deps.mode) return this.deps.mode();
-    if (isMock()) return "mock";
     return isAuthBypassed() ? "bypassed" : "real";
   }
 
@@ -162,7 +160,6 @@ export class GitHubRepoService {
     if (mode === "bypassed") {
       return process.env.ATELIER_GITHUB_TOKEN?.trim() || undefined;
     }
-    if (mode === "mock") return undefined;
     return this.deps.userService.getById(userId)?.githubAccessToken;
   }
 
@@ -173,7 +170,6 @@ export class GitHubRepoService {
     userId: string,
     options: { refresh?: boolean } = {},
   ): Promise<GitHubRepoList> {
-    if (this.mode() === "mock") return MOCK_LIST;
     const token = this.tokenFor(userId);
     if (!token) return { connected: false, repos: [], truncated: false };
 
@@ -215,7 +211,6 @@ export class GitHubRepoService {
     if (!NAME_RE.test(owner) || !NAME_RE.test(name)) {
       throw new ValidationError("Invalid repository owner or name");
     }
-    if (this.mode() === "mock") return mockInspection(owner, name, ref);
     const token = this.tokenFor(userId);
     if (!token) {
       throw new ValidationError(
@@ -314,105 +309,4 @@ export class GitHubRepoService {
     }
     return (await response.json()) as T;
   }
-}
-
-// ── mock fixture ────────────────────────────────────────────────────────────
-
-function mockRepo(
-  owner: string,
-  name: string,
-  opts: Partial<GitHubRepo> & { daysAgo: number },
-): GitHubRepo {
-  const { daysAgo, ...rest } = opts;
-  return {
-    fullName: `${owner}/${name}`,
-    owner,
-    name,
-    cloneUrl: `https://github.com/${owner}/${name}.git`,
-    htmlUrl: `https://github.com/${owner}/${name}`,
-    description: null,
-    private: false,
-    fork: false,
-    archived: false,
-    defaultBranch: "main",
-    language: "TypeScript",
-    pushedAt: new Date(
-      Date.UTC(2026, 8, 24) - daysAgo * 86_400_000,
-    ).toISOString(),
-    ownerAvatarUrl: "https://avatars.githubusercontent.com/u/1?v=4",
-    ...rest,
-  };
-}
-
-const MOCK_LIST: GitHubRepoList = {
-  connected: true,
-  truncated: false,
-  repos: [
-    mockRepo("frak-id", "atelier", {
-      daysAgo: 0,
-      description: "Orchestrator for isolated dev environments",
-    }),
-    mockRepo("frak-id", "wallet", {
-      daysAgo: 1,
-      private: true,
-      description: "Frak wallet app",
-    }),
-    mockRepo("frak-id", "backend", {
-      daysAgo: 3,
-      private: true,
-      description: "Frak backend services",
-    }),
-    mockRepo("mock-user", "dotfiles", {
-      daysAgo: 12,
-      language: "Shell",
-    }),
-    mockRepo("frak-id", "contracts", {
-      daysAgo: 30,
-      language: "Solidity",
-      description: "Smart contracts",
-    }),
-    mockRepo("mock-user", "rust-playground", {
-      daysAgo: 45,
-      language: "Rust",
-      defaultBranch: "master",
-    }),
-    mockRepo("mock-user", "legacy-site", {
-      daysAgo: 400,
-      language: "PHP",
-      archived: true,
-    }),
-    mockRepo("mock-user", "react", {
-      daysAgo: 90,
-      language: "JavaScript",
-      fork: true,
-      description: "Fork of facebook/react",
-    }),
-  ],
-};
-
-const MOCK_ROOT_FILES: Record<string, string[]> = {
-  TypeScript: ["package.json", "bun.lock"],
-  JavaScript: ["package.json", "yarn.lock"],
-  Rust: ["Cargo.toml"],
-  PHP: ["composer.json"],
-  Solidity: ["package.json", "pnpm-lock.yaml"],
-};
-
-function mockInspection(
-  owner: string,
-  name: string,
-  _ref?: string,
-): GitHubRepoInspection {
-  const repo = MOCK_LIST.repos.find(
-    (r) => r.fullName.toLowerCase() === `${owner}/${name}`.toLowerCase(),
-  );
-  if (!repo) throw new NotFoundError("GitHub repository", `${owner}/${name}`);
-  const files = new Set(MOCK_ROOT_FILES[repo.language ?? ""] ?? []);
-  return {
-    fullName: repo.fullName,
-    cloneUrl: repo.cloneUrl,
-    defaultBranch: repo.defaultBranch,
-    branches: [repo.defaultBranch, "dev", "feat/quick-prebuild"],
-    suggestedBuild: detectSetupSteps((f) => files.has(f)),
-  };
 }

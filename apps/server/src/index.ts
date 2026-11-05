@@ -10,9 +10,8 @@ import {
 } from "./api/container.ts";
 import { createApp } from "./api/index.ts";
 import { runDueToolboxRefreshes } from "./api/toolbox-refresh.ts";
-import { initDatabase } from "./control/index.ts";
-import { ensureSharedSshPipeKey } from "./runtime/index.ts";
-import { config, isLocal, isMock, isProduction } from "./shared/lib/config.ts";
+import { assertSecretsKeyConfigured, initDatabase } from "./control/index.ts";
+import { config, isProduction } from "./shared/lib/config.ts";
 import { logger } from "./shared/lib/logger.ts";
 import { appPaths } from "./shared/lib/paths.ts";
 import { bindRuntimeConfig } from "./shared/lib/runtime-config.ts";
@@ -29,6 +28,8 @@ if (configErrors.length > 0 && isProduction()) {
     logger.warn({ field: err.field }, `Config warning: ${err.message}`);
   }
 }
+// Throws in production without SANDBOX_SECRETS_KEY (no public default key).
+assertSecretsKeyConfigured();
 
 logger.info({ dataDir: appPaths.data }, "Using data directory");
 await initDatabase();
@@ -41,24 +42,15 @@ const container = createServerContainer();
 bindRuntimeConfig(container.control.serverConfigService);
 await wireBuiltinHarnesses(container);
 
-// The shared SSH pipe key is only needed by strategies that proxy through it
-// (`sshpiper`, `in-server`); `none` mounts the dev's own keys per-sandbox, so
-// pre-warming a shared k8s Secret there would be dead infra (proposal §5).
-// Skipped in mock (no runtime) and local (Docker backend, no cluster/sshpiper —
-// its k8s Secret provisioning would fail against a nonexistent API server).
-if (config.domain.ssh.gateway !== "none" && !isMock() && !isLocal()) {
-  await ensureSharedSshPipeKey();
-}
-// The in-server ssh2 proxy replaces the external sshpiper (proposal §5). It
-// binds its own socket and lives for the process lifetime, so a redeploy drops
-// live SSH sessions (acceptable for a dev tool). Skipped in mock + local modes.
-const sshGateway =
-  config.domain.ssh.gateway === "in-server" && !isMock() && !isLocal()
-    ? await startSshGateway(container).catch((err) => {
-        logger.error({ err }, "in-server ssh gateway failed to start");
-        return null;
-      })
-    : null;
+// The in-server ssh2 gateway binds its own socket and lives for the process
+// lifetime, so a redeploy drops live SSH sessions (acceptable for a dev tool).
+// Production only: local mode (Docker backend) has no SSH gateway.
+const sshGateway = isProduction()
+  ? await startSshGateway(container).catch((err) => {
+      logger.error({ err }, "in-server ssh gateway failed to start");
+      return null;
+    })
+  : null;
 
 // Sweep zombie records left by a server crash/restart: `creating` → cleanup +
 // `error`, `running` without a pod → `error` (both recoverable via resume).
@@ -102,8 +94,7 @@ Bun.cron("* * * * *", async () => {
 
 // Scheduled toolbox refreshes (docs/toolbox-versions.md section 10): start a
 // refresh job for every toolbox whose cron schedule is due. The tick only
-// dispatches (the jobs pool runs the pods), so it stays short. Every mode:
-// mock/local runtimes refresh like any other toolset build.
+// dispatches (the jobs pool runs the pods), so it stays short. Every mode.
 Bun.cron("* * * * *", () => {
   try {
     runDueToolboxRefreshes(container);
@@ -116,26 +107,24 @@ Bun.cron("* * * * *", () => {
 // + base image digest, and rebuild anything that moved (runtime.service.ts
 // `refreshStalePrebuilds`), then enforce the retention window. Both are gated
 // on the `prebuild.gitTracking` config (read every tick, so a live toggle
-// takes effect without a restart). Skipped in mock mode (no network git).
-if (!isMock()) {
-  // Bun.cron never overlaps runs, so a slow pass (many repos / slow remotes)
-  // delays the next tick instead of stacking concurrent refresh runs.
-  Bun.cron("*/30 * * * *", async () => {
-    const { serverConfigService } = container.control;
-    try {
-      if (!serverConfigService.get("prebuild.gitTracking")) return;
-      // Private repos are reached with the prebuild creator's own token.
-      await container.runtime.refreshStalePrebuilds((userId) =>
-        container.control.userService.resolveGitHubToken(userId),
-      );
-      await container.runtime.pruneUnusedPrebuilds(
-        serverConfigService.get("prebuild.pruneKeep"),
-      );
-    } catch (err) {
-      logger.error({ err }, "prebuild staleness cron failed");
-    }
-  });
-}
+// takes effect without a restart). Bun.cron never overlaps runs, so a slow
+// pass (many repos / slow remotes) delays the next tick instead of stacking
+// concurrent refresh runs.
+Bun.cron("*/30 * * * *", async () => {
+  const { serverConfigService } = container.control;
+  try {
+    if (!serverConfigService.get("prebuild.gitTracking")) return;
+    // Private repos are reached with the prebuild creator's own token.
+    await container.runtime.refreshStalePrebuilds((userId) =>
+      container.control.userService.resolveGitHubToken(userId),
+    );
+    await container.runtime.pruneUnusedPrebuilds(
+      serverConfigService.get("prebuild.pruneKeep"),
+    );
+  } catch (err) {
+    logger.error({ err }, "prebuild staleness cron failed");
+  }
+});
 
 const app = createApp(container);
 

@@ -18,7 +18,6 @@ export const SIGNAL_LABELS: Record<ActivitySignal, string> = {
 export const BLOCKER_LABELS: Record<IdleBlocker, string> = {
   "keep-awake": "kept awake",
   "agent-turn": "an agent is working",
-  "permission-pending": "an agent waits for a permission answer",
   job: "a job is working on it",
   "lifecycle-op": "a lifecycle operation is running",
   "agent-unreported":

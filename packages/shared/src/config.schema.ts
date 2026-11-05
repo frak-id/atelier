@@ -3,7 +3,7 @@
  * Configuration priority: ENV vars > config file > defaults
  *
  * Sections:
- *   domain   — Where this runs (base domain, TLS, SSH)
+ *   domain   — Where this runs (base domain, SSH)
  *   auth     — Who can access (GitHub OAuth, JWT, ACLs)
  *   server   — Server API settings (mode, port, limits)
  *   sandbox  — Defaults for new sandboxes (image)
@@ -20,28 +20,11 @@ export const SshConfigSchema = Type.Object(
     port: Type.Number({ default: 2222 }),
     /** SSH proxy hostname — defaults to ssh.{baseDomain} if empty */
     hostname: Type.String({ default: "" }),
-    /**
-     * How SSH into sandboxes is routed (docs/proposals/portable-runtime-
-     * backends.md §5):
-     *   - `sshpiper`: the external sshpiper Deployment + a per-sandbox `Pipe`
-     *     CRD (default; k8s only).
-     *   - `none`: no central SSH gateway — the sandbox pod trusts the dev's own
-     *     keys, so an operator can `kubectl port-forward` and SSH directly.
-     *   - `in-server`: the built-in ssh2 proxy in the server process — no
-     *     external sshpiper. Binds `listenPort`, authenticates the dev against
-     *     the control SSH keys, and dials `pod:22` as `upstreamUser`.
-     */
-    gateway: Type.Union(
-      [
-        Type.Literal("sshpiper"),
-        Type.Literal("none"),
-        Type.Literal("in-server"),
-      ],
-      { default: "sshpiper" },
-    ),
-    /** `in-server` only: the TCP port the built-in ssh2 proxy binds. */
+    /** The TCP port the in-server ssh2 gateway binds (production mode). It
+     * authenticates the dev against the control SSH keys and dials `pod:22`
+     * as `upstreamUser`. */
     listenPort: Type.Number({ default: 2222 }),
-    /** `in-server` only: the upstream user the proxy logs into the pod as. */
+    /** The upstream user the SSH gateway logs into the pod as. */
     upstreamUser: Type.String({ default: "dev" }),
   },
   { default: {} },
@@ -120,7 +103,7 @@ export const KubernetesConfigSchema = Type.Object(
      * OCI registry hostname (`host[:port]`, no scheme) for sandbox and
      * prebuild images. Empty (the default) means "no external registry":
      * images are built into and run straight from the local Docker daemon
-     * (the zero-config `atelier local up` path). A Kubernetes deployment sets
+     * (local mode). A Kubernetes deployment sets
      * this to its in-cluster registry (e.g. the bundled Zot,
      * `<release>-zot.<ns>.svc:5000`) via Helm / the mounted config file.
      */
@@ -155,25 +138,25 @@ export type KubernetesConfig = Static<typeof KubernetesConfigSchema>;
 // Server
 // ---------------------------------------------------------------------------
 
-export const RuntimeModeSchema = Type.Union([
-  // Real cluster runtime + GitHub OAuth + secure cookies.
-  Type.Literal("production"),
-  // Everything stubbed: the agent/kube clients return canned data and auth is
-  // bypassed. For server/console development with no runtime at all.
-  Type.Literal("mock"),
-  // Real runtime (typically the Docker backend) but auth is bypassed and
-  // cluster-only infra (sshpiper key, SSH gateway) is skipped. This is the
-  // self-hosted single-user laptop path (`atelier local up`): sandboxes are
-  // real containers the server actually drives, without a GitHub OAuth app.
-  Type.Literal("local"),
-]);
+export const RuntimeModeSchema = Type.Union(
+  [
+    // Real cluster runtime + GitHub OAuth + secure cookies.
+    Type.Literal("production"),
+    // Real runtime (typically the Docker backend) but auth is bypassed and
+    // cluster-only infra (the SSH gateway) is skipped. The single-user
+    // laptop path and the dev loop (`bun run --filter @atelier/server dev`):
+    // sandboxes are real containers, no GitHub OAuth app needed.
+    Type.Literal("local"),
+  ],
+  { default: "production" },
+);
 
 export type RuntimeMode = Static<typeof RuntimeModeSchema>;
 
 export const ServerConfigSchema = Type.Object(
   {
-    /** Runtime mode: production (real VMs), mock (fully stubbed dev), or local
-     * (real runtime, bypassed auth — the `atelier local up` laptop path). */
+    /** Runtime mode: production (real VMs, the default) or local (real
+     * runtime, bypassed auth — the single-user laptop/dev path). */
     mode: RuntimeModeSchema,
     /** Server API port */
     port: Type.Number({ default: 4000 }),
@@ -241,22 +224,17 @@ export type PortsConfig = Static<typeof PortsConfigSchema>;
 // Image Builder
 //
 // Base images (dev-base, dev-cloud, dev-rust, ...) are server-embedded seed
-// build contexts (`apps/server/src/runtime/registry/seeds/`) plus any
-// user-supplied Dockerfile/zip or externally-registered ref (GHCR etc). This
-// section configures HOW the server builds one when asked to (`ImageBuilder‑
-// Service` / `POST /v1/images`) — two strategies are supported:
+// build contexts (`apps/server/src/runtime/registry/seeds/`), plus any
+// externally-registered ref (GHCR etc). This section configures HOW the
+// server builds a seed when asked to (`ImageBuilderService` /
+// `POST /v1/images`):
 //
 //   - docker:   shells out to a `docker` daemon (local socket, or a remote
-//               `tcp://` one via `dockerHost`/`DOCKER_HOST`). Default — the
-//               lowest-friction option, works with any Docker/OrbStack/Lima
-//               install. Not a good fit for untrusted multi-tenant builds
-//               (a shared daemon is root-equivalent); buildkit-rootless is
-//               the safer choice there.
+//               `tcp://` one via `dockerHost`/`DOCKER_HOST`). Default — what
+//               local mode uses to build seeds into the host daemon.
 //   - buildkit: a one-shot K8s Job with the build context mounted from a
-//               ConfigMap. With no `endpoint` it runs BuildKit rootless and
-//               daemonless inside the Job (no external dependency, the right
-//               fit for a stock k3s node); with `endpoint` set it runs a tiny
-//               `buildctl` client that dispatches to that BuildKit daemon.
+//               ConfigMap, running a `buildctl` client that dispatches to
+//               the BuildKit daemon at `endpoint` (required).
 // ---------------------------------------------------------------------------
 
 export const ImageBuilderKindSchema = Type.Union([
@@ -269,8 +247,8 @@ export type ImageBuilderKind = Static<typeof ImageBuilderKindSchema>;
 export const ImageBuilderTlsConfigSchema = Type.Object(
   {
     /**
-     * Name of a K8s Secret (in `kubernetes.systemNamespace`) containing
-     * the client cert and trusted CA bundle. Expected keys:
+     * Name of a K8s Secret (in the sandbox namespace, where build Jobs run)
+     * containing the client cert and trusted CA bundle. Expected keys:
      *   - `ca.crt`  : CA bundle used to verify the buildkitd server cert
      *   - `tls.crt` : client certificate presented to buildkitd
      *   - `tls.key` : client private key
@@ -292,33 +270,22 @@ export type ImageBuilderTlsConfig = Static<typeof ImageBuilderTlsConfigSchema>;
 export const ImageBuilderConfigSchema = Type.Object(
   {
     /**
-     * Which builder strategy to use. `buildkit` (with `endpoint` left
-     * empty) is the recommended zero-daemon, in-cluster choice — it runs
-     * BuildKit itself daemonless inside the one-shot build Job. `docker` is
-     * the local/remote daemon backend used by
-     * `atelier local up` — it stays the schema default because it's what
-     * local mode needs; Kubernetes deployments set `kind` explicitly (see
-     * `infra/k8s/30-config.yaml`).
+     * Which builder strategy to use. `docker` is the local-mode daemon
+     * backend and the schema default; Kubernetes deployments set `buildkit`
+     * plus an `endpoint` (see `infra/k8s/30-config.yaml`).
      */
     kind: Type.Union([Type.Literal("docker"), Type.Literal("buildkit")], {
       default: "docker",
     }),
     /**
-     * Override the builder image. Defaults to a sensible value per kind:
-     *   - buildkit: moby/buildkit:v0.33.0 as the buildctl CLIENT (when
-     *               `endpoint` is set), or moby/buildkit:v0.33.0-rootless
-     *               run DAEMONLESS in the build Job (when `endpoint` is
-     *               empty — the default, no external daemon needed)
-     *   - docker:   unused (the daemon itself does the build)
+     * Override the builder image. buildkit defaults to the pinned
+     * moby/buildkit `buildctl` client image; unused by docker (the daemon
+     * itself does the build).
      */
     image: Type.String({ default: "" }),
     /**
-     * Address of an existing BuildKit daemon (e.g.
-     * tcp://buildkitd.buildkit.svc:1234). Only relevant when kind=buildkit.
-     * Empty (the default) runs BuildKit daemonless inside the one-shot
-     * build Job instead of dispatching to an external daemon — no cluster
-     * pre-req needed. Set this only if you already host a shared buildkitd
-     * Pod you'd rather reuse.
+     * Address of the BuildKit daemon (e.g. tcp://buildkitd.buildkit.svc:1234).
+     * Required when kind=buildkit; ignored by docker.
      */
     endpoint: Type.String({ default: "" }),
     /**
@@ -331,7 +298,7 @@ export const ImageBuilderConfigSchema = Type.Object(
     /**
      * Target build platform, shared by every backend (docker `--platform`,
      * buildkit `--opt platform`). Empty (the
-     * default) builds for the daemon's native architecture — so `local up`
+     * default) builds for the daemon's native architecture — so local mode
      * on an arm64 Mac builds arm64 with no emulation. Pin it (e.g.
      * linux/amd64) for a cluster whose nodes differ from the build host
      * (note the seed Dockerfiles' own amd64-pinned asset downloads must also
@@ -360,69 +327,21 @@ export const ImageBuilderConfigSchema = Type.Object(
 export type ImageBuilderConfig = Static<typeof ImageBuilderConfigSchema>;
 
 // ---------------------------------------------------------------------------
-// Storage
-// ---------------------------------------------------------------------------
-
-export const StorageConfigSchema = Type.Object(
-  {
-    /**
-     * Which volume snapshot/clone mechanism the runtime's `VolumeBackend`
-     * uses (docs/proposals/portable-runtime-backends.md §5-6, §8). The
-     * degradation ladder:
-     *   - `csi`: CSI `VolumeSnapshot` + PVC `dataSource` clone (default; the
-     *     only provider implemented today).
-     *   - `btrfs` / `reflink` / `copy`: host-filesystem snapshot strategies for
-     *     the Docker/local backends — reserved; not yet implemented. Selecting
-     *     one currently fails fast at startup (see the implementation log's
-     *     step-3 short-circuit) rather than silently degrading.
-     *
-     * Orthogonal to the *artifact* a prebuild is stored as (VolumeSnapshot vs
-     * OCI `tar.zst`): the content-hash key is storage-agnostic, so a prebuild
-     * stays addressable across providers — the OCI-tar materialization itself
-     * is the deferred, infra-gated piece.
-     */
-    provider: Type.Union(
-      [
-        Type.Literal("csi"),
-        Type.Literal("btrfs"),
-        Type.Literal("reflink"),
-        Type.Literal("copy"),
-      ],
-      { default: "csi" },
-    ),
-  },
-  { default: {} },
-);
-
-export type StorageConfig = Static<typeof StorageConfigSchema>;
-
-// ---------------------------------------------------------------------------
 // Runtime backend
 // ---------------------------------------------------------------------------
 
 export const RuntimeConfigSchema = Type.Object(
   {
     /**
-     * Which `SandboxBackend` orchestrates sandbox compute + network
-     * (docs/proposals/portable-runtime-backends.md §3, §8):
-     *   - `kubernetes`: Pod/Service/Ingress/PVC on a cluster (default; the only
-     *     backend implemented today). Its `kubernetes.*` config sub-tree
-     *     applies.
+     * Which `SandboxBackend` orchestrates sandbox compute + network:
+     *   - `kubernetes`: Pod/Service/Ingress/PVC on a cluster (default). Its
+     *     `kubernetes.*` config sub-tree applies.
      *   - `docker`: `docker run` the agent locally with published ports and a
-     *     host-dir volume — the self-host payoff; in progress.
-     *   - `local`: a bare local-process backend (Tier 3) — reserved.
-     *
-     * Selecting a backend that is not yet implemented fails fast at startup
-     * (see the implementation log) rather than silently falling back.
+     *     Docker volume (local mode).
      */
-    backend: Type.Union(
-      [
-        Type.Literal("kubernetes"),
-        Type.Literal("docker"),
-        Type.Literal("local"),
-      ],
-      { default: "kubernetes" },
-    ),
+    backend: Type.Union([Type.Literal("kubernetes"), Type.Literal("docker")], {
+      default: "kubernetes",
+    }),
   },
   { default: {} },
 );
@@ -461,7 +380,6 @@ export const AtelierConfigSchema = Type.Object({
   runtime: RuntimeConfigSchema,
   jobs: JobsConfigSchema,
   kubernetes: KubernetesConfigSchema,
-  storage: StorageConfigSchema,
   sandbox: SandboxDefaultsSchema,
   ports: PortsConfigSchema,
   imageBuilder: ImageBuilderConfigSchema,
@@ -479,10 +397,8 @@ export const ENV_VAR_MAPPING = {
 
   ATELIER_SSH_PROXY_PORT: "domain.ssh.port",
   ATELIER_SSH_PROXY_HOSTNAME: "domain.ssh.hostname",
-  ATELIER_SSH_GATEWAY: "domain.ssh.gateway",
   ATELIER_SSH_LISTEN_PORT: "domain.ssh.listenPort",
   ATELIER_SSH_UPSTREAM_USER: "domain.ssh.upstreamUser",
-  ATELIER_STORAGE_PROVIDER: "storage.provider",
   ATELIER_RUNTIME_BACKEND: "runtime.backend",
   ATELIER_JOBS_CONCURRENCY: "jobs.concurrency",
 

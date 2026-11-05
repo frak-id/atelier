@@ -88,7 +88,7 @@ export interface SnapshotStore {
 
 /** Provenance of an `ImageRecord` — see `db/schema.ts`'s `images` table doc
  * for what each means. */
-export type ImageProvenance = "seed" | "dockerfile" | "external";
+export type ImageProvenance = "seed" | "external";
 export type ImageStatus = "building" | "ready" | "error";
 
 /** A registered/built base image — the read+write model behind `GET/POST
@@ -101,9 +101,6 @@ export interface ImageRecord {
   ref?: string;
   /** Which embedded seed this was built from, when `provenance="seed"`. */
   seedId?: string;
-  /** The Dockerfile content built, when `provenance="dockerfile"` — kept so
-   * a rebuild can replay it. */
-  dockerfile?: string;
   digest?: string;
   /** Last-N lines of build output. */
   buildLog?: string;
@@ -579,7 +576,6 @@ interface ImageRow {
   status: string;
   ref: string | null;
   seedId: string | null;
-  dockerfile: string | null;
   digest: string | null;
   buildLog: string | null;
   error: string | null;
@@ -594,7 +590,6 @@ function imageRowToRecord(row: ImageRow): ImageRecord {
     status: row.status as ImageRecord["status"],
     ref: row.ref ?? undefined,
     seedId: row.seedId ?? undefined,
-    dockerfile: row.dockerfile ?? undefined,
     digest: row.digest ?? undefined,
     buildLog: row.buildLog ?? undefined,
     error: row.error ?? undefined,
@@ -610,7 +605,6 @@ function imageRecordToRow(record: ImageRecord): ImageRow {
     status: record.status,
     ref: record.ref ?? null,
     seedId: record.seedId ?? null,
-    dockerfile: record.dockerfile ?? null,
     digest: record.digest ?? null,
     buildLog: record.buildLog ?? null,
     error: record.error ?? null,
@@ -629,7 +623,6 @@ function imagePatchToRow(patch: Partial<ImageRecord>): Partial<ImageRow> {
   if ("status" in patch) row.status = patch.status;
   if ("ref" in patch) row.ref = patch.ref ?? null;
   if ("seedId" in patch) row.seedId = patch.seedId ?? null;
-  if ("dockerfile" in patch) row.dockerfile = patch.dockerfile ?? null;
   if ("digest" in patch) row.digest = patch.digest ?? null;
   if ("buildLog" in patch) row.buildLog = patch.buildLog ?? null;
   if ("error" in patch) row.error = patch.error ?? null;

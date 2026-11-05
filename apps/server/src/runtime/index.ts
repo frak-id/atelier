@@ -14,12 +14,7 @@ export {
   ensureSharedSshPipeKey,
   getSharedSshPipeKeyOpenSSH,
 } from "./kube/index.ts";
-export {
-  createImageBuilder,
-  ImageBuilderService,
-  readContextDockerfile,
-  unpackZipContext,
-} from "./registry/index.ts";
+export { createImageBuilder, ImageBuilderService } from "./registry/index.ts";
 export { RuntimeService } from "./runtime.service.ts";
 export type { JobRecord } from "./store.ts";
 export {

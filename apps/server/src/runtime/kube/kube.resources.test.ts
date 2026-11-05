@@ -9,11 +9,7 @@
 import { describe, expect, test } from "bun:test";
 import { VM } from "@frak/atelier-shared/constants";
 
-process.env.ATELIER_SERVER_MODE = "mock";
-
-const { buildPvc, buildSandboxPod, buildSshPipe } = await import(
-  "./kube.resources.ts"
-);
+const { buildPvc, buildSandboxPod } = await import("./kube.resources.ts");
 
 describe("buildSandboxPod workspace volume", () => {
   const pod = buildSandboxPod({
@@ -79,32 +75,6 @@ describe("buildSandboxPod fresh-volume marker (sandbox-boot.sh mkfs guard)", () 
 
   test("absent when there is no PVC at all", () => {
     expect(marker(envOf({ freshVolume: true }))).toBeUndefined();
-  });
-});
-
-describe("buildSshPipe", () => {
-  test("no knownHostsData: a fresh, not-yet-pinned Pipe (ignore_hostkey)", () => {
-    const pipe = buildSshPipe({
-      sandboxId: "abc123",
-      targetHost: "sandbox-abc123.ns.svc",
-    });
-    const to = (pipe.spec as { to: Record<string, unknown> }).to;
-    expect(to.ignore_hostkey).toBe(true);
-    expect(to.known_hosts_data).toBeUndefined();
-    expect(to.host).toBe("sandbox-abc123.ns.svc:22");
-  });
-
-  test("knownHostsData set: pinned (ignore_hostkey false, known_hosts_data carried through)", () => {
-    const pipe = buildSshPipe({
-      sandboxId: "abc123",
-      targetHost: "sandbox-abc123.ns.svc",
-      knownHostsData: "c2FuZGJveC1hYmMxMjMubnMuc3ZjIHNzaC1lZDI1NTE5IEFBQUE=",
-    });
-    const to = (pipe.spec as { to: Record<string, unknown> }).to;
-    expect(to.ignore_hostkey).toBe(false);
-    expect(to.known_hosts_data).toBe(
-      "c2FuZGJveC1hYmMxMjMubnMuc3ZjIHNzaC1lZDI1NTE5IEFBQUE=",
-    );
   });
 });
 

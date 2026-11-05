@@ -11,23 +11,23 @@ import { randomUUID } from "node:crypto";
 import { mkdtemp, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import type { ImageBuildRequest } from "./builder.types.ts";
-
-process.env.ATELIER_SERVER_MODE = "mock";
-
-const { buildctlArgs, buildkitContainerSpec, resolveBuildkitImage } =
-  await import("./buildkit.builder.ts");
-const {
+import { ValidationError } from "../../../shared/errors.ts";
+import { InMemoryImageStore } from "../../store.ts";
+import { ImageBuilderService } from "../image-builder.service.ts";
+import {
+  formatBuildArgs,
+  type ImageBuildRequest,
+  shQuote,
+} from "./builder.types.ts";
+import { buildctlArgs, buildkitContainerSpec } from "./buildkit.builder.ts";
+import { DockerImageBuilder } from "./docker.builder.ts";
+import { createImageBuilder } from "./index.ts";
+import {
   buildJobManifest,
   extractDigest,
   jobResourceName,
   stageContextTarball,
-} = await import("./k8s-build-job.ts");
-const { formatBuildArgs, shQuote } = await import("./builder.types.ts");
-const { DockerImageBuilder } = await import("./docker.builder.ts");
-const { ImageBuilderService } = await import("../image-builder.service.ts");
-const { InMemoryImageStore } = await import("../../store.ts");
-const { ValidationError } = await import("../../../shared/errors.ts");
+} from "./k8s-build-job.ts";
 
 const baseReq = {
   contextDir: "/tmp/ctx",
@@ -58,68 +58,39 @@ describe("buildctlArgs", () => {
     expect(args).toContain("--tlscacert /certs/ca.crt");
     expect(args).toContain("--tlsservername buildkitd");
   });
-
-  test("daemonless mode (empty endpoint) omits --addr", () => {
-    const args = buildctlArgs(baseReq, "", tls);
-    expect(args).not.toContain("--addr");
-    expect(args.join(" ")).toContain("--local context=/workspace");
-  });
 });
 
-// ── resolveBuildkitImage: pinned default per mode ─────────────────────────
+describe("createImageBuilder", () => {
+  const cfg = {
+    kind: "buildkit" as const,
+    image: "",
+    endpoint: "",
+    dockerHost: "",
+    platform: "",
+    cacheRepo: "",
+    insecureRegistry: true,
+    tls: { secretName: "", serverName: "" },
+  };
 
-describe("resolveBuildkitImage", () => {
-  test("defaults to the pinned rootless image when endpoint is empty", () => {
-    expect(resolveBuildkitImage("", "")).toBe("moby/buildkit:v0.33.0-rootless");
-  });
-
-  test("defaults to the pinned client image when endpoint is set", () => {
-    expect(resolveBuildkitImage("tcp://buildkitd:1234", "")).toBe(
-      "moby/buildkit:v0.33.0",
+  test("buildkit without an endpoint fails fast", () => {
+    expect(() => createImageBuilder(cfg)).toThrow(
+      /needs imageBuilder.endpoint/,
     );
   });
 
-  test("an explicit override wins regardless of endpoint", () => {
-    expect(resolveBuildkitImage("", "custom/buildkit:pin")).toBe(
-      "custom/buildkit:pin",
-    );
-    expect(
-      resolveBuildkitImage("tcp://buildkitd:1234", "custom/buildkit:pin"),
-    ).toBe("custom/buildkit:pin");
+  test("buildkit with an endpoint builds", () => {
+    expect(() =>
+      createImageBuilder({ ...cfg, endpoint: "tcp://buildkitd:1234" }),
+    ).not.toThrow();
   });
 });
 
-// ── buildkitContainerSpec: the daemonless-vs-endpoint Job container spec ────
+// ── buildkitContainerSpec: the Job container spec ─────────────────────────
 
 describe("buildkitContainerSpec", () => {
   const noTls = { secretName: "", serverName: "" };
 
-  test("daemonless: rootless securityContext, BUILDKITD_FLAGS, buildctl-daemonless.sh", () => {
-    const spec = buildkitContainerSpec(baseReq, {
-      endpoint: "",
-      image: "moby/buildkit:v0.33.0-rootless",
-      tls: noTls,
-    });
-    expect(spec.image).toBe("moby/buildkit:v0.33.0-rootless");
-    expect(spec.command).toEqual([
-      "sh",
-      "-c",
-      expect.stringContaining("buildctl-daemonless.sh"),
-    ]);
-    expect(spec.env).toEqual([
-      { name: "BUILDKITD_FLAGS", value: "--oci-worker-no-process-sandbox" },
-    ]);
-    expect(spec.securityContext).toEqual({
-      seccompProfile: { type: "Unconfined" },
-      appArmorProfile: { type: "Unconfined" },
-      runAsUser: 1000,
-      runAsGroup: 1000,
-    });
-    expect(spec.volumes).toBeUndefined();
-    expect(spec.volumeMounts).toBeUndefined();
-  });
-
-  test("endpoint set: plain buildctl, no rootless securityContext/env", () => {
+  test("plain buildctl against the endpoint", () => {
     const spec = buildkitContainerSpec(baseReq, {
       endpoint: "tcp://buildkitd:1234",
       image: "moby/buildkit:v0.33.0",
@@ -130,9 +101,7 @@ describe("buildkitContainerSpec", () => {
       "-c",
       expect.stringContaining("buildctl "),
     ]);
-    expect(spec.command?.[2]).not.toContain("buildctl-daemonless.sh");
-    expect(spec.env).toBeUndefined();
-    expect(spec.securityContext).toBeUndefined();
+    expect(spec.volumes).toBeUndefined();
   });
 
   test("endpoint + mTLS mounts the client cert volume", () => {
@@ -146,48 +115,6 @@ describe("buildkitContainerSpec", () => {
     ]);
     expect(spec.volumeMounts).toEqual([
       { name: "certs", mountPath: "/certs", readOnly: true },
-    ]);
-  });
-});
-
-// ── the daemonless securityContext lands on the actual Job manifest ────────
-
-describe("buildJobManifest with a daemonless buildkit container", () => {
-  test("propagates securityContext + env onto the build container", () => {
-    const spec = buildkitContainerSpec(baseReq, {
-      endpoint: "",
-      image: "moby/buildkit:v0.33.0-rootless",
-      tls: { secretName: "", serverName: "" },
-    });
-    const manifest = buildJobManifest(
-      {
-        name: "atelier-build-dev-base-abc123",
-        contextDir: "/tmp/ctx",
-        dockerfile: "FROM scratch",
-        container: spec,
-      },
-      "atelier-build-dev-base-abc123-ctx",
-    ) as {
-      spec: {
-        template: {
-          spec: {
-            containers: Array<{
-              securityContext?: Record<string, unknown>;
-              env?: Array<{ name: string; value: string }>;
-            }>;
-          };
-        };
-      };
-    };
-    const build = manifest.spec.template.spec.containers[0];
-    expect(build?.securityContext).toEqual({
-      seccompProfile: { type: "Unconfined" },
-      appArmorProfile: { type: "Unconfined" },
-      runAsUser: 1000,
-      runAsGroup: 1000,
-    });
-    expect(build?.env).toEqual([
-      { name: "BUILDKITD_FLAGS", value: "--oci-worker-no-process-sandbox" },
     ]);
   });
 });
@@ -441,7 +368,7 @@ describe("ImageBuilderService build (local, no registry)", () => {
         done = run;
       },
     });
-    await service.buildDockerfile("dev-base", "FROM scratch");
+    await service.buildSeed("dev-base");
     await done;
     return { store, captured };
   }

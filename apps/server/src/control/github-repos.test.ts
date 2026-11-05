@@ -1,21 +1,7 @@
-import { beforeAll, describe, expect, test } from "bun:test";
+import { describe, expect, test } from "bun:test";
 import { NotFoundError, ValidationError } from "../shared/errors.ts";
-import type * as GitHubRepos from "./github-repos.ts";
+import { GitHubRepoService, GitHubUpstreamError } from "./github-repos.ts";
 import type { User } from "./types.ts";
-
-// `github-repos.ts` transitively loads the server config, which is frozen at
-// first import and shared by every test file in the run. Same convention as
-// `runtime.lifecycle.test.ts`: pin mock mode BEFORE anything loads it, and
-// import lazily. (The service's own mode is injected per test anyway.)
-process.env.ATELIER_SERVER_MODE = "mock";
-let GitHubRepoService: typeof GitHubRepos.GitHubRepoService;
-let GitHubUpstreamError: typeof GitHubRepos.GitHubUpstreamError;
-
-beforeAll(async () => {
-  ({ GitHubRepoService, GitHubUpstreamError } = await import(
-    "./github-repos.ts"
-  ));
-});
 
 function user(id: string, token?: string): User {
   return {
@@ -224,23 +210,5 @@ describe("GitHubRepoService.inspectRepo", () => {
     await expect(service.inspectRepo("1", "org", "nope")).rejects.toThrow(
       NotFoundError,
     );
-  });
-
-  test("mock mode serves the fixture without touching the network", async () => {
-    let fetched = false;
-    const service = new GitHubRepoService({
-      userService: { getById: () => undefined },
-      mode: () => "mock",
-      fetch: async () => {
-        fetched = true;
-        return json([]);
-      },
-    });
-    const list = await service.listRepos("1");
-    expect(list.connected).toBe(true);
-    expect(list.repos.length).toBeGreaterThan(0);
-    const out = await service.inspectRepo("1", "frak-id", "atelier");
-    expect(out.suggestedBuild).toEqual(["bun install"]);
-    expect(fetched).toBe(false);
   });
 });

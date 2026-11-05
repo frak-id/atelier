@@ -66,9 +66,9 @@ export class UserService {
    * (public repos still clone; private ones fail loudly at clone time).
    */
   resolveGitHubToken(userId: string): string | undefined {
-    // local/mock modes have no real GitHub OAuth token (the stored user's
-    // token, if any, is a fake placeholder) — `atelier local up` instead
-    // injects the host's own token via ATELIER_GITHUB_TOKEN. Returning
+    // local mode has no real GitHub OAuth token (the stored user's
+    // token, if any, is a fake placeholder) — the operator instead
+    // provides the host's own token via ATELIER_GITHUB_TOKEN. Returning
     // undefined when it's absent (rather than falling through to the fake
     // token below) avoids writing a bogus credential into the sandbox, so
     // public repos still clone cleanly.

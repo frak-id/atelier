@@ -1,6 +1,5 @@
 export interface AgentHealth {
   status: string;
-  sandboxId?: string;
   uptime: number;
   /** Whether a config has been pushed. */
   configured?: boolean;

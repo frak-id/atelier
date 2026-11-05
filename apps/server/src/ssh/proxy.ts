@@ -1,6 +1,5 @@
 /**
- * The in-server ssh2 proxy — the drop-in replacement for the external sshpiper
- * Deployment (docs/proposals/portable-runtime-backends.md §5). It terminates
+ * The in-server ssh2 proxy, the only SSH gateway. It terminates
  * and re-originates: it presents its own persistent host key, authenticates the
  * dev by public key (username = sandboxId, verified against the control SSH
  * keys), then opens an upstream ssh2 client connection to `pod:22` as the
@@ -16,7 +15,7 @@
  *
  * Upstream host keys are pinned: `resolveUpstream` returns the sandbox's real
  * sshd host key(s) (fetched from the agent at boot/resume, see
- * ssh-gateway.ts), and `hostVerifier` checks the upstream against them
+ * runtime/boot.ts), and `hostVerifier` checks the upstream against them
  * (`buildHostVerifier` below). A sandbox with no known key is refused.
  * SSH sessions live in this process, so a server redeploy drops live
  * connections — acceptable for a dev tool, stated honestly in the proposal.

@@ -20,7 +20,7 @@ export const GeneratedSchema = Type.Object(
     tokens: Type.Optional(Type.Record(Type.String(), Type.String())),
     /** The sandbox's sshd host public key line(s) (OpenSSH format), as last
      * reported by the agent's `GET /ssh/host-keys` at boot/resume — the
-     * runtime's SSH host-key pinning (see ssh-gateway.ts / ssh/proxy.ts).
+     * runtime's SSH host-key pinning (see runtime/boot.ts / ssh/proxy.ts).
      * Undefined when unknown (not booted since pinning shipped). */
     sshHostKeys: Type.Optional(Type.Array(Type.String())),
   },

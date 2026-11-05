@@ -131,10 +131,8 @@ export class DockerBackend implements SandboxBackend {
       }
 
       // Backend-neutral tail (wait for agent -> materialize -> config -> files),
-      // shared verbatim with the k8s boot. No Pipe to pin here — the Docker
-      // backend has no sshpiper; `sshHostKeys` is still returned so the
-      // record carries it (a future in-server-over-Docker gateway could pin
-      // from it the same way the k8s in-server strategy does).
+      // shared verbatim with the k8s boot. Local mode runs no SSH gateway;
+      // `sshHostKeys` is still returned so the record carries it.
       const { podIp, sshHostKeys } = await provisionAgent(
         id,
         spec,

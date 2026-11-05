@@ -5,16 +5,13 @@
  * ordering, dedupe, digest pinning, `images` table bookkeeping); the backend
  * only builds+pushes what it's handed (`builder.types.ts`'s header comment).
  *
- * Three provenances, one surface (see the design review this implements):
+ * Two provenances, one surface:
  *   - `seed`: an embedded Dockerfile+context (`../seeds/`) the operator
  *     builds in their own cluster — `buildSeed`.
- *   - `dockerfile`: a user-supplied Dockerfile (pasted or a zip upload) —
- *     `buildDockerfile`.
  *   - `external`: a bring-your-own image reference (e.g. GHCR) used
  *     verbatim, no build — `registerExternal`.
  */
-import { mkdtemp, readFile, rm } from "node:fs/promises";
-import { tmpdir } from "node:os";
+import { readFile } from "node:fs/promises";
 import { join } from "node:path";
 import { NotFoundError, ValidationError } from "../../shared/errors.ts";
 import { createChildLogger } from "../../shared/lib/logger.ts";
@@ -166,9 +163,6 @@ export class ImageBuilderService {
       provenance: "seed",
       seedId,
     });
-    // A seed's `contextDir` is permanent embedded content — NEVER cleaned up
-    // (no cleanup callback), unlike a BYO/zip context.
-    //
     // `AGENT_IMAGE`: the base seeds bake the in-pod agent via `COPY --from=
     // ${AGENT_IMAGE}` (see dev-base's Dockerfile). Passing it here lets an
     // operator repoint the agent at a private/mirrored ref via config; the
@@ -214,57 +208,6 @@ export class ImageBuilderService {
       dockerfile = dockerfile.split(sub.token).join(resolved);
     }
     return dockerfile;
-  }
-
-  // ── BYO dockerfile build ──────────────────────────────────────────────
-
-  /**
-   * Build a user-supplied Dockerfile (pasted text, or a zip upload already
-   * unpacked to `contextDir` by the route layer) and push it to the
-   * operator's registry under `${registryUrl}/${name}`. Never lets the
-   * request pick an arbitrary push destination (security review) — `name`
-   * is validated and the tag is always derived from it, not from anything
-   * inside the Dockerfile or the caller-supplied `contextDir`.
-   */
-  async buildDockerfile(
-    name: string,
-    dockerfile: string,
-    contextDir?: string,
-  ): Promise<ImageRecord> {
-    assertValidName(name);
-    // Take ownership of the build context and delete it once the build
-    // settles (success or failure). A caller-supplied unpacked-zip dir OR a
-    // synthetic empty dir for pasted text (docker build always needs SOME
-    // context dir even when the Dockerfile references nothing in it). The
-    // route must NOT clean a context it handed us on the success path — the
-    // background build still needs it after this method returns.
-    const context =
-      contextDir ?? (await mkdtemp(join(tmpdir(), "atelier-image-context-")));
-    const cleanup = () => rm(context, { recursive: true, force: true });
-
-    const inflight = this.inflight.get(name);
-    if (inflight) {
-      // A build for this name is already running; drop the redundant context
-      // and return the in-flight record.
-      await cleanup();
-      return this.store.get(name) ?? inflight;
-    }
-
-    const record = this.beginBuild({ name, provenance: "dockerfile" });
-    // Persist the source so a later "rebuild" can replay it without the
-    // caller resubmitting the text.
-    this.store.update(name, { dockerfile });
-    const run = this.executeBuild(
-      record,
-      { contextDir: context, dockerfile },
-      cleanup,
-    ).finally(() => {
-      this.inflight.delete(name);
-    });
-    this.inflight.set(name, run);
-    this.onBuildStarted?.(record.name, run);
-    // Async (see buildSeed): return the `building` record immediately.
-    return record;
   }
 
   // ── external (BYO reference) ──────────────────────────────────────────
@@ -383,7 +326,6 @@ export class ImageBuilderService {
       dockerfile: string;
       buildArgs?: Record<string, string>;
     },
-    cleanup?: () => Promise<unknown>,
   ): Promise<ImageRecord> {
     // No configured registry => local Docker mode: bare tag, no push, and the
     // stored ref is the tag itself (a local-daemon reference).
@@ -461,11 +403,6 @@ export class ImageBuilderService {
       });
       log.error({ name: record.name, err: message }, "image build failed");
       return updated ?? record;
-    } finally {
-      // Own the build context's lifetime here (not in the route): the
-      // background build only completes after this method's caller has
-      // already returned the `building` record to the client.
-      if (cleanup) await cleanup().catch(() => {});
     }
   }
 }

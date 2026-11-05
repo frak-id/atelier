@@ -15,7 +15,7 @@ export interface ProvisionAgentResult {
   podIp: string;
   /**
    * The sandbox's sshd host public key line(s) (OpenSSH format), fetched
-   * from `GET /ssh/host-keys` — SSH host-key pinning (ssh-gateway.ts /
+   * from `GET /ssh/host-keys` — SSH host-key pinning (boot.ts /
    * ssh/proxy.ts). sandbox-boot.sh runs `ssh-keygen -A` before starting the
    * agent, so a dev-base image always reports some; empty only for an image
    * without sshd host keys (a bare agent image). A gateway-fronted k8s boot

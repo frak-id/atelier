@@ -1,15 +1,13 @@
 # Non-secret server config, mounted at /etc/atelier/sandbox.config.json
-# (ATELIER_CONFIG default). Secrets (GitHub OAuth, JWT, secrets key, MCP
-# token) are injected via env from the atelier-v2-secrets Secret and override
-# these values. Zot/TopoLVM/kata/BuildKit/cert-manager are shared
+# (ATELIER_CONFIG default). The server refuses to start on invalid JSON or an
+# unknown key. Secrets (GitHub OAuth, JWT, secrets key) are injected via env
+# from the atelier-v2-secrets Secret and override these values. Zot/TopoLVM/kata/BuildKit/cert-manager are shared
 # cluster infra owned by infra-core, referenced here by name only (see
 # README.md "Cluster prerequisites").
 #
-# NOTE: `server.maxSandboxes` / `server.maxActiveTasks` are NOT in the server
-# config schema and nothing enforces them: the only cap on concurrent
-# sandboxes today is what the node can schedule (~12 at the 4Gi default with
-# the kata-atelier-clh-rs 384Mi pod overhead; build pods take 4Gi while they
-# run).
+# NOTE: nothing caps concurrent sandboxes: the only limit is what the node
+# can schedule (~12 at the 4Gi default with the kata-atelier-clh-rs 384Mi pod
+# overhead; build pods take 4Gi while they run).
 #
 # Forward-auth: `kubernetes.vsCodeIngressAnnotations` (the name predates the
 # generic ports model) is put on every tool Ingress whose port says
@@ -18,7 +16,7 @@
 # created, so sandboxes booted before a change keep their old Ingress until
 # they are paused and resumed.
 #
-# SSH note: `listenPort` (2222) is what the in-server ssh2 proxy binds inside
+# SSH note: `listenPort` (2222) is what the in-server ssh2 gateway binds inside
 # the pod (== Service targetPort). `port` (30222) is what clients dial and is
 # advertised in the sandbox ssh URL — it must equal the NodePort in 60-service
 # because nothing binds host :2222 (no LoadBalancer / Traefik TCP entrypoint).
@@ -35,11 +33,9 @@ data:
       "domain": {
         "baseDomain": "hetzner-staging.frak.id",
         "dashboard": "atelier.hetzner-staging.frak.id",
-        "tls": { "email": "admin@frak.id" },
         "ssh": {
           "port": 30222,
           "hostname": "ssh.hetzner-staging.frak.id",
-          "gateway": "in-server",
           "listenPort": 2222,
           "upstreamUser": "dev"
         }
@@ -50,13 +46,10 @@ data:
       "server": {
         "mode": "production",
         "port": 4000,
-        "host": "0.0.0.0",
-        "maxSandboxes": 20,
-        "maxActiveTasks": 10
+        "host": "0.0.0.0"
       },
       "kubernetes": {
         "namespace": "atelier-v2-sandboxes",
-        "systemNamespace": "atelier-v2-system",
         "runtimeClass": "kata-atelier-clh-rs",
         "ingressClassName": "traefik",
         "toolIngressClusterIssuer": "letsencrypt-frak",
@@ -79,7 +72,6 @@ data:
         }
       },
       "sandbox": {
-        "defaultImage": "dev-base",
-        "git": { "email": "sandbox@atelier.dev", "name": "Sandbox User" }
+        "defaultImage": "dev-base"
       }
     }

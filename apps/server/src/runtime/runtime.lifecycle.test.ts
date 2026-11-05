@@ -1,26 +1,16 @@
 /**
- * Lifecycle contract tests for `RuntimeService` in mock mode (agent/kube
- * calls no-op): status guards, pause→resume snapshot bookkeeping, the
+ * Lifecycle contract tests for `RuntimeService` over the test doubles in
+ * `runtime.test-support.ts` (agent/backend calls answer canned results):
+ * status guards, pause→resume snapshot bookkeeping, the
  * per-sandbox op lock, and destroy's snapshot-row GC. These pin the L1-L5
  * audit fixes so a regression fails loudly.
  */
-import { beforeAll, describe, expect, test } from "bun:test";
+import { describe, expect, test } from "bun:test";
 import type { SandboxSpec } from "@atelier/spec";
 import { ConflictError, NotFoundError } from "../shared/errors.ts";
-
-// Config is read once at module load — force mock mode (agent/kube no-op)
-// before importing anything that transitively loads it.
-process.env.ATELIER_SERVER_MODE = "mock";
-
-let RuntimeService: typeof import("./runtime.service.ts").RuntimeService;
-let stores: typeof import("./store.ts");
-let KubernetesBackend: typeof import("./backend/index.ts").KubernetesBackend;
-
-beforeAll(async () => {
-  ({ RuntimeService } = await import("./runtime.service.ts"));
-  stores = await import("./store.ts");
-  ({ KubernetesBackend } = await import("./backend/index.ts"));
-});
+import { RuntimeService } from "./runtime.service.ts";
+import { FakeBackend, fakeRuntimeDeps } from "./runtime.test-support.ts";
+import * as stores from "./store.ts";
 
 const spec: SandboxSpec = {
   source: { image: "registry.test/base:1" },
@@ -33,6 +23,7 @@ function makeRuntime() {
   const toolsets = new stores.InMemoryToolsetStore();
   const sandboxToolsetRefs = new stores.InMemorySandboxToolsetRefStore();
   const runtime = new RuntimeService({
+    ...fakeRuntimeDeps(),
     sandboxes,
     snapshots,
     toolsets,
@@ -211,9 +202,10 @@ describe("RuntimeService lifecycle", () => {
   });
 
   test("resume reuses the live volume when it still exists", async () => {
-    const backend = new KubernetesBackend();
+    const backend = new FakeBackend();
     const sandboxes = new stores.InMemorySandboxStore();
     const runtime = new RuntimeService({
+      ...fakeRuntimeDeps(),
       backend,
       sandboxes,
       snapshots: new stores.InMemorySnapshotStore(),
@@ -479,9 +471,10 @@ describe("display annotations", () => {
   });
 
   test("a rename made during a resume survives it", async () => {
-    const backend = new KubernetesBackend();
+    const backend = new FakeBackend();
     const sandboxes = new stores.InMemorySandboxStore();
     const runtime = new RuntimeService({
+      ...fakeRuntimeDeps(),
       backend,
       sandboxes,
       snapshots: new stores.InMemorySnapshotStore(),
@@ -617,10 +610,7 @@ function keepSpec(metadata: Record<string, string> = {}) {
 
 /** Fork arguments: a derive step plus the (empty) initial labels. */
 function forkWith(
-  derive: (source: SandboxSpec) => {
-    spec: SandboxSpec;
-    authorizedKeys?: string[];
-  } = keepSpec(),
+  derive: (source: SandboxSpec) => { spec: SandboxSpec } = keepSpec(),
 ) {
   return { derive, initial: { metadata: {}, annotations: {} } };
 }
@@ -672,9 +662,10 @@ describe("fork()", () => {
     expect(sandboxes.get("dst")?.spec.annotations).toEqual({});
   });
 
-  test("derive sees the stored spec and its authorizedKeys reach the boot", async () => {
-    const backend = new KubernetesBackend();
+  test("derive sees the stored spec and its result reaches the boot", async () => {
+    const backend = new FakeBackend();
     const runtime = new RuntimeService({
+      ...fakeRuntimeDeps(),
       backend,
       sandboxes: new stores.InMemorySandboxStore(),
       snapshots: new stores.InMemorySnapshotStore(),
@@ -683,9 +674,9 @@ describe("fork()", () => {
     });
     await runtime.create({ ...spec, env: { A: "1" } }, { id: "src" });
     const boot = backend.boot.bind(backend);
-    let bootKeys: string[] | undefined;
+    let bootEnv: SandboxSpec["env"];
     backend.boot = (id, bootSpec, opts, agent) => {
-      bootKeys = opts.authorizedKeys;
+      bootEnv = bootSpec.env;
       return boot(id, bootSpec, opts, agent);
     };
     let seen: SandboxSpec | undefined;
@@ -694,17 +685,17 @@ describe("fork()", () => {
       {
         ...forkWith((source) => {
           seen = source;
-          return { spec: source, authorizedKeys: ["ssh-ed25519 AAAA"] };
+          return { spec: { ...source, env: { ...source.env, B: "2" } } };
         }),
       },
       { id: "dst" },
     );
     expect(seen?.env).toEqual({ A: "1" });
-    expect(bootKeys).toEqual(["ssh-ed25519 AAAA"]);
+    expect(bootEnv).toEqual({ A: "1", B: "2" });
   });
 
   test("the copy owns its snapshot: row and VolumeSnapshot label are the fork id", async () => {
-    const backend = new KubernetesBackend();
+    const backend = new FakeBackend();
     const labels: Record<string, string>[] = [];
     backend.volumes.snapshot = async (_pvc, _ref, l) => {
       labels.push(l);
@@ -712,6 +703,7 @@ describe("fork()", () => {
     const sandboxes = new stores.InMemorySandboxStore();
     const snapshots = new stores.InMemorySnapshotStore();
     const runtime = new RuntimeService({
+      ...fakeRuntimeDeps(),
       backend,
       sandboxes,
       snapshots,
@@ -772,7 +764,7 @@ describe("fork()", () => {
   });
 
   test("the copy is `creating` before the snapshot finishes", async () => {
-    const backend = new KubernetesBackend();
+    const backend = new FakeBackend();
     let release: () => void = () => {};
     const gate = new Promise<void>((r) => {
       release = r;
@@ -782,6 +774,7 @@ describe("fork()", () => {
     };
     const sandboxes = new stores.InMemorySandboxStore();
     const runtime = new RuntimeService({
+      ...fakeRuntimeDeps(),
       backend,
       sandboxes,
       snapshots: new stores.InMemorySnapshotStore(),
@@ -802,13 +795,14 @@ describe("fork()", () => {
   });
 
   test("a failing snapshot ends the copy in `error`; resume says the snapshot is gone", async () => {
-    const backend = new KubernetesBackend();
+    const backend = new FakeBackend();
     backend.volumes.snapshot = async () => {
       throw new Error("snapshot boom");
     };
     const sandboxes = new stores.InMemorySandboxStore();
     const snapshots = new stores.InMemorySnapshotStore();
     const runtime = new RuntimeService({
+      ...fakeRuntimeDeps(),
       backend,
       sandboxes,
       snapshots,
@@ -834,10 +828,11 @@ describe("fork()", () => {
   });
 
   test("a failing boot keeps the copy's snapshot: `error`, then resumable", async () => {
-    const backend = new KubernetesBackend();
+    const backend = new FakeBackend();
     const sandboxes = new stores.InMemorySandboxStore();
     const snapshots = new stores.InMemorySnapshotStore();
     const runtime = new RuntimeService({
+      ...fakeRuntimeDeps(),
       backend,
       sandboxes,
       snapshots,
@@ -961,7 +956,7 @@ describe("fork()", () => {
   });
 
   test("a failing cleanup neither masks the error nor strands `creating`", async () => {
-    const backend = new KubernetesBackend();
+    const backend = new FakeBackend();
     backend.volumes.snapshot = async () => {
       throw new Error("snapshot boom");
     };
@@ -970,6 +965,7 @@ describe("fork()", () => {
     };
     const sandboxes = new stores.InMemorySandboxStore();
     const runtime = new RuntimeService({
+      ...fakeRuntimeDeps(),
       backend,
       sandboxes,
       snapshots: new stores.InMemorySnapshotStore(),
@@ -984,9 +980,10 @@ describe("fork()", () => {
   });
 
   test("a failing boot teardown does not mask the boot error", async () => {
-    const backend = new KubernetesBackend();
+    const backend = new FakeBackend();
     const sandboxes = new stores.InMemorySandboxStore();
     const runtime = new RuntimeService({
+      ...fakeRuntimeDeps(),
       backend,
       sandboxes,
       snapshots: new stores.InMemorySnapshotStore(),

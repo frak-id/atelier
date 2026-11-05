@@ -5,7 +5,6 @@
     "ssh": {
       "port": 2222,
       "hostname": "",
-      "gateway": "sshpiper",
       "listenPort": 2222,
       "upstreamUser": "dev"
     }
@@ -41,9 +40,6 @@
     "volumeSnapshotClass": "",
     "defaultVolumeSize": "10Gi",
     "vsCodeIngressAnnotations": {}
-  },
-  "storage": {
-    "provider": "csi"
   },
   "sandbox": {
     "defaultImage": "dev-base",

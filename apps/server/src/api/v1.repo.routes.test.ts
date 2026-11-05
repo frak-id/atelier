@@ -1,5 +1,6 @@
 /**
- * The `repo` create sugar through the real `/v1` routes, a real RuntimeService (mock backend) and JobService.
+ * The `repo` create sugar through the real `/v1` routes, a real
+ * RuntimeService (over the runtime test doubles) and JobService.
  */
 import { afterAll, beforeAll, describe, expect, test } from "bun:test";
 import { mkdtemp, rm } from "node:fs/promises";
@@ -9,7 +10,8 @@ import type { PrebuildSpec, SandboxSpec } from "@atelier/spec";
 import { Elysia } from "elysia";
 import type { AuthUser } from "../control/index.ts";
 
-process.env.ATELIER_SERVER_MODE = "mock";
+// Local mode: auth bypassed. Set before anything loads the server config.
+process.env.ATELIER_SERVER_MODE = "local";
 
 const body = {
   source: { image: "registry.test/base:1" },
@@ -44,14 +46,16 @@ beforeAll(async () => {
   const { createControlContainer } = await import("../control/index.ts");
   const { RuntimeService, JobService } = await import("../runtime/index.ts");
   const stores = await import("../runtime/store.ts");
-  const { KubernetesBackend } = await import("../runtime/backend/index.ts");
+  const { fakeRuntimeDeps } = await import(
+    "../runtime/runtime.test-support.ts"
+  );
   const { SandboxError, UnauthorizedError } = await import(
     "../shared/errors.ts"
   );
   const { createV1Routes } = await import("./v1.routes.ts");
 
   runtime = new RuntimeService({
-    backend: new KubernetesBackend(),
+    ...fakeRuntimeDeps(),
     sandboxes: new stores.InMemorySandboxStore(),
     snapshots: new stores.InMemorySnapshotStore(),
     toolsets: new stores.InMemoryToolsetStore(),

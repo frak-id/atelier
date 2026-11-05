@@ -56,8 +56,6 @@ export const IdleBlockerSchema = Type.Union([
   Type.Literal("keep-awake"),
   /** A server-driven ACP turn is in flight. */
   Type.Literal("agent-turn"),
-  /** The agent waits on a person to answer a permission request. */
-  Type.Literal("permission-pending"),
   /** A job targets the sandbox (snapshot, toolset capture, fork). */
   Type.Literal("job"),
   /** A create/pause/resume/snapshot/destroy is in progress. */

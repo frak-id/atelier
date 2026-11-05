@@ -48,9 +48,8 @@ function generateEd25519KeyPair(): {
 /**
  * The shared ssh-pipe key's PRIVATE material, in OpenSSH form, for the
  * in-server ssh2 proxy to dial `dev@pod` (the pod trusts this key's public
- * half via its mounted `authorized_keys`). sshpiper reads the same secret from
- * a mounted volume; the in-server proxy reads it over the API instead. The
- * secret stores a PKCS8 PEM, which `ssh2` can't load, so it is re-encoded.
+ * half via its mounted `authorized_keys`), read over the API. The secret
+ * stores a PKCS8 PEM, which `ssh2` can't load, so it is re-encoded.
  */
 export async function getSharedSshPipeKeyOpenSSH(): Promise<string> {
   const namespace = config.kubernetes.namespace;

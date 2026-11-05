@@ -26,23 +26,6 @@
               "default": "",
               "type": "string"
             },
-            "gateway": {
-              "default": "sshpiper",
-              "anyOf": [
-                {
-                  "const": "sshpiper",
-                  "type": "string"
-                },
-                {
-                  "const": "none",
-                  "type": "string"
-                },
-                {
-                  "const": "in-server",
-                  "type": "string"
-                }
-              ]
-            },
             "listenPort": {
               "default": 2222,
               "type": "number"
@@ -92,16 +75,12 @@
     "server": {
       "default": {},
       "type": "object",
-      "required": ["mode"],
       "properties": {
         "mode": {
+          "default": "production",
           "anyOf": [
             {
               "const": "production",
-              "type": "string"
-            },
-            {
-              "const": "mock",
               "type": "string"
             },
             {
@@ -133,10 +112,6 @@
             },
             {
               "const": "docker",
-              "type": "string"
-            },
-            {
-              "const": "local",
               "type": "string"
             }
           ]
@@ -202,33 +177,6 @@
               "type": "string"
             }
           }
-        }
-      }
-    },
-    "storage": {
-      "default": {},
-      "type": "object",
-      "properties": {
-        "provider": {
-          "default": "csi",
-          "anyOf": [
-            {
-              "const": "csi",
-              "type": "string"
-            },
-            {
-              "const": "btrfs",
-              "type": "string"
-            },
-            {
-              "const": "reflink",
-              "type": "string"
-            },
-            {
-              "const": "copy",
-              "type": "string"
-            }
-          ]
         }
       }
     },

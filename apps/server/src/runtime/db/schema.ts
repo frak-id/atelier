@@ -63,15 +63,12 @@ export const snapshots = sqliteTable(
 
 /**
  * A registered/built base image (docs review: "base images as first-class
- * server content"). Three `provenance` values:
+ * server content"). Two `provenance` values:
  *   - `seed`: built from an embedded seed context (`registry/seeds/`),
  *     `seedId` names it.
- *   - `dockerfile`: built from a user-supplied Dockerfile (pasted or from an
- *     uploaded zip's context) — `dockerfile` holds the content so a rebuild
- *     can replay it.
  *   - `external`: a pure reference (e.g. a GHCR image) registered without a
  *     build — `ref` is the verbatim user-given ref, `status` is `ready`
- *     immediately, `digest`/`dockerfile`/`seedId` stay null.
+ *     immediately, `digest`/`seedId` stay null.
  * `name` is the destination repo name (`${registryUrl}/<name>`) and the sole
  * identity — builds are dedup'd/looked-up by it, mirroring how `snapshots`
  * dedupe by content hash. No FK (runtime's tables carry none, see header).
@@ -85,9 +82,6 @@ export const images = sqliteTable("images", {
   ref: text("ref"),
   /** Which embedded seed this was built from, when `provenance=seed`. */
   seedId: text("seed_id"),
-  /** The Dockerfile content built, when `provenance=dockerfile` — kept so a
-   * "rebuild" action can replay it without the caller re-submitting it. */
-  dockerfile: text("dockerfile"),
   /** The `sha256:...` digest resolved after a successful build/push. */
   digest: text("digest"),
   /** Last-N lines of build output, for the images page/CLI to show without

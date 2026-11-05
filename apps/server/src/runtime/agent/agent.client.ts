@@ -1,5 +1,5 @@
 import { SandboxError } from "../../shared/errors.ts";
-import { config, isMock } from "../../shared/lib/config.ts";
+import { config } from "../../shared/lib/config.ts";
 import { createChildLogger } from "../../shared/lib/logger.ts";
 import type { AgentActivityReport } from "../activity.ts";
 import type { AgentConfig } from "../agent-config.ts";
@@ -220,44 +220,22 @@ export class AgentClient {
 
   /**
    * The agent's last hour of measured activity (`GET /activity`: network
-   * bytes, file writes, CPU). `null` when the agent
-   * predates the endpoint (404): an image built before idle auto-pause.
-   * Throws `AgentUnavailableError` when the agent can't be reached.
+   * bytes, file writes, CPU). Throws `AgentUnavailableError` when the agent
+   * can't be reached.
    */
-  async activity(sandboxId: string): Promise<AgentActivityReport | null> {
-    if (isMock()) {
-      const now = Date.now();
-      return {
-        nowMs: now,
-        bootedAtMs: now,
-        bucketSeconds: 60,
-        network: "unavailable",
-        files: "unavailable",
-        cpu: "unavailable",
-        buckets: [],
-      };
-    }
-    try {
-      return await this.request<AgentActivityReport>(sandboxId, "/activity", {
-        timeout: 5000,
-      });
-    } catch (err) {
-      if (err instanceof AgentRequestError && err.statusCode === 404) {
-        return null;
-      }
-      throw err;
-    }
+  async activity(sandboxId: string): Promise<AgentActivityReport> {
+    return this.request<AgentActivityReport>(sandboxId, "/activity", {
+      timeout: 5000,
+    });
   }
 
   /**
    * Fetch the sandbox's sshd host public key line(s) (`GET /ssh/host-keys`)
-   * for SSH host-key pinning (ssh-gateway.ts / ssh/proxy.ts). Retries
+   * for SSH host-key pinning (runtime/boot.ts / ssh/proxy.ts). Retries
    * transient failures (the agent has only just come up), then throws.
-   * Empty when the image has no sshd host keys; always empty in mock mode
-   * (no sshd).
+   * Empty when the image has no sshd host keys.
    */
   async getSshHostKeys(sandboxId: string): Promise<string[]> {
-    if (isMock()) return [];
     let lastError: unknown;
     for (const delayMs of HOST_KEY_RETRY_DELAYS_MS) {
       if (delayMs > 0) await Bun.sleep(delayMs);
@@ -290,7 +268,6 @@ export class AgentClient {
    * that must not land in etcd or a pause snapshot.
    */
   async putConfig(sandboxId: string, config: AgentConfig): Promise<void> {
-    if (isMock()) return;
     await this.request(sandboxId, "/config", {
       method: "PUT",
       body: config,
@@ -304,7 +281,6 @@ export class AgentClient {
    * the commands (from pushed config) and how they run.
    */
   async runHook(sandboxId: string, phase: HookPhase): Promise<HookPhaseResult> {
-    if (isMock()) return { success: true, results: [] };
     return this.post<HookPhaseResult>(
       sandboxId,
       `/hooks/${phase}`,
@@ -319,7 +295,6 @@ export class AgentClient {
    * separately via `waitForPrimary`.
    */
   async reconcile(sandboxId: string): Promise<void> {
-    if (isMock()) return;
     await this.post(sandboxId, "/reconcile", undefined, 15000);
   }
 
@@ -327,17 +302,6 @@ export class AgentClient {
     sandboxId: string,
     options: { timeout?: number } = {},
   ): Promise<{ ready: boolean; podIp: string | null }> {
-    if (isMock()) {
-      const endpoint: AgentEndpoint = {
-        host: "10.42.0.99",
-        agentPort: config.ports.agent,
-        attachPort: ATTACH_PORT,
-        terminalPort: config.ports.terminal,
-      };
-      this.endpointCache.set(sandboxId, endpoint);
-      return { ready: true, podIp: endpoint.host };
-    }
-
     const timeout = options.timeout ?? 60000;
     const deadline = Date.now() + timeout;
 
@@ -380,7 +344,6 @@ export class AgentClient {
     sandboxId: string,
     options: { timeout?: number } = {},
   ): Promise<boolean> {
-    if (isMock()) return true;
     const deadline = Date.now() + (options.timeout ?? 120000);
     while (Date.now() < deadline) {
       try {
@@ -395,17 +358,14 @@ export class AgentClient {
   // ── Supervised process control (agent `/processes`) ──────────────────────
 
   async processList(sandboxId: string): Promise<AgentProcessListResult> {
-    if (isMock()) return { processes: [] };
     return this.request<AgentProcessListResult>(sandboxId, "/processes");
   }
 
   async processStart(sandboxId: string, name: string): Promise<void> {
-    if (isMock()) return;
     await this.post(sandboxId, `/processes/${name}/start`, undefined, 30000);
   }
 
   async processStop(sandboxId: string, name: string): Promise<void> {
-    if (isMock()) return;
     await this.post(sandboxId, `/processes/${name}/stop`, undefined, 30000);
   }
 
@@ -415,7 +375,6 @@ export class AgentClient {
     offset = 0,
     limit = 1_000_000,
   ): Promise<DevLogsResult> {
-    if (isMock()) return { name, content: "", nextOffset: 0 };
     return this.request<DevLogsResult>(
       sandboxId,
       `/processes/${name}/logs?offset=${offset}&limit=${limit}`,
@@ -455,10 +414,6 @@ export class AgentClient {
     body: { target: string; paths: string[] },
     signal?: AbortSignal,
   ): Promise<{ digest: string }> {
-    if (isMock()) {
-      const hex = "0".repeat(64);
-      return { digest: `sha256:${hex}` };
-    }
     return this.post<{ digest: string }>(
       sandboxId,
       "/toolsets/build",
@@ -485,10 +440,6 @@ export class AgentClient {
     },
     signal?: AbortSignal,
   ): Promise<{ digest: string }> {
-    if (isMock()) {
-      const hex = "0".repeat(64);
-      return { digest: `sha256:${hex}` };
-    }
     return this.post<{ digest: string }>(
       sandboxId,
       "/toolsets/capture",
@@ -529,7 +480,6 @@ export class AgentClient {
     sandboxId: string,
     references: string[],
   ): Promise<void> {
-    if (isMock()) return;
     await this.post(
       sandboxId,
       "/toolsets",
@@ -542,11 +492,6 @@ export class AgentClient {
     sandboxId: string,
     files: FileWrite[],
   ): Promise<WriteFilesResult> {
-    if (isMock()) {
-      return {
-        results: files.map((f) => ({ path: f.path, success: true })),
-      };
-    }
     return this.post<WriteFilesResult>(
       sandboxId,
       "/files/write",
@@ -565,9 +510,6 @@ export class AgentClient {
       signal?: AbortSignal;
     } = {},
   ): Promise<ExecResult> {
-    if (isMock()) {
-      return { exitCode: 0, stdout: "", stderr: "" };
-    }
     return this.post<ExecResult>(
       sandboxId,
       "/exec",

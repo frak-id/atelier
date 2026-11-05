@@ -48,7 +48,6 @@ import {
   SandboxError,
   ValidationError,
 } from "../shared/errors.ts";
-import { isMock } from "../shared/lib/config.ts";
 import {
   buildGitAttributionFiles,
   GIT_CREDENTIALS_PATH,
@@ -104,8 +103,6 @@ type OnLog = (chunk: string) => void;
 export interface RuntimeCreateOptions {
   /** Externally-chosen sandbox id (control assigns it). Defaults to a nanoid. */
   id?: string;
-  /** SSH public keys authorized on the pipe — content resolved by the caller. */
-  authorizedKeys?: string[];
   /** Optional boot-progress sink: coarse phase lines streamed to the caller
    * (e.g. the sandbox-create job log the CLI/console tails during boot). */
   onProgress?: (msg: string) => void;
@@ -119,11 +116,9 @@ function newSnapshotName(ownerId: string): { hash: string; ref: string } {
   return { hash, ref: `snap-${hash.slice(0, 12)}` };
 }
 
-/** What a fork's `derive` step returns: the copy's spec, plus the SSH keys
- * the caller resolved for it (same role as `RuntimeCreateOptions`'). */
+/** What a fork's `derive` step returns: the copy's spec. */
 interface ForkDerivation {
   spec: SandboxSpec;
-  authorizedKeys?: string[];
 }
 
 export interface RuntimeDeps {
@@ -142,6 +137,9 @@ export interface RuntimeDeps {
   images?: ImageStore;
   /** Per-sandbox activity clocks (idle auto-pause). Injectable for tests. */
   activity?: ActivityRecorder;
+  /** A repo's current remote HEAD (`git ls-remote`). Injectable so tests
+   * key prebuilds without network git. */
+  remoteHead?: typeof getRemoteCommitHash;
 }
 
 export class RuntimeService {
@@ -153,6 +151,7 @@ export class RuntimeService {
   private readonly sandboxToolsetRefs: SandboxToolsetRefStore;
   private readonly images: ImageStore;
   private readonly activity: ActivityRecorder;
+  private readonly remoteHead: typeof getRemoteCommitHash;
   /** De-dupes concurrent prebuild() calls for the same content hash onto one
    * execution (the temp pod name is deterministic and would collide). */
   private readonly inflightPrebuilds = new Map<string, Promise<SnapshotRef>>();
@@ -184,6 +183,7 @@ export class RuntimeService {
       deps.sandboxToolsetRefs ?? new InMemorySandboxToolsetRefStore();
     this.images = deps.images ?? new InMemoryImageStore();
     this.activity = deps.activity ?? new ActivityRecorder();
+    this.remoteHead = deps.remoteHead ?? getRemoteCommitHash;
   }
 
   // ── activity (idle auto-pause) ────────────────────────────────────────
@@ -208,8 +208,8 @@ export class RuntimeService {
 
   /**
    * Poll the agent's `GET /activity` and fold it into the sandbox's clocks
-   * with `thresholds`. An older agent (404) or an unreachable one is
-   * recorded as not reporting; never throws.
+   * with `thresholds`. An unreachable agent is recorded as not reporting;
+   * never throws.
    */
   async pollActivity(
     id: string,
@@ -217,8 +217,7 @@ export class RuntimeService {
   ): Promise<void> {
     try {
       const report = await this.agent.activity(id);
-      if (report) this.activity.ingest(id, report, thresholds);
-      else this.activity.markUnreported(id);
+      this.activity.ingest(id, report, thresholds);
     } catch (err) {
       log.debug({ id, err }, "activity poll failed");
       this.activity.markUnreported(id);
@@ -580,18 +579,17 @@ export class RuntimeService {
   }
 
   /** Current remote HEAD per repo (keyed by `clonePath`), so a git push busts
-   * the content key. Resolved in parallel; skipped in mock mode (no network
-   * git). `complete` is false when any HEAD failed to resolve, so callers can
+   * the content key. Resolved in parallel. `complete` is false when any HEAD failed to resolve, so callers can
    * avoid acting on a partial (and therefore flappy) key. */
   private async resolveRepoHeads(
     repos: PrebuildSpec["repos"],
     githubToken?: string,
   ): Promise<{ heads: Record<string, string>; complete: boolean }> {
-    if (!repos?.length || isMock()) return { heads: {}, complete: true };
+    if (!repos?.length) return { heads: {}, complete: true };
     const resolved = await Promise.all(
       repos.map(async (repo) => ({
         clonePath: repo.clonePath,
-        head: await getRemoteCommitHash(repo.url, repo.branch, githubToken),
+        head: await this.remoteHead(repo.url, repo.branch, githubToken),
       })),
     );
     const heads: Record<string, string> = {};
@@ -830,7 +828,6 @@ export class RuntimeService {
         {
           image,
           snapshotName,
-          authorizedKeys: options.authorizedKeys,
           preserveDisk: keepDisk,
           toolsets,
         },
@@ -1161,7 +1158,6 @@ export class RuntimeService {
    * survived, makes `resume()` a disk-preserving restart.
    */
   async reconcileOnStartup(): Promise<void> {
-    if (isMock()) return;
     for (const record of this.sandboxes.list()) {
       try {
         if (record.status === "creating") {
@@ -1434,7 +1430,6 @@ export class RuntimeService {
 
     return this.withOpLock(id, async () => {
       let forked: SandboxSpec;
-      let authorizedKeys: string[] | undefined;
       let resolved: { image: string; snapshotName?: string };
       try {
         const derived = fork.derive({ ...source.spec, annotations });
@@ -1448,7 +1443,6 @@ export class RuntimeService {
               }
             : (derived.spec.annotations ?? {}),
         };
-        authorizedKeys = derived.authorizedKeys;
         // The stored spec was validated at the source's creation, but derive
         // is caller policy: re-check what boot would reject.
         rejectUnresolvedSecrets(forked);
@@ -1474,13 +1468,7 @@ export class RuntimeService {
         this.sandboxes.update(id, { status: "error" });
         throw error;
       }
-      return this.bootNew(
-        id,
-        forked,
-        resolved,
-        { ...options, authorizedKeys },
-        true,
-      );
+      return this.bootNew(id, forked, resolved, options, true);
     });
   }
 

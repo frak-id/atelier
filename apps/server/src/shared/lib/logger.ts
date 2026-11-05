@@ -13,7 +13,7 @@ function getLevel(): LogLevel {
 // `worker.js` from node_modules at runtime. The bundled single-file production
 // image (bun build → server.js) has no node_modules, so enabling it there
 // crashes on boot with "the worker has exited" — including when the image runs
-// in mock mode (e.g. `atelier local up`). Gate on NODE_ENV (always
+// in local mode. Gate on NODE_ENV (always
 // "production" in the Docker image, unset under `bun run dev`) rather than the
 // server *mode*, so pretty logging only turns on where node_modules exists.
 const usePrettyTransport = process.env.NODE_ENV !== "production";
