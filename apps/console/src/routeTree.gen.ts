@@ -24,7 +24,6 @@ import { Route as SettingsPrebuildsRouteImport } from "./routes/settings.prebuil
 import { Route as SettingsSecretsRouteImport } from "./routes/settings.secrets"
 import { Route as SettingsSshKeysRouteImport } from "./routes/settings.ssh-keys"
 import { Route as SettingsToolboxesRouteImport } from "./routes/settings.toolboxes"
-import { Route as SettingsToolsetsRouteImport } from "./routes/settings.toolsets"
 import { Route as SettingsUsersRouteImport } from "./routes/settings.users"
 import { Route as SandboxesSandboxIdIndexRouteImport } from "./routes/sandboxes.$sandboxId.index"
 import { Route as SandboxesSandboxIdSessionsRouteImport } from "./routes/sandboxes.$sandboxId.sessions"
@@ -110,11 +109,6 @@ const SettingsToolboxesRoute = SettingsToolboxesRouteImport.update({
   path: "/toolboxes",
   getParentRoute: () => SettingsRoute,
 } as any)
-const SettingsToolsetsRoute = SettingsToolsetsRouteImport.update({
-  id: "/toolsets",
-  path: "/toolsets",
-  getParentRoute: () => SettingsRoute,
-} as any)
 const SettingsUsersRoute = SettingsUsersRouteImport.update({
   id: "/users",
   path: "/users",
@@ -177,7 +171,6 @@ export interface FileRoutesByFullPath {
   "/settings/secrets": typeof SettingsSecretsRoute
   "/settings/ssh-keys": typeof SettingsSshKeysRoute
   "/settings/toolboxes": typeof SettingsToolboxesRouteWithChildren
-  "/settings/toolsets": typeof SettingsToolsetsRoute
   "/settings/users": typeof SettingsUsersRoute
   "/settings/": typeof SettingsIndexRoute
   "/sandboxes/$sandboxId/sessions": typeof SandboxesSandboxIdSessionsRoute
@@ -200,7 +193,6 @@ export interface FileRoutesByTo {
   "/settings/policy": typeof SettingsPolicyRoute
   "/settings/secrets": typeof SettingsSecretsRoute
   "/settings/ssh-keys": typeof SettingsSshKeysRoute
-  "/settings/toolsets": typeof SettingsToolsetsRoute
   "/settings/users": typeof SettingsUsersRoute
   "/settings": typeof SettingsIndexRoute
   "/sandboxes/$sandboxId/sessions": typeof SandboxesSandboxIdSessionsRoute
@@ -228,7 +220,6 @@ export interface FileRoutesById {
   "/settings/secrets": typeof SettingsSecretsRoute
   "/settings/ssh-keys": typeof SettingsSshKeysRoute
   "/settings/toolboxes": typeof SettingsToolboxesRouteWithChildren
-  "/settings/toolsets": typeof SettingsToolsetsRoute
   "/settings/users": typeof SettingsUsersRoute
   "/settings/": typeof SettingsIndexRoute
   "/sandboxes/$sandboxId/sessions": typeof SandboxesSandboxIdSessionsRoute
@@ -257,7 +248,6 @@ export interface FileRouteTypes {
     | "/settings/secrets"
     | "/settings/ssh-keys"
     | "/settings/toolboxes"
-    | "/settings/toolsets"
     | "/settings/users"
     | "/settings/"
     | "/sandboxes/$sandboxId/sessions"
@@ -280,7 +270,6 @@ export interface FileRouteTypes {
     | "/settings/policy"
     | "/settings/secrets"
     | "/settings/ssh-keys"
-    | "/settings/toolsets"
     | "/settings/users"
     | "/settings"
     | "/sandboxes/$sandboxId/sessions"
@@ -307,7 +296,6 @@ export interface FileRouteTypes {
     | "/settings/secrets"
     | "/settings/ssh-keys"
     | "/settings/toolboxes"
-    | "/settings/toolsets"
     | "/settings/users"
     | "/settings/"
     | "/sandboxes/$sandboxId/sessions"
@@ -434,13 +422,6 @@ declare module "@tanstack/react-router" {
       preLoaderRoute: typeof SettingsToolboxesRouteImport
       parentRoute: typeof SettingsRoute
     }
-    "/settings/toolsets": {
-      id: "/settings/toolsets"
-      path: "/toolsets"
-      fullPath: "/settings/toolsets"
-      preLoaderRoute: typeof SettingsToolsetsRouteImport
-      parentRoute: typeof SettingsRoute
-    }
     "/settings/users": {
       id: "/settings/users"
       path: "/users"
@@ -548,7 +529,6 @@ interface SettingsRouteChildren {
   SettingsSecretsRoute: typeof SettingsSecretsRoute
   SettingsSshKeysRoute: typeof SettingsSshKeysRoute
   SettingsToolboxesRoute: typeof SettingsToolboxesRouteWithChildren
-  SettingsToolsetsRoute: typeof SettingsToolsetsRoute
   SettingsUsersRoute: typeof SettingsUsersRoute
   SettingsIndexRoute: typeof SettingsIndexRoute
 }
@@ -564,7 +544,6 @@ const SettingsRouteChildren: SettingsRouteChildren = {
   SettingsSecretsRoute: SettingsSecretsRoute,
   SettingsSshKeysRoute: SettingsSshKeysRoute,
   SettingsToolboxesRoute: SettingsToolboxesRouteWithChildren,
-  SettingsToolsetsRoute: SettingsToolsetsRoute,
   SettingsUsersRoute: SettingsUsersRoute,
   SettingsIndexRoute: SettingsIndexRoute,
 }

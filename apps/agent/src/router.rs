@@ -80,7 +80,6 @@ pub async fn route(
         }
         // One-shot exec + phased hooks + file writes (1d).
         (&Method::POST, "/exec") => handle_exec(req, &store).await,
-        (&Method::POST, "/exec/batch") => handle_exec_batch(req, &store).await,
         (&Method::POST, "/files/write") => handle_write_files(req).await,
         // Build+push a toolset artifact from declared home path-sets (the
         // runtime drives this in a throwaway build pod; the tail of the
@@ -159,61 +158,6 @@ async fn handle_exec(
         StatusCode::OK,
         serde_json::to_value(result).unwrap_or_default(),
     )
-}
-
-#[derive(Deserialize)]
-struct BatchCommand {
-    id: String,
-    command: String,
-    timeout: Option<u64>,
-    user: Option<String>,
-    workdir: Option<String>,
-}
-
-#[derive(Deserialize)]
-struct BatchBody {
-    commands: Vec<BatchCommand>,
-}
-
-async fn handle_exec_batch(
-    req: Request<hyper::body::Incoming>,
-    store: &Arc<ConfigStore>,
-) -> Response<Full<Bytes>> {
-    let body = match read_body(req, MAX_REQUEST_BODY_BYTES).await {
-        Ok(b) => b,
-        Err(resp) => return resp,
-    };
-    let parsed: BatchBody = match serde_json::from_slice(&body) {
-        Ok(p) => p,
-        Err(e) => return error(StatusCode::BAD_REQUEST, &format!("Invalid JSON: {e}")),
-    };
-    let env = Arc::new(pod_env(store));
-    let mut set = tokio::task::JoinSet::new();
-    for cmd in parsed.commands {
-        let env = env.clone();
-        set.spawn(async move {
-            let _permit = EXEC_SEMAPHORE.acquire().await.expect("exec semaphore");
-            let result = command::run(
-                &cmd.command,
-                cmd.timeout.unwrap_or(DEFAULT_EXEC_TIMEOUT_MS),
-                cmd.user.as_deref(),
-                cmd.workdir.as_deref(),
-                &env,
-                command::MAX_COMMAND_OUTPUT_BYTES,
-            )
-            .await;
-            let mut value = serde_json::to_value(result).unwrap_or_default();
-            if let Some(obj) = value.as_object_mut() {
-                obj.insert("id".into(), serde_json::Value::String(cmd.id));
-            }
-            value
-        });
-    }
-    let mut results = Vec::with_capacity(set.len());
-    while let Some(Ok(value)) = set.join_next().await {
-        results.push(value);
-    }
-    json(StatusCode::OK, serde_json::json!({ "results": results }))
 }
 
 /// `POST /hooks/{phase}` runs the config's commands for that lifecycle phase

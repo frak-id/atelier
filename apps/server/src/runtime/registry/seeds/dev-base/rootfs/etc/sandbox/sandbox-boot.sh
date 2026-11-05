@@ -6,7 +6,7 @@
 # docs/proposals/toolset-overlay-squashfs.md §3 and
 # docs/plans/toolset-inplace-update-fix-options.md §3). /home/dev itself is a bare,
 # empty mountpoint until the agent's `materialize` (crate::toolset) assembles
-# it as a SINGLE overlay (skel + any toolset squashfs lowers, upper/work on
+# it as a SINGLE overlay (skel + any toolset erofs/squashfs lowers, upper/work on
 # `/data`) — this script does NOT mount a base overlay. That single-assembly
 # design (no base-overlay-then-remount) is deliberate: it removes the
 # umount/remount race a two-step mount would have against an early SSH
@@ -122,8 +122,8 @@ mkdir -p /data/upper /data/work /data/toolsets
 # covers the window before the agent's first materialize.
 chown 1000:1000 /data/upper
 
-# ── Loop devices for squashfs toolset mounts ──────────────────────────
-# The agent loop-mounts each toolset squashfs blob (crate::toolset). `mount -o
+# ── Loop devices for toolset blob mounts ──────────────────────────
+# The agent loop-mounts each toolset blob (crate::toolset). `mount -o
 # loop` needs /dev/loop-control to allocate a device plus /dev/loopN nodes; a
 # Kata container's /dev may not have them. Create them up front (idempotent,
 # needs only CAP_MKNOD from the default set) so the first materialize's mount

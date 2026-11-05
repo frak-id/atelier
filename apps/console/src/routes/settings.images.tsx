@@ -4,25 +4,20 @@ import {
   Boxes,
   ChevronDown,
   ChevronUp,
-  FileArchive,
   Hammer,
   Loader2,
   Package,
   RefreshCw,
   Trash2,
-  UploadCloud,
-  X,
 } from "lucide-react";
-import { type DragEvent, useRef, useState } from "react";
+import { useState } from "react";
 import {
   imageLogsQuery,
   imagesListQuery,
   imageTemplatesQuery,
-  useBuildDockerfile,
   useBuildSeed,
   useDeleteImage,
   useRegisterImage,
-  useUploadImage,
 } from "@/api/queries/images";
 import { JobStatus } from "@/components/job-status";
 import { Badge, type BadgeVariant } from "@/components/ui/badge";
@@ -35,9 +30,8 @@ import {
   CardTitle,
 } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
-import { Label } from "@/components/ui/label";
 import { Skeleton } from "@/components/ui/skeleton";
-import { formatBytes, formatRelativeTime } from "@/lib/formatters";
+import { formatRelativeTime } from "@/lib/formatters";
 
 export const Route = createFileRoute("/settings/images")({
   component: ImagesPage,
@@ -62,129 +56,8 @@ function ImagesPage() {
     <div className="space-y-3">
       <TemplatesCard />
       <ImagesCard />
-      <BringYourOwnCard />
-      <UploadZipCard />
+      <RegisterImageCard />
     </div>
-  );
-}
-
-/** Build from an uploaded zip build context (Dockerfile + accompanying
- * files). A drag-and-drop dropzone over a hidden file input — the "nice
- * file picker" beside the pasted-Dockerfile path. */
-function UploadZipCard() {
-  const upload = useUploadImage();
-  const inputRef = useRef<HTMLInputElement>(null);
-  const [name, setName] = useState("");
-  const [file, setFile] = useState<File | null>(null);
-  const [dragOver, setDragOver] = useState(false);
-
-  function pick(selected: File | undefined) {
-    if (!selected) return;
-    if (!selected.name.toLowerCase().endsWith(".zip")) return;
-    setFile(selected);
-    // Default the image name to the zip's basename the first time.
-    if (!name.trim()) {
-      const base = selected.name.replace(/\.zip$/i, "").toLowerCase();
-      setName(base.replace(/[^a-z0-9._-]+/g, "-").replace(/^-+|-+$/g, ""));
-    }
-  }
-
-  function onDrop(e: DragEvent<HTMLButtonElement>) {
-    e.preventDefault();
-    setDragOver(false);
-    pick(e.dataTransfer.files[0]);
-  }
-
-  function submit() {
-    if (!file || !name.trim()) return;
-    upload.mutate(
-      { name: name.trim(), file },
-      {
-        onSuccess: () => {
-          setFile(null);
-          if (inputRef.current) inputRef.current.value = "";
-        },
-      },
-    );
-  }
-
-  return (
-    <Card>
-      <CardHeader>
-        <CardTitle>Upload a build context</CardTitle>
-        <CardDescription>
-          A <code>.zip</code> containing a <code>Dockerfile</code> at its root
-          plus any files it <code>COPY</code>s. Built in your cluster and pushed
-          to your registry.
-        </CardDescription>
-      </CardHeader>
-      <CardContent className="space-y-3">
-        <div className="space-y-2">
-          <Label htmlFor="zip-name">Image name</Label>
-          <Input
-            id="zip-name"
-            value={name}
-            onChange={(e) => setName(e.target.value)}
-            placeholder="my-custom-image"
-          />
-        </div>
-        <input
-          ref={inputRef}
-          type="file"
-          accept=".zip,application/zip"
-          className="hidden"
-          onChange={(e) => pick(e.target.files?.[0])}
-        />
-        {file ? (
-          <div className="flex items-center gap-2 rounded-md border bg-muted/30 p-3">
-            <FileArchive className="size-4 shrink-0 text-muted-foreground" />
-            <span className="truncate font-mono text-sm">{file.name}</span>
-            <span className="text-xs text-muted-foreground">
-              {formatBytes(file.size)}
-            </span>
-            <Button
-              variant="ghost"
-              size="sm"
-              className="ml-auto"
-              onClick={() => {
-                setFile(null);
-                if (inputRef.current) inputRef.current.value = "";
-              }}
-            >
-              <X />
-            </Button>
-          </div>
-        ) : (
-          <button
-            type="button"
-            onClick={() => inputRef.current?.click()}
-            onDragOver={(e) => {
-              e.preventDefault();
-              setDragOver(true);
-            }}
-            onDragLeave={() => setDragOver(false)}
-            onDrop={onDrop}
-            className={`flex w-full flex-col items-center gap-2 rounded-md border border-dashed p-6 text-center transition-colors ${
-              dragOver
-                ? "border-primary bg-primary/5"
-                : "border-muted-foreground/25 hover:border-muted-foreground/50"
-            }`}
-          >
-            <UploadCloud className="size-6 text-muted-foreground" />
-            <span className="text-sm text-muted-foreground">
-              Drag a <code>.zip</code> here, or click to browse
-            </span>
-          </button>
-        )}
-        <Button
-          disabled={upload.isPending || !file || !name.trim()}
-          onClick={submit}
-        >
-          {upload.isPending ? <Loader2 className="animate-spin" /> : <Hammer />}
-          Build from zip
-        </Button>
-      </CardContent>
-    </Card>
   );
 }
 
@@ -286,24 +159,8 @@ function ImagesCard() {
     error,
   } = useQuery(imagesListQuery());
   const buildSeed = useBuildSeed();
-  const buildDockerfile = useBuildDockerfile();
   const deleteImage = useDeleteImage();
   const [openLogs, setOpenLogs] = useState<string | null>(null);
-
-  function rebuild(image: {
-    name: string;
-    provenance: string;
-    dockerfile?: string;
-  }) {
-    if (image.provenance === "seed") {
-      buildSeed.mutate({ seed: image.name, force: true });
-    } else if (image.provenance === "dockerfile" && image.dockerfile) {
-      buildDockerfile.mutate({
-        name: image.name,
-        dockerfile: image.dockerfile,
-      });
-    }
-  }
 
   return (
     <Card>
@@ -326,9 +183,7 @@ function ImagesCard() {
         ) : (
           images.map((image) => {
             const status = image.status as ImageStatus;
-            const canRebuild =
-              image.provenance === "seed" ||
-              (image.provenance === "dockerfile" && image.dockerfile);
+            const canRebuild = image.provenance === "seed";
             const logsOpen = openLogs === image.name;
             return (
               <div
@@ -369,12 +224,12 @@ function ImagesCard() {
                       <Button
                         variant="outline"
                         size="sm"
-                        disabled={
-                          buildSeed.isPending || buildDockerfile.isPending
+                        disabled={buildSeed.isPending}
+                        onClick={() =>
+                          buildSeed.mutate({ seed: image.name, force: true })
                         }
-                        onClick={() => rebuild(image)}
                       >
-                        {buildSeed.isPending || buildDockerfile.isPending ? (
+                        {buildSeed.isPending ? (
                           <Loader2 className="animate-spin" />
                         ) : (
                           <RefreshCw />
@@ -424,96 +279,50 @@ function ImageLogs({ name }: { name: string }) {
   );
 }
 
-const DOCKERFILE_PLACEHOLDER = `FROM node:22-slim
-RUN apt-get update && apt-get install -y curl`;
-
-function BringYourOwnCard() {
-  const buildDockerfile = useBuildDockerfile();
+function RegisterImageCard() {
   const registerImage = useRegisterImage();
-
   const [name, setName] = useState("");
-  const [dockerfile, setDockerfile] = useState("");
-
-  const [regName, setRegName] = useState("");
-  const [regRef, setRegRef] = useState("");
+  const [ref, setRef] = useState("");
 
   return (
     <Card>
       <CardHeader>
-        <CardTitle>Bring your own</CardTitle>
+        <CardTitle>Register external image</CardTitle>
         <CardDescription>
-          Build from a pasted Dockerfile, or register an already-hosted image
-          (e.g. a GHCR ref) by reference — no build, used as-is.
+          Register an already-hosted image (e.g. a GHCR ref) by reference — no
+          build, used as-is.
         </CardDescription>
       </CardHeader>
-      <CardContent className="space-y-4">
-        <div className="space-y-2">
-          <Label htmlFor="image-name">Image name</Label>
+      <CardContent>
+        <div className="flex flex-wrap gap-2">
           <Input
-            id="image-name"
+            aria-label="Image name"
             value={name}
             onChange={(e) => setName(e.target.value)}
-            placeholder="my-custom-image"
+            placeholder="name"
+            className="w-40"
           />
-          <textarea
-            value={dockerfile}
-            onChange={(e) => setDockerfile(e.target.value)}
-            spellCheck={false}
-            placeholder={DOCKERFILE_PLACEHOLDER}
-            className="min-h-40 w-full rounded-md border bg-muted/30 p-2 font-mono text-xs"
+          <Input
+            aria-label="Image ref"
+            value={ref}
+            onChange={(e) => setRef(e.target.value)}
+            placeholder="ghcr.io/org/image:tag"
+            className="flex-1"
           />
           <Button
-            disabled={
-              buildDockerfile.isPending || !name.trim() || !dockerfile.trim()
-            }
+            variant="outline"
+            disabled={registerImage.isPending || !name.trim() || !ref.trim()}
             onClick={() =>
-              buildDockerfile.mutate({ name: name.trim(), dockerfile })
+              registerImage.mutate({ name: name.trim(), ref: ref.trim() })
             }
           >
-            {buildDockerfile.isPending ? (
+            {registerImage.isPending ? (
               <Loader2 className="animate-spin" />
             ) : (
-              <Hammer />
+              <Package />
             )}
-            Build from Dockerfile
+            Register
           </Button>
-        </div>
-        <div className="space-y-2 border-t pt-4">
-          <Label htmlFor="register-name">Register external image</Label>
-          <div className="flex flex-wrap gap-2">
-            <Input
-              id="register-name"
-              value={regName}
-              onChange={(e) => setRegName(e.target.value)}
-              placeholder="name"
-              className="w-40"
-            />
-            <Input
-              value={regRef}
-              onChange={(e) => setRegRef(e.target.value)}
-              placeholder="ghcr.io/org/image:tag"
-              className="flex-1"
-            />
-            <Button
-              variant="outline"
-              disabled={
-                registerImage.isPending || !regName.trim() || !regRef.trim()
-              }
-              onClick={() =>
-                registerImage.mutate({
-                  name: regName.trim(),
-                  ref: regRef.trim(),
-                })
-              }
-            >
-              {registerImage.isPending ? (
-                <Loader2 className="animate-spin" />
-              ) : (
-                <Package />
-              )}
-              Register
-            </Button>
-          </div>
         </div>
       </CardContent>
     </Card>

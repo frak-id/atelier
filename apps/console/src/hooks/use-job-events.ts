@@ -3,7 +3,7 @@ import { useEffect, useRef } from "react";
 import { toast } from "sonner";
 import { type Job, jobKindLabel } from "@/api/queries/jobs";
 import { queryKeys } from "@/api/queries/keys";
-import { httpUrl, isCrossOrigin } from "@/lib/api-base";
+import { httpUrl } from "@/lib/api-base";
 
 /**
  * Subscribe to the global job queue SSE feed (`/v1/jobs/events`) once, at
@@ -43,9 +43,7 @@ export function useJobEvents(enabled = true): void {
     const refetch = () =>
       queryClient.refetchQueries({ queryKey: queryKeys.jobs.list() });
 
-    const source = new EventSource(httpUrl("/v1/jobs/events"), {
-      withCredentials: isCrossOrigin,
-    });
+    const source = new EventSource(httpUrl("/v1/jobs/events"));
 
     source.addEventListener("open", () => {
       stopPolling();

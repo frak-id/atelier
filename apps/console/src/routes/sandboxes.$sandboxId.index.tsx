@@ -29,7 +29,6 @@ import {
 } from "@/api/queries/sandboxes";
 import { useCaptureToolboxVersion } from "@/api/queries/toolbox-versions";
 import { toolboxesListQuery } from "@/api/queries/toolboxes";
-import { useCaptureToolset } from "@/api/queries/toolsets";
 import { ImmersiveView } from "@/components/immersive-view";
 import { MultiTerminal } from "@/components/multi-terminal";
 import { RenameSandboxDialog } from "@/components/rename-sandbox-dialog";
@@ -216,7 +215,6 @@ function SandboxDetailPage() {
       <SandboxActivitySection sandboxId={sandbox.id} />
       <ExposePortSection sandboxId={sandbox.id} />
       <SaveToolsetForToolboxSection sandboxId={sandbox.id} />
-      <CaptureToolsetSection sandboxId={sandbox.id} />
       {sandbox.annotations || sandbox.metadata ? (
         <MetadataSection
           annotations={sandbox.annotations}
@@ -592,8 +590,7 @@ function ExposePortSection({ sandboxId }: { sandboxId: string }) {
  * Higher-level, toolbox-associated flow (docs/toolbox-versions.md §7):
  * snapshots this sandbox's tuned state into a new *version* of a toolbox the
  * caller owns, kept associated for rollback/pinning in Settings → Toolboxes.
- * Unlike `CaptureToolsetSection` below (raw, orphan capture), the server
- * derives `paths`/`exclude` from the toolbox itself.
+ * The server derives `paths`/`exclude` from the toolbox itself.
  */
 function SaveToolsetForToolboxSection({ sandboxId }: { sandboxId: string }) {
   const { data: orgs, isPending: orgsPending } = useQuery(
@@ -706,116 +703,6 @@ function SaveToolsetForToolboxSection({ sandboxId }: { sandboxId: string }) {
             </Button>
           </form>
         )}
-      </CardContent>
-    </Card>
-  );
-}
-
-function CaptureToolsetSection({ sandboxId }: { sandboxId: string }) {
-  const captureToolset = useCaptureToolset();
-  const [name, setName] = useState("");
-  const [pathsText, setPathsText] = useState("");
-  const [excludeText, setExcludeText] = useState("");
-  const [overridesText, setOverridesText] = useState("");
-
-  const linesOf = (text: string) =>
-    text
-      .split("\n")
-      .map((p) => p.trim())
-      .filter(Boolean);
-
-  function handleSubmit(event: FormEvent) {
-    event.preventDefault();
-    const paths = linesOf(pathsText);
-    if (!name || paths.length === 0) return;
-    const exclude = linesOf(excludeText);
-    const overrides = linesOf(overridesText);
-    captureToolset.mutate(
-      {
-        sandboxId,
-        name,
-        paths,
-        ...(exclude.length > 0 ? { exclude } : {}),
-        ...(overrides.length > 0 ? { overrides } : {}),
-      },
-      {
-        onSuccess: () => {
-          setName("");
-          setPathsText("");
-          setExcludeText("");
-          setOverridesText("");
-        },
-      },
-    );
-  }
-
-  return (
-    <Card>
-      <CardHeader>
-        <CardTitle>Capture toolset</CardTitle>
-        <CardDescription>
-          Snapshot this sandbox's declared path-sets into a private toolset
-          artifact. Known secret files (auth.json, .env*, keys) are excluded and
-          the delta is secret-scanned before publish.
-        </CardDescription>
-      </CardHeader>
-      <CardContent>
-        <form onSubmit={handleSubmit} className="space-y-3">
-          <div className="space-y-1">
-            <Label htmlFor="capture-name">Name</Label>
-            <Input
-              id="capture-name"
-              value={name}
-              onChange={(e) => setName(e.target.value)}
-              placeholder="my-pi-stack"
-              required
-            />
-          </div>
-          <div className="space-y-1">
-            <Label htmlFor="capture-paths">Paths (one per line)</Label>
-            <textarea
-              id="capture-paths"
-              value={pathsText}
-              onChange={(e) => setPathsText(e.target.value)}
-              spellCheck={false}
-              required
-              placeholder={"~/.config/pi\n~/.local/share/pi\n~/.local/bin/pi"}
-              className="min-h-20 w-full rounded-md border bg-muted/30 p-2 font-mono text-xs"
-            />
-          </div>
-          <div className="space-y-1">
-            <Label htmlFor="capture-exclude">
-              Exclude globs (optional, one per line)
-            </Label>
-            <textarea
-              id="capture-exclude"
-              value={excludeText}
-              onChange={(e) => setExcludeText(e.target.value)}
-              spellCheck={false}
-              placeholder={"*.log\ncache"}
-              className="min-h-12 w-full rounded-md border bg-muted/30 p-2 font-mono text-xs"
-            />
-          </div>
-          <div className="space-y-1">
-            <Label htmlFor="capture-overrides">
-              Secret-scan overrides (optional, one path per line)
-            </Label>
-            <textarea
-              id="capture-overrides"
-              value={overridesText}
-              onChange={(e) => setOverridesText(e.target.value)}
-              spellCheck={false}
-              placeholder={"~/.config/pi/config.json"}
-              className="min-h-12 w-full rounded-md border bg-muted/30 p-2 font-mono text-xs"
-            />
-          </div>
-          <Button type="submit" disabled={captureToolset.isPending}>
-            {captureToolset.isPending ? (
-              <Loader2 className="animate-spin" />
-            ) : null}
-            Capture
-          </Button>
-        </form>
       </CardContent>
     </Card>
   );

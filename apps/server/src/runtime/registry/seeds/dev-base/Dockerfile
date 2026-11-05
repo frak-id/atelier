@@ -65,7 +65,6 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     procps \
     iproute2 \
     iputils-ping \
-    nfs-common \
     squashfs-tools \
     erofs-utils \
     e2fsprogs \

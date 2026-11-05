@@ -1,4 +1,4 @@
-import type { ToolsetBuildRequest, ToolsetCaptureRequest } from "@atelier/spec";
+import type { ToolsetBuildRequest } from "@atelier/spec";
 import {
   queryOptions,
   useMutation,
@@ -82,30 +82,6 @@ export function useRemoveToolset() {
     onSuccess: () => {
       invalidate();
       toast.success("Toolset removed");
-    },
-    onError: (error) => toast.error(error.message),
-  });
-}
-
-export function useCaptureToolset() {
-  return useMutation({
-    mutationFn: async ({
-      sandboxId,
-      ...req
-    }: ToolsetCaptureRequest & { sandboxId: string }) => {
-      const { data, error } = await api.v1
-        .sandboxes({ id: sandboxId })
-        .toolsets.capture.post(req);
-      if (error)
-        throw new Error(errorMessage(error, "Failed to capture toolset"));
-      return data;
-    },
-    onSuccess: (data) => {
-      toast.success(
-        data?.status === "queued"
-          ? "Toolset capture queued"
-          : "Toolset capture started",
-      );
     },
     onError: (error) => toast.error(error.message),
   });

@@ -2,9 +2,10 @@ FROM atelier/dev-base:latest
 
 USER root
 
-# Install to /opt (rootfs), NOT $HOME. At boot a block PVC is mounted over
-# /home/dev and only /home/skel is copied back (see dev-base's /home/skel mv),
-# so a $HOME install would vanish. This mirrors how dev-cloud installs to /opt.
+# Install to /opt (rootfs), NOT $HOME. /home/dev is rebuilt at boot as an
+# overlay over /home/skel (see dev-base's /home/skel mv), so anything
+# installed under $HOME in this image would not be visible. This mirrors how
+# dev-cloud installs to /opt.
 ENV RUSTUP_HOME=/opt/rust/rustup \
     CARGO_HOME=/opt/rust/cargo \
     PATH=/opt/rust/cargo/bin:$PATH
