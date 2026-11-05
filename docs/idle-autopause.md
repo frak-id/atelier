@@ -162,8 +162,6 @@ delay a pause, never cause an early one.
 - Console: an Activity card on the sandbox page (state, countdown,
   keep-awake menu, signals, traffic per minute); the idle state in the
   sandbox list; the rules on the Server configuration page.
-- CLI: `atelier keep-awake <id> (--for 8h | --off)`; an IDLE column in
-  `atelier ps`; activity in `atelier get`.
 - MCP: `get_sandbox` returns `idle`; `sandbox_lifecycle` gains
   `keep_awake` with `hours` (0 clears; the surface stays at 14 tools).
 

@@ -51,7 +51,7 @@ The server reads a layered config: env vars > the mounted
     "defaultVolumeSize": "20Gi"
   },
   "sandbox": {
-    "defaultImage": "dev-base-v2",
+    "defaultImage": "dev-base",
     "git": { "email": "sandbox@atelier.dev", "name": "Sandbox User" }
   }
 }
@@ -79,7 +79,7 @@ override the config file.
 
 | Variable | Description |
 |----------|-------------|
-| `ATELIER_SERVER_MODE` | `production` or `mock` (local dev, no K8s/KVM) |
+| `ATELIER_SERVER_MODE` | `production` (cluster + GitHub OAuth) or `local` (Docker sandboxes, auth bypassed) |
 | `ATELIER_CONFIG` | Path to the mounted config JSON (default `/etc/atelier/sandbox.config.json`) |
 | `ATELIER_GITHUB_CLIENT_ID` / `_SECRET` | GitHub OAuth credentials |
 | `ATELIER_JWT_SECRET` | JWT signing secret |
@@ -102,11 +102,11 @@ Production base images are typically built out-of-band with the cluster's
 BuildKit (`buildctl`) against a shared `buildkitd` and pushed to Zot; see
 `infra/k8s/deploy.sh` and [`infra/k8s/README.md`](../infra/k8s/README.md#rebuild-images-in-cluster-no-local-docker).
 The server also builds images itself (`POST /v1/images`,
-`ImageBuilderService`, triggered from the console or CLI) using the
+`ImageBuilderService`, triggered from the console) using the
 `imageBuilder.*` config. `imageBuilder.kind=buildkit` with no `endpoint` (the
 default) runs BuildKit daemonless in a one-shot Job, so an in-cluster build
 needs no pre-existing daemon; `kind=docker` shells out to a Docker daemon
-(what `atelier local up` uses).
+(what the local mode uses).
 
 ## Recipes
 
@@ -118,8 +118,8 @@ mirror in the node's `/etc/rancher/k3s/registries.yaml`.
 
 ### Pause idle sandboxes
 
-The server pauses running sandboxes nobody uses (proposal:
-[sandbox-idle-autopause.md](proposals/sandbox-idle-autopause.md)). The rules
+The server pauses running sandboxes nobody uses (design:
+[idle-autopause.md](idle-autopause.md)). The rules
 are `sandbox.idle.*` keys of the server config plane: edit them on the
 console's *Server configuration* page, or lock them with their env var.
 

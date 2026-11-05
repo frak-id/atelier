@@ -33,6 +33,10 @@ BUILDER_POD="v2-builder"
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 cd "$ROOT"
 
+# Immutable tag (git short sha) pushed next to the floating :v2; the
+# Deployment is pinned to it after a build so pods never drift on a re-pull.
+TAG="$(git rev-parse --short HEAD)"
+
 K() { kubectl --context "$CTX" "$@"; }
 say() { printf '\n\033[1;36m==> %s\033[0m\n' "$*"; }
 
@@ -147,14 +151,14 @@ cd /ctx && tar xzf /tmp/v2-ctx.tgz && printf 'node_modules\n.git\n*.tar.gz\n' > 
   REPO_CTX_SENT=true
 }
 
-build_target() { # $1 = server|console, $2 = image name
-  say "Build $2 (Dockerfile target=$1)"
+build_target() { # $1 = server|console, $2 = image repo (no tag)
+  say "Build $2:v2 + $2:$TAG (Dockerfile target=$1)"
   send_repo_ctx
   K exec -n "$NS_BUILD" "$BUILDER_POD" -- sh -c "
 set -e
 $BUILDCTL build --frontend dockerfile.v0 --local context=/ctx --local dockerfile=/ctx \
   --opt filename=Dockerfile --opt target=$1 --opt platform=linux/amd64 \
-  --output type=image,name=$REGISTRY/$2,$OUT_OPTS
+  --output 'type=image,\"name=$REGISTRY/$2:v2,$REGISTRY/$2:$TAG\",$OUT_OPTS'
 "
 }
 
@@ -162,8 +166,8 @@ $BUILDCTL build --frontend dockerfile.v0 --local context=/ctx --local dockerfile
 if $NEED_BUILDER; then start_builder; fi
 $BUILD_AGENT   && build_agent
 $BUILD_DEVBASE && build_devbase
-$BUILD_SERVER  && build_target server  atelier-server:v2
-$BUILD_CONSOLE && build_target console atelier-console:v2
+$BUILD_SERVER  && build_target server  atelier-server
+$BUILD_CONSOLE && build_target console atelier-console
 if $NEED_BUILDER; then cleanup; trap - EXIT; fi
 
 sync_build_tls
@@ -183,7 +187,17 @@ if $DO_ROLLOUT; then
   K apply -f "$ROOT/infra/k8s/30-config.yaml"
 
   say "Rolling deploy/$DEPLOY"
-  K rollout restart "deploy/$DEPLOY" -n "$NS_SYS"
+  # Pin the rebuilt containers to the immutable tag (IfNotPresent), so a
+  # node restart can't pull a different :v2. This also rolls the pods.
+  pin() { # $1 = container, $2 = image repo
+    K -n "$NS_SYS" patch "deploy/$DEPLOY" -p "{\"spec\":{\"template\":{\"spec\":{\"containers\":[{\"name\":\"$1\",\"image\":\"$REGISTRY/$2:$TAG\",\"imagePullPolicy\":\"IfNotPresent\"}]}}}}"
+  }
+  if $BUILD_SERVER || $BUILD_CONSOLE; then
+    $BUILD_SERVER  && pin server  atelier-server
+    $BUILD_CONSOLE && pin console atelier-console
+  else
+    K rollout restart "deploy/$DEPLOY" -n "$NS_SYS"
+  fi
   K rollout status  "deploy/$DEPLOY" -n "$NS_SYS" --timeout=180s
 fi
 

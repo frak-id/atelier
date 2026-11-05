@@ -1,8 +1,8 @@
 # Atelier — staging deploy (`hetzner-atelier`)
 
 Standalone manifests for the server + console under
-`atelier.hetzner-staging.frak.id`. See `.notes/deploy-v2-staging.md` for the
-full feasibility write-up.
+`atelier.hetzner-staging.frak.id`, deployed in parallel to any other stack on
+the cluster (own namespaces, own SQLite DB, own ingress host).
 
 ## Cluster prerequisites (not managed from this repo)
 
@@ -46,7 +46,7 @@ release in sync with it when either side changes.
   The workspace PVC is a `volumeMode: Block` volume; Kata passes it to the
   guest as virtio-blk and the guest formats/mounts ext4 at `/data`, giving
   overlayfs real `trusted.overlay.*` (no `userxattr`) — Option C of
-  `docs/plans/toolset-inplace-update-fix-options.md`. Defined as a
+  `docs/archive/plans/toolset-inplace-update-fix-options.md`. Defined as a
   kata-deploy custom runtime (infra-core's release), so it survives
   kata-deploy rolls. The storage class (`topolvm-thin`) must permit
   `Block` volumeMode and block-volume snapshots (TopoLVM thin does).
@@ -88,7 +88,33 @@ kubectl --context hetzner-atelier apply -f infra/k8s/80-forward-auth.yaml
 
 ## Rebuild images (in-cluster, no local docker)
 
-Build with the cluster BuildKit and push to Zot — see
-`.notes/deploy-v2-staging.md` (Phase A). `.dockerignore` must not exclude
-workspace `apps/*` package.json files (bun frozen install needs the full
-graph); the build pod uses a trimmed `.dockerignore`.
+`deploy.sh` builds with the cluster BuildKit and pushes to Zot; no local
+Docker needed. It starts a short-lived `moby/buildkit` builder pod in the
+`buildkit` namespace (mTLS via Secret `buildkit-client-tls`), ships the repo
+as a tarball, and runs `buildctl` against `buildkitd.buildkit.svc:1234`.
+
+```sh
+infra/k8s/deploy.sh                 # build server + console, apply config, roll
+infra/k8s/deploy.sh server console  # build only these, then roll
+infra/k8s/deploy.sh rollout         # just restart the deployment
+infra/k8s/deploy.sh agent dev-base  # bootstrap: rebuild the base-image chain
+```
+
+- Each build pushes `atelier-server` / `atelier-console` as `:v2` **and** as an
+  immutable `:<git short sha>`. The Deployment is then patched to the sha tag
+  with `imagePullPolicy: IfNotPresent`, so a node restart never pulls a
+  different image. The manifest in `50-deployment.yaml` keeps the floating
+  `:v2` as the bootstrap value for a first apply.
+- `agent` and `dev-base` are opt-in: the running server builds base images on
+  demand through BuildKit (`imageBuilder.kind=buildkit`). Build them by hand
+  only to bootstrap a fresh registry. `dev-base` COPYs the agent from Zot, so
+  build `agent` first.
+- `deploy.sh` also copies `buildkit-client-tls` into the sandbox namespace
+  (the server's build Jobs run there) and applies `30-config.yaml`,
+  `60-service.yaml` and `80-forward-auth.yaml` before rolling, so config and
+  code ship together.
+- The repo `.dockerignore` must not exclude workspace `apps/*/package.json`
+  files (bun's frozen install needs the full workspace graph); the build pod
+  writes a trimmed `.dockerignore`.
+- Zot rejects manifests without `oci-mediatypes=true,image-manifest=true`;
+  `deploy.sh` sets them.

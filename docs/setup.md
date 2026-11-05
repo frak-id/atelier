@@ -2,14 +2,14 @@
 
 Atelier runs on a bare-metal Kubernetes cluster using k3s and Kata Containers. This guide covers the full installation, from a fresh server to a working console.
 
-New to Atelier? Read [Getting Started](getting-started.md) first. Choosing hardware? See [Recommended Infrastructure](recommended-infrastructure.md).
+Choosing hardware? See [Sizing](#sizing) below.
 
 ## Requirements
 
 ### Hardware
 - Bare-metal server (KVM virtualization is required — `/dev/kvm` must exist).
 - x86_64 CPU with VT-x or AMD-V enabled.
-- Minimum 8 GB RAM and 40 GB storage (see [sizing guide](recommended-infrastructure.md#sizing-guide)).
+- Minimum 8 GB RAM and 40 GB storage (see [Sizing](#sizing)).
 
 ### Software
 - Debian 12 (Bookworm) or Ubuntu 22.04+ with systemd.
@@ -24,6 +24,31 @@ Verify virtualization before going further:
 ls /dev/kvm                      # must exist
 grep -cE 'vmx|svm' /proc/cpuinfo # must be > 0
 ```
+
+### Sizing
+
+Atelier needs **bare metal with KVM**: Kata Containers boots a real
+lightweight VM per sandbox. Most cloud VMs (AWS EC2, GCP, standard Hetzner
+Cloud) don't support nested virtualization reliably, so rent a dedicated
+server (e.g. a Hetzner AX-line box, OVH, Scaleway Elastic Metal, a homelab).
+Single-node k3s is the recommended shape: one kubeconfig to back up, and
+TopoLVM snapshots are node-local, so instant copy-on-write cloning works best
+when all sandboxes share the node's LVM thin pool.
+
+Each sandbox is a VM with its own kernel plus its workloads (code-server,
+OpenCode, Chromium, dev servers). Budget roughly **2-4 GB RAM and 1-2 vCPU per
+active sandbox**, plus ~4 GB for the system (k3s, the server, Zot). Kata adds
+a fixed per-sandbox overhead (250m CPU / 384Mi with the `kata-atelier-clh-rs`
+runtime). A sandbox's memory size is its VM's entire RAM, page cache included.
+
+| Team size | Concurrent sandboxes | RAM | CPU | Storage |
+|-----------|---------------------|-----|-----|---------|
+| Solo / trying it out | 2-4 | 16 GB | 4-6 cores | 250 GB NVMe |
+| Small team | 5-10 | 64 GB | 8 cores / 16 threads | 512 GB - 1 TB NVMe |
+| Larger team | 15-20+ | 128 GB | 16 cores / 32 threads | 2 x 1 TB NVMe |
+
+For prebuilds, leave a second NVMe drive (or a large partition) unformatted
+for the LVM thin pool ([step 5](#5-storage-and-snapshots-optional--required-for-prebuilds)).
 
 ## Prerequisites
 
@@ -213,6 +238,10 @@ exposed by `60-service.yaml` on NodePort `30222`. Open that port on the host
 firewall. `domain.ssh.port` in `30-config.yaml` must equal the NodePort: it's
 the port advertised in each sandbox's SSH URL.
 
+Recommended hardening: restrict everything but `80`, `443` and the SSH
+NodePort (e.g. a provider firewall), and allow-list `6443` (k3s API) to your
+own IP.
+
 ## Post-install
 
 ### Verify deployment
@@ -245,6 +274,45 @@ first sandbox.
 From the console, define a saved spec: git repos to clone, init commands, dev
 commands, ports, and secrets. Optionally run a **prebuild** so subsequent
 sandboxes spawn instantly from a snapshot.
+
+## Network, domains and cleanup
+
+```
+Internet -> Traefik (:443, TLS) -> Ingress -> Service -> Pod:port
+```
+
+- Sandbox pods get IPs from the CNI (10.42.x.x on k3s); each sandbox has its
+  own Service and per-tool Ingress (host-based routing).
+- Domains (`domain.baseDomain`, `domain.dashboard`):
+
+  | Service | URL pattern |
+  |---------|-------------|
+  | Console | `{domain.dashboard}` (empty = `sandbox.{baseDomain}`) |
+  | VS Code | `sandbox-{id}.{baseDomain}` |
+  | OpenCode | `opencode-{id}.{baseDomain}` |
+  | Browser | `browser-{id}.{baseDomain}` |
+  | Dev command | `dev-{name}-{id}.{baseDomain}` |
+
+- The in-pod agent listens on TCP 9998 (config + process API), 9997 (attach
+  bridge) and 7681 (terminal WS relay). The server reaches it via the pod IP
+  (`pod.status.podIP`); its once-a-minute `GET /activity` poll for idle
+  auto-pause never counts as activity.
+- Sandbox destruction deletes every resource labelled
+  `atelier.dev/sandbox={id}` (pods, services, configmaps, PVCs, ingresses,
+  volumesnapshots), then the database record; Kubernetes garbage collection
+  covers orphans.
+
+| Resource | Namespace |
+|----------|-----------|
+| Sandbox Pod, Service, Ingress, workspace PVC, VolumeSnapshots | `kubernetes.namespace` (e.g. `atelier-v2-sandboxes`) |
+| Server + console Deployment, SQLite PVC | system namespace (e.g. `atelier-v2-system`) |
+| OCI registry (Zot) | cluster infra, not deployed by Atelier |
+
+### Backups
+
+Back up the server's SQLite PVC, your `30-config.yaml` edits and the
+`atelier-v2-secrets` values. Zot holds rebuildable base images. Sandboxes are
+disposable: anything important belongs in git.
 
 ## Updating
 
