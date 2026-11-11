@@ -250,7 +250,7 @@ where
     let _permit = FILES_SEMAPHORE.acquire().await.expect("files semaphore");
     let parsed: WriteFilesRequest = match read_json(req, MAX_REQUEST_BODY_BYTES).await {
         Ok(p) => p,
-        Err(resp) => return resp,
+        Err(resp) => return *resp,
     };
     let results = files::write_files(parsed).await;
     let status = if results.iter().all(|r| r.success) {
@@ -344,16 +344,21 @@ fn classify_start_error(e: &str) -> StatusCode {
 }
 
 /// Read the body (capped at `max`) and parse it as JSON: 413 past the cap,
-/// 400 for malformed JSON or unknown fields.
-async fn read_json<T, B>(req: Request<B>, max: usize) -> Result<T, Resp>
+/// 400 for malformed JSON or unknown fields. The error response is boxed: a
+/// `Response` is large, and only the error path pays for the allocation.
+async fn read_json<T, B>(req: Request<B>, max: usize) -> Result<T, Box<Resp>>
 where
     T: DeserializeOwned,
     B: Body + Unpin,
     B::Data: Buf,
 {
     let body = read_body(req, max).await?;
-    serde_json::from_slice(&body)
-        .map_err(|e| error(StatusCode::BAD_REQUEST, &format!("Invalid JSON: {e}")))
+    serde_json::from_slice(&body).map_err(|e| {
+        Box::new(error(
+            StatusCode::BAD_REQUEST,
+            &format!("Invalid JSON: {e}"),
+        ))
+    })
 }
 
 /// The shared "read body, parse, run, respond" shape: `Ok` answers 200 with
@@ -369,7 +374,7 @@ where
 {
     let parsed = match read_json(req, max).await {
         Ok(p) => p,
-        Err(resp) => return resp,
+        Err(resp) => return *resp,
     };
     match call(parsed).await {
         Ok(result) => json(StatusCode::OK, result),
@@ -377,7 +382,7 @@ where
     }
 }
 
-async fn read_body<B>(req: Request<B>, max: usize) -> Result<Bytes, Resp>
+async fn read_body<B>(req: Request<B>, max: usize) -> Result<Bytes, Box<Resp>>
 where
     B: Body + Unpin,
     B::Data: Buf,
@@ -385,13 +390,14 @@ where
     let mut body = req.into_body();
     let mut buf: Vec<u8> = Vec::new();
     while let Some(frame) = body.frame().await {
-        let frame = frame.map_err(|_| error(StatusCode::BAD_REQUEST, "Failed to read body"))?;
+        let frame =
+            frame.map_err(|_| Box::new(error(StatusCode::BAD_REQUEST, "Failed to read body")))?;
         if let Ok(mut data) = frame.into_data() {
             if buf.len().saturating_add(data.remaining()) > max {
-                return Err(error(
+                return Err(Box::new(error(
                     StatusCode::PAYLOAD_TOO_LARGE,
                     "Request body too large",
-                ));
+                )));
             }
             buf.extend_from_slice(&data.copy_to_bytes(data.remaining()));
         }
