@@ -121,7 +121,6 @@ RUN curl -fsSL https://bun.sh/install | BUN_INSTALL=/home/dev/.bun bash \
 
 # Layer 5: Directory structure + permissions
 RUN mkdir -p /etc/sandbox/secrets /var/log/sandbox \
-    /home/dev/.local/share/code-server/User \
     /.atelier \
     && chown -R dev:dev /home/dev /var/log/sandbox /etc/sandbox /.atelier \
     && chmod 775 /etc/sandbox /etc/sandbox/secrets /var/log/sandbox /.atelier
@@ -135,7 +134,6 @@ RUN mkdir -p /etc/sandbox/secrets /var/log/sandbox \
 RUN echo 'export PATH="$HOME/.local/bin:$PATH"' > /etc/profile.d/local-bin.sh \
     && printf 'export LANG=C.UTF-8\nexport LC_ALL=C.UTF-8\n' > /etc/profile.d/locale.sh \
     && printf '[ "$(id -u)" = "1000" ] && [ -r /etc/sandbox/secrets/.env ] && . /etc/sandbox/secrets/.env\n' > /etc/profile.d/99-sandbox-secrets.sh
-COPY --chown=dev:dev rootfs/home/dev/.local/share/code-server/User/settings.json /home/dev/.local/share/code-server/User/settings.json
 COPY --chown=dev:dev rootfs/etc/sandbox/ /etc/sandbox/
 COPY rootfs/etc/chrony/chrony.conf /etc/chrony/chrony.conf
 RUN mkdir -p /var/lib/chrony && chown _chrony:_chrony /var/lib/chrony \

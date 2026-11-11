@@ -149,9 +149,25 @@ const PI_CLIPROXY: ToolboxSuggestion = {
 
 const CODE_SERVER_PORT = 8080;
 /** Its own prefix: `~/.local/share/code-server` is code-server's data dir
- * (settings, extensions), which a toolset must not own. */
+ * (extensions, state), which a toolset must not own. */
 const INSTALL_CODE_SERVER =
   "curl -fsSL https://code-server.dev/install.sh | sh -s -- --method=standalone --prefix=$HOME/.local/lib/code-server";
+/** Default user settings: no workspace-trust prompts (the VM is the
+ * boundary), no welcome page, no telemetry. Shipped in the toolset rather
+ * than as a toolbox file, so a user's own changes survive a reboot (a file
+ * is rewritten at every boot; a toolset is the layer under the home). */
+const CODE_SERVER_SETTINGS_PATH =
+  "~/.local/share/code-server/User/settings.json";
+const CODE_SERVER_SETTINGS = {
+  "security.workspace.trust.enabled": false,
+  "security.workspace.trust.startupPrompt": "never",
+  "security.workspace.trust.banner": "never",
+  "security.workspace.trust.emptyWindow": false,
+  "security.workspace.trust.untrustedFiles": "open",
+  "workbench.startupEditor": "none",
+  "telemetry.telemetryLevel": "off",
+  "workbench.colorTheme": "Default Dark Modern",
+};
 
 const CODE_SERVER: ToolboxSuggestion = {
   id: "code-server",
@@ -165,8 +181,14 @@ const CODE_SERVER: ToolboxSuggestion = {
     build: [
       INSTALL_CODE_SERVER,
       "mkdir -p ~/.local/bin && ln -sf ~/.local/lib/code-server/bin/code-server ~/.local/bin/code-server",
+      // One line (the editor shows a step per line); the JSON has no `'`.
+      `mkdir -p ~/.local/share/code-server/User && printf '%s\\n' '${JSON.stringify(CODE_SERVER_SETTINGS)}' > ${CODE_SERVER_SETTINGS_PATH}`,
     ],
-    paths: ["~/.local/lib/code-server", "~/.local/bin/code-server"],
+    paths: [
+      "~/.local/lib/code-server",
+      "~/.local/bin/code-server",
+      CODE_SERVER_SETTINGS_PATH,
+    ],
     processes: [
       {
         name: "vscode",

@@ -31,9 +31,9 @@ release in sync with it when either side changes.
 
 - `atelier-v2-system` ns: server+console Deployment, Service, Ingress, config
   ConfigMap, data PVC, RBAC (SA `atelier-v2`).
-- `atelier-v2-sandboxes` ns: sandbox pods land here. opencode +
-  code-server are the `org-toolbox` built toolset artifact (published to Zot,
-  materialized by the guest agent at boot into `~/.local`) — no PVC/Job
+- `atelier-v2-sandboxes` ns: sandbox pods land here. opencode, pi and
+  code-server come from toolboxes, built as toolset artifacts (published to
+  Zot, materialized by the guest agent at boot into `~/.local`) — no PVC/Job
   (`docs/archive/proposals/composed-prebuild-volumes.md` §6 "kill
   shared-binaries"). A default-deny NetworkPolicy
   (`85-network-policy.yaml`) admits only the server pod and Traefik.

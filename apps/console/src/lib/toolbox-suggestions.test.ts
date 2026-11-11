@@ -1,4 +1,7 @@
 import { describe, expect, test } from "bun:test";
+import { mkdtempSync, readFileSync, rmSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import { isSecretRef } from "@atelier/spec";
 import { surfaceValid } from "./runtime-surface.ts";
 import { parseToolboxInput } from "./spec.ts";
@@ -82,6 +85,32 @@ describe("toolbox suggestions", () => {
     expect(codeServer?.ports).toEqual([
       { name: "vscode", port: 8080, public: true, auth: "forward" },
     ]);
+  });
+
+  test("code-server's settings step writes the settings it captures", () => {
+    const codeServer = findToolboxSuggestion("code-server")?.input;
+    const settingsPath = "~/.local/share/code-server/User/settings.json";
+    expect(codeServer?.paths).toContain(settingsPath);
+    const step = codeServer?.build.find((s) => s.includes(settingsPath));
+    if (!step) throw new Error("no settings step");
+
+    const home = mkdtempSync(join(tmpdir(), "code-server-settings-"));
+    try {
+      const run = Bun.spawnSync(["bash", "-c", step], {
+        env: { ...process.env, HOME: home },
+      });
+      expect(run.exitCode).toBe(0);
+      const written = readFileSync(
+        join(home, ".local/share/code-server/User/settings.json"),
+        "utf8",
+      );
+      expect(JSON.parse(written)).toMatchObject({
+        "security.workspace.trust.enabled": false,
+        "telemetry.telemetryLevel": "off",
+      });
+    } finally {
+      rmSync(home, { recursive: true, force: true });
+    }
   });
 
   test("findToolboxSuggestion is undefined for an unknown id", () => {

@@ -1,8 +1,8 @@
 {
   "name": "Base Development",
-  "description": "Minimal dev environment with Bun and Git. Agent harnesses (opencode, pi) come from toolboxes.",
+  "description": "Minimal dev environment with Bun and Git. Agent harnesses (opencode, pi) and code-server come from toolboxes.",
   "volumeSize": 5,
-  "tools": ["code-server", "bun", "node", "git", "curl", "ssh", "vim"],
+  "tools": ["bun", "node", "git", "curl", "ssh", "vim"],
   "base": null,
   "official": true,
   "dependsOn": [],
