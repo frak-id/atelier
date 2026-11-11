@@ -48,8 +48,8 @@ done
 # Note the argument order differs: mkfs.erofs <img> <dir>, mksquashfs <dir> <img>.
 case "$BLOB_FORMAT" in
 erofs)
-    # -zlz4hc: bookworm's erofs-utils 1.5 has no zstd, and the kernel's
-    # built-in LZ4 decompresses lz4hc. -T0 pins timestamps (the stage is
+    # -zlz4hc: every EROFS kernel decompresses LZ4 (lz4hc included), while
+    # zstd is an optional kernel config the guest may not have. -T0 pins timestamps (the stage is
     # rsynced as `dev`, so ownership is already uid/gid 1000).
     mkfs.erofs -zlz4hc -T0 "$name" "$stage"
     ;;

@@ -14,13 +14,13 @@
 ARG AGENT_IMAGE=ghcr.io/frak-id/sandbox-agent:3.0.2
 FROM ${AGENT_IMAGE} AS agent
 
-# Pin the Debian codename explicitly: dev-browser installs a KasmVNC .deb built
-# for this exact release, so a silent upstream flip of `-slim` to a newer Debian
-# would break it. Bump the codename and the KasmVNC asset together.
-FROM node:24-bookworm-slim
+# Pin the Debian codename explicitly: dev-browser installs the KasmVNC .deb
+# built for this release (it reads the codename from /etc/os-release), so a
+# bump needs a KasmVNC release that ships a .deb for the new codename.
+FROM node:26-trixie-slim
 
 
-ARG ORAS_VERSION=1.3.4
+ARG ORAS_VERSION=1.3.6
 ENV DEBIAN_FRONTEND=noninteractive
 ENV HOME=/home/dev
 ENV USER=dev
@@ -104,9 +104,11 @@ RUN curl -fsSL -o /tmp/oras.tar.gz "https://github.com/oras-project/oras/release
 # boot instead (per-sandbox, per-boot keys, nothing secret distributed), and
 # the agent's `GET /ssh/host-keys` lets the server pin the real key into the
 # in-server proxy — see docs/archive/proposals/portable-runtime-backends.md §5
-# and apps/agent/src/ssh.rs.
+# and apps/agent/src/ssh.rs. chmod: trixie creates homes 0700; keep the 0755
+# earlier images had.
 RUN usermod -l dev -d /home/dev -m node \
     && groupmod -n dev node \
+    && chmod 755 /home/dev \
     && mkdir -p /var/run/sshd \
     && rm -f /etc/ssh/ssh_host_* \
     && sed -i 's/^#\?PermitRootLogin .*/PermitRootLogin no/' /etc/ssh/sshd_config \

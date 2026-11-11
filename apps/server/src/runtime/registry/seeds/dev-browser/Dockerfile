@@ -15,7 +15,7 @@
 ARG BASE_IMAGE=atelier/dev-base:latest
 FROM ${BASE_IMAGE}
 
-ARG KASMVNC_VERSION=1.5.0
+ARG KASMVNC_VERSION=1.5.2
 ENV DEBIAN_FRONTEND=noninteractive
 
 USER root
@@ -36,7 +36,9 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     && rm -rf /var/cache/apt
 
 # KasmVNC — the browser-accessible VNC server the `browser` toolbox exposes.
-RUN curl -fsSL -o /tmp/kasmvnc.deb "https://github.com/kasmtech/KasmVNC/releases/download/v${KASMVNC_VERSION}/kasmvncserver_bookworm_${KASMVNC_VERSION}_amd64.deb" \
+# The .deb is per Debian release: take the base image's codename.
+RUN . /etc/os-release \
+    && curl -fsSL -o /tmp/kasmvnc.deb "https://github.com/kasmtech/KasmVNC/releases/download/v${KASMVNC_VERSION}/kasmvncserver_debian_${VERSION_CODENAME}_${KASMVNC_VERSION}_amd64.deb" \
     && apt-get update && apt-get install -y --no-install-recommends /tmp/kasmvnc.deb \
     && rm -f /tmp/kasmvnc.deb \
     && apt-get clean && rm -rf /var/lib/apt/lists/*

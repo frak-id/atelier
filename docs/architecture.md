@@ -377,7 +377,7 @@ Server and console run as two containers in **one pod** (same origin, so the
 │  Base Images (in Zot registry, not on disk):                    │
 │  ┌──────────────────────────┐  ┌──────────────────────────┐     │
 │  │ dev-base:latest          │  │ dev-cloud:latest         │     │
-│  │ Debian Bookworm + Node22 │  │ dev-base + Cloud SDKs    │     │
+│  │ Debian Trixie + Node 26  │  │ dev-base + Cloud SDKs    │     │
 │  └──────────────────────────┘  └──────────────────────────┘     │
 │                                                                 │
 │  Toolset artifacts (in Zot registry, content-addressed):        │
