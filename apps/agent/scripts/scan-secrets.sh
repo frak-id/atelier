@@ -7,6 +7,12 @@
 # env:  HOME_DIR           the home the paths are relative to
 #       SECRET_PATTERN     extended regex
 #       SCAN_EXCLUDE_DIRS  newline-separated directory names the scan skips
+#       FILE_EXCLUDES      newline-separated basename globs of the secret-file
+#                          floor (never packed, so never scanned)
+#
+# grep's `--exclude` only skips files (directories go through
+# `--exclude-dir`), so a directory named like a secret file is scanned, the
+# same way squash-and-push.sh packs it.
 #
 # `-I` skips binary files: secrets inside a binary (say a sqlite keystore)
 # are not scanned. Accepted: captures default to private and publishing is an
@@ -22,6 +28,9 @@ grep_args=()
 for glob in ${excludes[@]+"${excludes[@]}"}; do
     grep_args+=("--exclude=$glob")
 done
+while IFS= read -r glob; do
+    [ -n "$glob" ] && grep_args+=("--exclude=$glob")
+done <<<"$FILE_EXCLUDES"
 while IFS= read -r dir; do
     [ -n "$dir" ] && grep_args+=("--exclude-dir=$dir")
 done <<<"$SCAN_EXCLUDE_DIRS"

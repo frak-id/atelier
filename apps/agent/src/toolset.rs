@@ -264,41 +264,82 @@ pub struct CaptureRequest {
     pub overrides: Vec<String>,
 }
 
-/// Known secret-file basenames/globs excluded from every capture, regardless
-/// of the request's own `exclude[]` (proposal §2: "per-harness exclude lists
-/// for known secret files" is a floor, not a ceiling the caller can lower).
-const DEFAULT_EXCLUDES: &[&str] = &[
-    ".git",
+/// Excluded from every build and capture whatever the entry type, regardless
+/// of the request's own `exclude[]`: `.git` is a directory, or a file in a
+/// worktree or submodule.
+const DEFAULT_EXCLUDES: &[&str] = &[".git"];
+
+/// Known secret-file basenames/globs excluded from every build and capture,
+/// regardless of the request's own `exclude[]` (proposal §2: "per-harness
+/// exclude lists for known secret files" is a floor, not a ceiling the caller
+/// can lower). Matched at every depth, against files and symlinks only, never
+/// a directory: vendored code ships directories with these names
+/// (`@anthropic-ai/sdk` loads its `lib/credentials/` module, a Python venv is
+/// often `.env/`), and dropping one breaks the toolset. Passed to the scripts
+/// as `FILE_EXCLUDES`, apart from the any-type excludes.
+const SECRET_FILE_EXCLUDES: &[&str] = &[
     "auth.json",
     "credentials",
     ".credentials",
+    ".credentials.json", // Claude Code's OAuth tokens (`~/.claude`)
     ".git-credentials",
     ".netrc",
     "id_rsa",
     "id_ed25519",
     "id_ecdsa",
-    "*.pem",
-    "*.key",
     ".env",
     ".env.*",
 ];
+
+/// Key-file globs dropped from every build and capture only when the file
+/// holds a private key (`PRIVATE_KEY_PATTERN`) or is not text. The same
+/// extensions name public material that tools load at runtime: Python's
+/// `certifi/cacert.pem` is the CA bundle `requests` verifies TLS with, and
+/// dropping it by name breaks every uv or pipx tool that calls HTTPS. Files
+/// only, at every depth. The secret scan skips them all, since a kept one is
+/// a certificate or a public key. Passed to the pack script as `KEY_FILES`.
+const KEY_FILE_GLOBS: &[&str] = &["*.pem", "*.key"];
+
+/// A PEM private-key header (POSIX ERE). PKCS#1, PKCS#8 (plain and
+/// encrypted), EC, OpenSSH and PGP (`PRIVATE KEY BLOCK`) keys all match.
+const PRIVATE_KEY_PATTERN: &str = "-----BEGIN [A-Z ]*PRIVATE KEY";
 
 /// Curated secret-pattern regexes (POSIX ERE, for `grep -E`), covering the
 /// common high-confidence token shapes. Deliberately conservative (few false
 /// positives) over exhaustive — a scan that cries wolf trains devs to reach
 /// for `overrides` reflexively, defeating the gate.
+///
+/// Current OpenAI and Anthropic keys carry a hyphenated kind after `sk-`
+/// (`sk-proj-`, `sk-ant-api03-`, `sk-ant-oat01-`), which the legacy
+/// `sk-<alnum>` shape never matches. They get their own prefixed patterns
+/// rather than a looser `sk-[A-Za-z0-9_-]+`, which would flag any
+/// hyphenated identifier ending in `sk` (`desk-top-…`).
 const SECRET_PATTERNS: &[&str] = &[
-    r"AKIA[0-9A-Z]{16}",                   // AWS access key id
-    r"ghp_[A-Za-z0-9]{36}",                // GitHub personal access token
-    r"github_pat_[A-Za-z0-9_]{22,}",       // GitHub fine-grained PAT
-    r"xox[baprs]-[A-Za-z0-9-]{10,}",       // Slack token
-    r"-----BEGIN [A-Z ]*PRIVATE KEY-----", // PEM private key
-    r"sk-[A-Za-z0-9]{20,}",                // OpenAI/Anthropic-style secret key
-    r"sk_(live|test)_[A-Za-z0-9]{16,}",    // Stripe secret key
-    r"npm_[A-Za-z0-9]{36}",                // npm access token
-    r"hf_[A-Za-z0-9]{20,}",                // Hugging Face token
-    r"AIza[0-9A-Za-z_-]{35}",              // Google API key
+    r"AKIA[0-9A-Z]{16}",                           // AWS access key id
+    r"ghp_[A-Za-z0-9]{36}",                        // GitHub personal access token
+    r"github_pat_[A-Za-z0-9_]{22,}",               // GitHub fine-grained PAT
+    r"xox[baprs]-[A-Za-z0-9-]{10,}",               // Slack token
+    PRIVATE_KEY_PATTERN,                           // PEM private key
+    r"sk-[A-Za-z0-9]{20,}",                        // legacy OpenAI secret key
+    r"sk-(proj|svcacct|admin)-[A-Za-z0-9_-]{20,}", // OpenAI project/service/admin key
+    r"sk-ant-[A-Za-z0-9_-]{20,}",                  // Anthropic API key or OAuth token
+    r"sk_(live|test)_[A-Za-z0-9]{16,}",            // Stripe secret key
+    r"npm_[A-Za-z0-9]{36}",                        // npm access token
+    r"hf_[A-Za-z0-9]{20,}",                        // Hugging Face token
+    r"AIza[0-9A-Za-z_-]{35}",                      // Google API key
 ];
+
+/// What the secret scan skips by name: the secret files (never packed) and
+/// every key file (see `KEY_FILE_GLOBS`). Newline-separated, for the
+/// scan's `FILE_EXCLUDES`.
+fn scan_file_excludes() -> String {
+    SECRET_FILE_EXCLUDES
+        .iter()
+        .chain(KEY_FILE_GLOBS)
+        .copied()
+        .collect::<Vec<_>>()
+        .join("\n")
+}
 
 /// Normalize a declared path to one relative to `/home/dev`, rejecting any
 /// path that escapes the home (absolute outside home, or `..` segments) — a
@@ -438,6 +479,9 @@ async fn squash_and_push(
     let env = env_map(&[
         ("HOME_DIR", HOME),
         ("STAGE_DIR", STAGE_DIR),
+        ("FILE_EXCLUDES", &SECRET_FILE_EXCLUDES.join("\n")),
+        ("KEY_FILES", &KEY_FILE_GLOBS.join("\n")),
+        ("PRIVATE_KEY_PATTERN", PRIVATE_KEY_PATTERN),
         ("BLOB_FORMAT", fmt.name()),
         ("BLOB_EXT", fmt.ext()),
         ("BLOB_MEDIA_TYPE", fmt.media_type()),
@@ -478,8 +522,9 @@ fn digest_from_push(res: &command::ExecResult) -> Result<BuildResult, String> {
 /// SECRET_PATTERNS).
 const SCAN_EXCLUDE_DIRS: &[&str] = &[".git", "node_modules"];
 
-/// The built-in secret-file excludes plus the request's own, deduplicated
-/// in order. Basename globs only (see `capture`), matched at every depth.
+/// The built-in any-type excludes plus the request's own, deduplicated in
+/// order. Basename globs only (see `capture`), matched at every depth. The
+/// files-only floor (`SECRET_FILE_EXCLUDES`) travels separately.
 fn merged_excludes(request_exclude: &[String]) -> Vec<String> {
     let mut seen = std::collections::HashSet::new();
     DEFAULT_EXCLUDES
@@ -525,7 +570,7 @@ pub async fn capture(req: CaptureRequest) -> Result<BuildResult, String> {
     // `--exclude` matched it at any depth. Silently applying rsync's rule
     // would let a `config/secrets`-style exclude quietly miss nested matches
     // and leak the very files it was meant to drop, so fail loudly instead
-    // (the built-in DEFAULT_EXCLUDES are all slash-free basenames/globs).
+    // (the built-in excludes are all slash-free basenames/globs).
     if let Some(bad) = req.exclude.iter().find(|e| e.contains('/')) {
         return Err(format!(
             "exclude '{bad}' contains '/': use a basename glob — slash-bearing \
@@ -548,6 +593,7 @@ pub async fn capture(req: CaptureRequest) -> Result<BuildResult, String> {
             ("HOME_DIR", HOME),
             ("SECRET_PATTERN", &SECRET_PATTERNS.join("|")),
             ("SCAN_EXCLUDE_DIRS", &SCAN_EXCLUDE_DIRS.join("\n")),
+            ("FILE_EXCLUDES", &scan_file_excludes()),
         ]),
         true,
     )
@@ -1225,15 +1271,19 @@ mod tests {
     #[test]
     fn merged_excludes_includes_defaults_and_request() {
         let merged = merged_excludes(&["custom-secret.json".to_string()]);
-        assert!(merged.iter().any(|g| g == "auth.json"));
-        assert!(merged.iter().any(|g| g == ".env"));
+        assert!(merged.iter().any(|g| g == ".git"));
         assert!(merged.iter().any(|g| g == "custom-secret.json"));
+        // The secret-file floor is files-only: it must not land in the
+        // any-type list, or a same-named directory would be dropped again.
+        for f in SECRET_FILE_EXCLUDES {
+            assert!(!merged.iter().any(|g| g == f), "{f} in any-type excludes");
+        }
     }
 
     #[test]
     fn merged_excludes_dedupes_in_order() {
-        let merged = merged_excludes(&["auth.json".to_string(), "mine".to_string()]);
-        assert_eq!(merged.iter().filter(|g| *g == "auth.json").count(), 1);
+        let merged = merged_excludes(&[".git".to_string(), "mine".to_string()]);
+        assert_eq!(merged.iter().filter(|g| *g == ".git").count(), 1);
         assert_eq!(merged.last().map(String::as_str), Some("mine"));
     }
 
@@ -1419,20 +1469,215 @@ mod tests {
         std::fs::write(home.join(".config/x/skipped.pem"), &key).unwrap();
         std::fs::write(home.join(".config/node_modules/m/vendored.js"), &key).unwrap();
         std::fs::write(home.join(".config/x/clean.txt"), "nothing here").unwrap();
+        // A secret file is skipped; a directory with the same name is packed,
+        // so it is scanned.
+        std::fs::create_dir_all(home.join(".config/aws")).unwrap();
+        std::fs::create_dir_all(home.join(".config/sdk/credentials")).unwrap();
+        std::fs::write(home.join(".config/aws/credentials"), &key).unwrap();
+        std::fs::write(home.join(".config/sdk/credentials/index.js"), &key).unwrap();
         let env = env_map(&[
             ("HOME_DIR", home.to_str().unwrap()),
             ("SECRET_PATTERN", &SECRET_PATTERNS.join("|")),
             ("SCAN_EXCLUDE_DIRS", &SCAN_EXCLUDE_DIRS.join("\n")),
+            ("FILE_EXCLUDES", &scan_file_excludes()),
         ]);
-        let args = exclude_path_args(&[], &["*.pem".to_string()], &[".config".to_string()]);
+        let args = exclude_path_args(&[], &["*.txt.bak".to_string()], &[".config".to_string()]);
         let res = run_script(SCAN_SECRETS_SH, &args, 10_000, None, &env, false).await;
         assert_eq!(res.exit_code, 0, "{}", res.stderr);
-        assert_eq!(res.stdout.trim(), ".config/x/leak.txt");
+        let mut found: Vec<&str> = res.stdout.lines().collect();
+        found.sort_unstable();
+        assert_eq!(
+            found,
+            [".config/sdk/credentials/index.js", ".config/x/leak.txt"]
+        );
+
+        // A request exclude is honoured too.
+        std::fs::write(home.join(".config/x/old.txt.bak"), &key).unwrap();
+        let res = run_script(SCAN_SECRETS_SH, &args, 10_000, None, &env, false).await;
+        assert_eq!(res.exit_code, 0, "{}", res.stderr);
+        assert!(!res.stdout.contains("old.txt.bak"), "{}", res.stdout);
 
         // A clean tree is an empty, successful scan.
         let args = exclude_path_args(&[], &[], &[".config/x/clean.txt".to_string()]);
         let res = run_script(SCAN_SECRETS_SH, &args, 10_000, None, &env, false).await;
         assert_eq!(res.exit_code, 0, "{}", res.stderr);
         assert_eq!(res.stdout.trim(), "");
+    }
+
+    #[tokio::test]
+    async fn scan_secrets_catches_current_openai_and_anthropic_keys() {
+        // Built at runtime so the source never holds a key-shaped literal.
+        let body = format!("{}_{}-{}", "A".repeat(30), "b".repeat(20), "C".repeat(30));
+        let leaks = [
+            ("openai-project", format!("sk-{}-{body}", "proj")),
+            ("openai-service", format!("sk-{}-{body}", "svcacct")),
+            ("openai-admin", format!("sk-{}-{body}", "admin")),
+            ("openai-legacy", format!("sk-{}", "A".repeat(48))),
+            ("anthropic-api", format!("sk-ant-{}-{body}", "api03")),
+            ("anthropic-oauth", format!("sk-ant-{}-{body}", "oat01")),
+            (
+                "pgp-private",
+                format!("-----BEGIN PGP {} KEY BLOCK-----", "PRIVATE"),
+            ),
+        ];
+        let home = scratch("scan-keys");
+        let dir = home.join(".config/agent");
+        std::fs::create_dir_all(&dir).unwrap();
+        for (name, leak) in &leaks {
+            std::fs::write(dir.join(name), format!("{{\"key\":\"{leak}\"}}")).unwrap();
+        }
+        // Lookalikes: a hyphenated word ending in `sk`, a short placeholder.
+        std::fs::write(dir.join("ui.css"), ".desk-top-navigation-bar-item {}").unwrap();
+        std::fs::write(dir.join("README"), "export KEY=sk-ant-api03-...").unwrap();
+        let env = env_map(&[
+            ("HOME_DIR", home.to_str().unwrap()),
+            ("SECRET_PATTERN", &SECRET_PATTERNS.join("|")),
+            ("SCAN_EXCLUDE_DIRS", &SCAN_EXCLUDE_DIRS.join("\n")),
+            ("FILE_EXCLUDES", &scan_file_excludes()),
+        ]);
+        let args = exclude_path_args(&[], &[], &[".config".to_string()]);
+        let res = run_script(SCAN_SECRETS_SH, &args, 10_000, None, &env, false).await;
+        assert_eq!(res.exit_code, 0, "{}", res.stderr);
+        let mut found: Vec<&str> = res.stdout.lines().collect();
+        found.sort_unstable();
+        let mut expected: Vec<String> = leaks
+            .iter()
+            .map(|(name, _)| format!(".config/agent/{name}"))
+            .collect();
+        expected.sort_unstable();
+        assert_eq!(found, expected);
+    }
+
+    #[tokio::test]
+    async fn squash_and_push_drops_secrets_but_keeps_lookalikes() {
+        let has_rsync = std::process::Command::new("rsync")
+            .arg("--version")
+            .output()
+            .is_ok_and(|o| o.status.success());
+        if !has_rsync {
+            eprintln!("rsync not installed; skipping");
+            return;
+        }
+        let root = scratch("squash");
+        let home = root.join("home");
+        let lib = home.join(".local/lib");
+        // `@anthropic-ai/sdk` requires its `lib/credentials/` module.
+        let sdk = lib.join("node_modules/@anthropic-ai/sdk/lib/credentials");
+        for dir in [
+            &sdk,
+            &lib.join("aws"),
+            &lib.join("tool/.env"),
+            &lib.join("repo/.git"),
+        ] {
+            std::fs::create_dir_all(dir).unwrap();
+        }
+        std::fs::write(sdk.join("credential-chain.js"), "module.exports = {};").unwrap();
+        std::fs::write(lib.join("aws/credentials"), "secret").unwrap();
+        std::fs::write(lib.join("aws/config"), "[default]").unwrap();
+        std::fs::write(lib.join("tool/.env/pyvenv.cfg"), "home = /usr").unwrap();
+        std::fs::write(lib.join("repo/.git/HEAD"), "ref: x").unwrap();
+        std::fs::create_dir_all(lib.join("claude")).unwrap();
+        std::fs::write(lib.join("claude/.credentials.json"), "{}").unwrap();
+
+        // Key files: kept when public, dropped when private or binary.
+        let private = format!("-----BEGIN {} KEY-----\nMIIE\n", "RSA PRIVATE");
+        let certifi = lib.join("py/certifi");
+        let tls = lib.join("tls");
+        let testdata = lib.join("gomod/x@v1/testdata");
+        for dir in [&certifi, &tls, &testdata] {
+            std::fs::create_dir_all(dir).unwrap();
+        }
+        let cert = "-----BEGIN CERTIFICATE-----\nMIIB\n-----END CERTIFICATE-----\n";
+        std::fs::write(certifi.join("cacert.pem"), cert).unwrap();
+        std::fs::write(tls.join("public.key"), "-----BEGIN PUBLIC KEY-----\n").unwrap();
+        std::fs::write(tls.join("server.key"), &private).unwrap();
+        std::fs::write(tls.join("der.key"), [0x30, 0x82, 0x00, 0x01]).unwrap();
+        // Go's module cache is read-only.
+        std::fs::write(testdata.join("key.pem"), &private).unwrap();
+        std::fs::write(testdata.join("README"), "fixtures").unwrap();
+        use std::os::unix::fs::PermissionsExt;
+        std::fs::set_permissions(&testdata, std::fs::Permissions::from_mode(0o555)).unwrap();
+
+        // Stub the packer and oras: the packer copies the staged tree out.
+        let bin = root.join("bin");
+        let packed = root.join("packed");
+        std::fs::create_dir_all(&bin).unwrap();
+        let digest = format!("sha256:{}", "f".repeat(64));
+        for (name, body) in [
+            (
+                "mkfs.erofs",
+                "#!/bin/sh\nfor a; do last=$a; done\ncp -R \"$last\" \"$PACKED\"\n".to_string(),
+            ),
+            ("oras", format!("#!/bin/sh\necho 'Digest: {digest}'\n")),
+        ] {
+            let path = bin.join(name);
+            std::fs::write(&path, body).unwrap();
+            std::fs::set_permissions(&path, std::fs::Permissions::from_mode(0o755)).unwrap();
+        }
+        let path_var = format!(
+            "{}:{}",
+            bin.display(),
+            std::env::var("PATH").unwrap_or_default()
+        );
+        let file_excludes = SECRET_FILE_EXCLUDES.join("\n");
+        let env = env_map(&[
+            ("PATH", &path_var),
+            ("PACKED", packed.to_str().unwrap()),
+            ("HOME_DIR", home.to_str().unwrap()),
+            ("STAGE_DIR", root.join("stage").to_str().unwrap()),
+            ("FILE_EXCLUDES", &file_excludes),
+            ("KEY_FILES", &KEY_FILE_GLOBS.join("\n")),
+            ("PRIVATE_KEY_PATTERN", PRIVATE_KEY_PATTERN),
+            ("BLOB_FORMAT", "erofs"),
+            ("BLOB_EXT", "erofs"),
+            ("BLOB_MEDIA_TYPE", "test/blob"),
+            ("ARTIFACT_TYPE", "test/artifact"),
+        ]);
+        let args = exclude_path_args(
+            &["registry/toolsets/x:t".to_string()],
+            &merged_excludes(&[]),
+            &[".local/lib".to_string()],
+        );
+        let res = run_script(SQUASH_AND_PUSH_SH, &args, 30_000, None, &env, false).await;
+        assert_eq!(res.exit_code, 0, "{}", res.stderr);
+        assert_eq!(parse_digest(&res.stdout), Some(digest));
+
+        let out = packed.join(".local/lib");
+        let sdk_file = "node_modules/@anthropic-ai/sdk/lib/credentials/credential-chain.js";
+        assert!(out.join(sdk_file).is_file(), "credentials/ dir dropped");
+        assert!(
+            out.join("tool/.env/pyvenv.cfg").is_file(),
+            ".env/ dir dropped"
+        );
+        assert!(out.join("aws/config").is_file());
+        assert!(!out.join("aws/credentials").exists(), "secret file kept");
+        assert!(!out.join("claude/.credentials.json").exists());
+        assert!(!out.join("repo/.git").exists(), ".git kept");
+
+        assert!(
+            out.join("py/certifi/cacert.pem").is_file(),
+            "CA bundle dropped"
+        );
+        assert!(out.join("tls/public.key").is_file(), "public key dropped");
+        assert!(!out.join("tls/server.key").exists(), "private key kept");
+        assert!(!out.join("tls/der.key").exists(), "binary key kept");
+        let packed_testdata = out.join("gomod/x@v1/testdata");
+        assert!(
+            !packed_testdata.join("key.pem").exists(),
+            "private key kept"
+        );
+        assert!(packed_testdata.join("README").is_file());
+        let mode = std::fs::metadata(&packed_testdata)
+            .unwrap()
+            .permissions()
+            .mode();
+        assert_eq!(mode & 0o222, 0, "read-only dir shipped writable");
+
+        // The read-only dirs would block the next run's cleanup.
+        let _ = std::process::Command::new("chmod")
+            .args(["-R", "u+w"])
+            .arg(&root)
+            .status();
+        let _ = std::fs::remove_dir_all(&root);
     }
 }

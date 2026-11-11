@@ -108,6 +108,29 @@ describe.skipIf(!hasGnuTools())("fingerprintScript (GNU tools)", () => {
     expect(hash(dir)).toBe(first);
   });
 
+  test("drops secret files but keeps a directory with the same name", () => {
+    const dir = setup();
+    // `@anthropic-ai/sdk` ships its auth module as `lib/credentials/`.
+    mkdirSync(join(dir, ".local/bin/credentials"));
+    writeFileSync(join(dir, ".local/bin/credentials/index.js"), "v1");
+    const first = hash(dir);
+    writeFileSync(join(dir, ".pi/agent/credentials"), "secret");
+    expect(hash(dir)).toBe(first);
+    writeFileSync(join(dir, ".local/bin/credentials/index.js"), "v2");
+    expect(hash(dir)).not.toBe(first);
+  });
+
+  test("hashes key files, so a CA bundle update is a change", () => {
+    const dir = setup();
+    // The capture keeps a certificate bundle such as certifi's cacert.pem.
+    writeFileSync(join(dir, ".local/bin/cacert.pem"), "cert-1");
+    const first = hash(dir);
+    writeFileSync(join(dir, ".pi/agent/.credentials.json"), "token");
+    expect(hash(dir)).toBe(first);
+    writeFileSync(join(dir, ".local/bin/cacert.pem"), "cert-2");
+    expect(hash(dir)).not.toBe(first);
+  });
+
   test("moves on content, mode, symlink target and new files", () => {
     const dir = setup();
     const first = hash(dir);

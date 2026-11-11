@@ -6,29 +6,37 @@
  * changed nothing that a capture would save, so no artifact is pushed.
  *
  * What it hashes mirrors what `capture` stages (apps/agent/src/toolset.rs):
- * the same paths, minus the same default excludes, by type, mode, path,
+ * the same paths, minus the same built-in excludes, by type, mode, path,
  * symlink target and file content. Timestamps and owners are left out
  * because the artifact normalizes them anyway.
  */
 import { ValidationError } from "../shared/errors.ts";
 import { shQuote } from "./registry/builder/builder.types.ts";
 
-/** Mirror of the agent's `DEFAULT_EXCLUDES` (apps/agent/src/toolset.rs):
+/* Mirrors of the agent's built-in excludes (apps/agent/src/toolset.rs),
  * basenames/globs dropped from every capture at any depth. Keep in sync; a
  * drift only costs a spurious "changed" (an extra version), never a
  * missed change. */
-const CAPTURE_EXCLUDES = [
-  ".git",
+
+/** `DEFAULT_EXCLUDES`: dropped whatever the entry type. */
+const CAPTURE_EXCLUDES = [".git"];
+
+/** `SECRET_FILE_EXCLUDES`: dropped as files and symlinks only. A directory
+ * with one of these names is captured (`@anthropic-ai/sdk` ships a
+ * `lib/credentials/` module). The agent's `KEY_FILE_GLOBS` (`*.pem`,
+ * `*.key`) are left out on purpose: the capture drops a key file only when
+ * it holds a private key, which takes reading it, so every key file is
+ * hashed. One too many only costs a spurious "changed". */
+const CAPTURE_FILE_EXCLUDES = [
   "auth.json",
   "credentials",
   ".credentials",
+  ".credentials.json",
   ".git-credentials",
   ".netrc",
   "id_rsa",
   "id_ed25519",
   "id_ecdsa",
-  "*.pem",
-  "*.key",
   ".env",
   ".env.*",
 ];
@@ -66,9 +74,9 @@ export function homeRelative(path: string): string {
  */
 export function fingerprintScript(paths: string[], home = HOME): string {
   const roots = paths.map((p) => shQuote(homeRelative(p))).join(" ");
-  const prune = CAPTURE_EXCLUDES.map((name) => `-name ${shQuote(name)}`).join(
-    " -o ",
-  );
+  const names = (globs: string[]) =>
+    globs.map((glob) => `-name ${shQuote(glob)}`).join(" -o ");
+  const prune = `${names(CAPTURE_EXCLUDES)} -o ! -type d \\( ${names(CAPTURE_FILE_EXCLUDES)} \\)`;
   const walk = `find ${roots} \\( ${prune} \\) -prune -o`;
   return [
     `cd ${shQuote(home)} || exit 1`,
