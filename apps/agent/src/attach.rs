@@ -8,8 +8,8 @@
 
 use std::collections::HashMap;
 use std::os::fd::{AsRawFd, RawFd};
-use std::sync::Arc;
 use std::sync::atomic::{AtomicU64, Ordering};
+use std::sync::{Arc, PoisonError};
 
 use futures_util::{SinkExt, StreamExt};
 use hyper::body::Bytes;
@@ -32,7 +32,10 @@ pub const ATTACH_PORT: u16 = 9997;
 /// One attachable process endpoint: live output fan-out + replay + a write
 /// sink, guarded by a single-writer slot.
 pub struct AttachEndpoint {
-    output: broadcast::Sender<Bytes>,
+    /// Live output fan-out, `None` once the endpoint ended. Each attached
+    /// client holds the endpoint for its whole connection, so the sender has
+    /// to be dropped explicitly for their receivers to see the end.
+    output: std::sync::Mutex<Option<broadcast::Sender<Bytes>>>,
     buffer: Arc<Mutex<OutputBuffer>>,
     write_tx: mpsc::Sender<Vec<u8>>,
     slot: WriterSlot,
@@ -96,7 +99,7 @@ impl AttachEndpoint {
     fn new(write_tx: mpsc::Sender<Vec<u8>>) -> Arc<Self> {
         let (output, _) = broadcast::channel(OUTPUT_BROADCAST_CAPACITY);
         Arc::new(Self {
-            output,
+            output: std::sync::Mutex::new(Some(output)),
             buffer: Arc::new(Mutex::new(OutputBuffer::default())),
             write_tx,
             slot: WriterSlot::new(),
@@ -106,7 +109,26 @@ impl AttachEndpoint {
     /// Fan a chunk of process output to the replay buffer and live subscribers.
     async fn publish(&self, chunk: Bytes) {
         self.buffer.lock().await.push(chunk.clone());
-        let _ = self.output.send(chunk);
+        if let Some(output) = self.live_output().as_ref() {
+            let _ = output.send(chunk);
+        }
+    }
+
+    /// A receiver for live output, or `None` once the endpoint ended.
+    fn subscribe(&self) -> Option<broadcast::Receiver<Bytes>> {
+        self.live_output()
+            .as_ref()
+            .map(broadcast::Sender::subscribe)
+    }
+
+    /// End the endpoint: attached clients get the output already sent to
+    /// them, then their socket closes.
+    fn end(&self) {
+        self.live_output().take();
+    }
+
+    fn live_output(&self) -> std::sync::MutexGuard<'_, Option<broadcast::Sender<Bytes>>> {
+        self.output.lock().unwrap_or_else(PoisonError::into_inner)
     }
 }
 
@@ -126,8 +148,26 @@ impl AttachRegistry {
         self.endpoints.lock().await.get(name).cloned()
     }
 
+    /// Drop an endpoint whose process is gone, closing its attached clients.
+    /// Callers remove it after the process left their own list (a terminal
+    /// session, a supervised process), so a client that reacts to the close
+    /// by listing again no longer finds it.
     pub async fn remove(&self, name: &str) {
-        self.endpoints.lock().await.remove(name);
+        if let Some(endpoint) = self.endpoints.lock().await.remove(name) {
+            endpoint.end();
+        }
+    }
+
+    /// Register an endpoint, ending any it replaces.
+    async fn insert(&self, name: &str, endpoint: Arc<AttachEndpoint>) {
+        let replaced = self
+            .endpoints
+            .lock()
+            .await
+            .insert(name.to_string(), endpoint);
+        if let Some(replaced) = replaced {
+            replaced.end();
+        }
     }
 
     /// Wire a stdio-bridge process: pump its stdout to the endpoint (tee'd to
@@ -141,10 +181,7 @@ impl AttachRegistry {
     ) {
         let (write_tx, write_rx) = mpsc::channel::<Vec<u8>>(WRITE_CHANNEL_CAPACITY);
         let endpoint = AttachEndpoint::new(write_tx);
-        self.endpoints
-            .lock()
-            .await
-            .insert(name.to_string(), endpoint.clone());
+        self.insert(name, endpoint.clone()).await;
 
         tokio::spawn(drain_to_stdin(stdin, write_rx));
         tokio::spawn(pump_stdout(stdout, endpoint, log));
@@ -160,10 +197,7 @@ impl AttachRegistry {
     ) {
         let (write_tx, write_rx) = mpsc::channel::<Vec<u8>>(WRITE_CHANNEL_CAPACITY);
         let endpoint = AttachEndpoint::new(write_tx);
-        self.endpoints
-            .lock()
-            .await
-            .insert(name.to_string(), endpoint.clone());
+        self.insert(name, endpoint.clone()).await;
 
         tokio::spawn(drain_to_pty(master.clone(), write_rx));
         tokio::spawn(pump_pty(master, endpoint, log));
@@ -451,19 +485,24 @@ async fn handle_conn(
 
     // Replay buffered output (unless the client opted out), then subscribe to
     // live output.
-    let (chunks, mut rx) = {
+    let (chunks, rx) = {
         let chunks = if target.replay {
             endpoint.buffer.lock().await.snapshot_chunks()
         } else {
             Vec::new()
         };
-        (chunks, endpoint.output.subscribe())
+        (chunks, endpoint.subscribe())
     };
     for chunk in chunks {
         if sink.send(Message::Binary(chunk)).await.is_err() {
             return;
         }
     }
+    // The endpoint ended since the lookup: the replay was all there is.
+    let Some(mut rx) = rx else {
+        let _ = sink.close().await;
+        return;
+    };
 
     // Acquire the writer slot if requested; a rejected rw attach degrades to
     // read-only after telling the client. Terminals have no slot.
@@ -596,6 +635,41 @@ mod tests {
         // Slot is free again for a fresh writer.
         let c = slot.try_acquire(false).await.expect("free slot acquires");
         assert!(slot.is_holder(c).await);
+    }
+
+    #[tokio::test]
+    async fn removing_an_endpoint_ends_its_clients_after_their_output() {
+        let registry = AttachRegistry::new();
+        let (write_tx, _write_rx) = mpsc::channel(1);
+        let endpoint = AttachEndpoint::new(write_tx);
+        registry.insert("p", endpoint.clone()).await;
+        let mut rx = endpoint.subscribe().expect("a live endpoint");
+        endpoint.publish(Bytes::from_static(b"logout")).await;
+
+        registry.remove("p").await;
+
+        assert_eq!(rx.recv().await.unwrap(), Bytes::from_static(b"logout"));
+        assert!(matches!(
+            rx.recv().await,
+            Err(broadcast::error::RecvError::Closed)
+        ));
+        assert!(endpoint.subscribe().is_none(), "no live output once ended");
+    }
+
+    #[tokio::test]
+    async fn registering_over_a_name_ends_the_endpoint_it_replaces() {
+        let registry = AttachRegistry::new();
+        let (write_tx, _write_rx) = mpsc::channel(1);
+        let old = AttachEndpoint::new(write_tx.clone());
+        registry.insert("p", old.clone()).await;
+        let mut rx = old.subscribe().expect("a live endpoint");
+
+        registry.insert("p", AttachEndpoint::new(write_tx)).await;
+
+        assert!(matches!(
+            rx.recv().await,
+            Err(broadcast::error::RecvError::Closed)
+        ));
     }
 
     /// One upgrade request against `handle_conn` (registries empty), answered
