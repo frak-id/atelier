@@ -31,8 +31,17 @@ export const organizations = sqliteTable("organizations", {
   updatedAt: text("updated_at").notNull(),
 });
 
+const userKindValues = ["human", "service"] as const;
+export type UserKind = (typeof userKindValues)[number];
+
+/**
+ * Every principal. `human` rows come from the GitHub login (id = the GitHub
+ * user id). `service` rows are service accounts (id `sa_…`, username
+ * `<name>[bot]`): no login, API keys only, details in `service_accounts`.
+ */
 export const users = sqliteTable("users", {
   id: text("id").primaryKey(),
+  kind: text("kind", { enum: userKindValues }).notNull().default("human"),
   username: text("username").notNull().unique(),
   email: text("email").notNull(),
   avatarUrl: text("avatar_url"),
@@ -103,6 +112,15 @@ export const sshKeys = sqliteTable(
   (t) => [index("idx_ssh_keys_user_id").on(t.userId)],
 );
 
+const apiKeyScopeValues = ["full", "mcp"] as const;
+/** `full`: every authenticated route. `mcp`: the sandbox MCP (`/mcp`) only. */
+export type ApiKeyScope = (typeof apiKeyScopeValues)[number];
+
+const managedByValues = ["console", "config"] as const;
+/** `config`: declared in `serviceAccounts` (sandbox.config.json) and
+ * reconciled at boot; the API refuses to change or delete it. */
+export type ManagedBy = (typeof managedByValues)[number];
+
 export const apiKeys = sqliteTable(
   "api_keys",
   {
@@ -111,6 +129,10 @@ export const apiKeys = sqliteTable(
     name: text("name").notNull(),
     keyPrefix: text("key_prefix").notNull(),
     keyHash: text("key_hash").notNull(),
+    scope: text("scope", { enum: apiKeyScopeValues }).notNull().default("full"),
+    managedBy: text("managed_by", { enum: managedByValues })
+      .notNull()
+      .default("console"),
     createdAt: text("created_at").notNull(),
     lastUsedAt: text("last_used_at"),
     expiresAt: text("expires_at"),
@@ -119,6 +141,43 @@ export const apiKeys = sqliteTable(
     index("idx_api_keys_user_id").on(t.userId),
     uniqueIndex("idx_api_keys_key_hash").on(t.keyHash),
   ],
+);
+
+const serviceAccountGitHubKindValues = ["none", "app", "token"] as const;
+export type ServiceAccountGitHubKind =
+  (typeof serviceAccountGitHubKindValues)[number];
+
+/**
+ * Service-account details, one row per `users` row of kind `service`
+ * (`user_id`). A service account belongs to exactly one org (`org_id`, its
+ * role lives in `org_members`). Its GitHub credential: `github_kind` says
+ * which, `github_config` holds the non-secret part (App ids, repositories,
+ * permissions; or the git name/email of a static token) and
+ * `github_secret` the secret part (the App private key PEM or the static
+ * token), encrypted like secrets (`enc:` format).
+ */
+export const serviceAccounts = sqliteTable(
+  "service_accounts",
+  {
+    userId: text("user_id").primaryKey(),
+    name: text("name").notNull().unique(),
+    description: text("description").notNull().default(""),
+    orgId: text("org_id").notNull(),
+    githubKind: text("github_kind", { enum: serviceAccountGitHubKindValues })
+      .notNull()
+      .default("none"),
+    githubConfig: text("github_config", { mode: "json" }).$type<
+      Record<string, unknown>
+    >(),
+    githubSecret: text("github_secret"),
+    managedBy: text("managed_by", { enum: managedByValues })
+      .notNull()
+      .default("console"),
+    createdBy: text("created_by"),
+    createdAt: text("created_at").notNull(),
+    updatedAt: text("updated_at").notNull(),
+  },
+  (t) => [index("idx_service_accounts_org_id").on(t.orgId)],
 );
 
 /**

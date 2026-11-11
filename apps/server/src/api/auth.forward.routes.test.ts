@@ -19,6 +19,8 @@ const alice: AuthUser = {
   username: "alice",
   email: "a@x.test",
   avatarUrl: "",
+  kind: "human",
+  scope: "full",
 };
 const bob: AuthUser = { ...alice, id: "bob", username: "bob" };
 

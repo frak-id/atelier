@@ -1,4 +1,5 @@
 import { createFileRoute, Link, Outlet } from "@tanstack/react-router";
+import { useIsAdmin } from "@/hooks/use-is-admin";
 
 export const Route = createFileRoute("/settings")({
   component: SettingsLayout,
@@ -11,14 +12,17 @@ const TABS = [
   { to: "/settings/config", label: "Config" },
   { to: "/settings/organizations", label: "Organizations" },
   { to: "/settings/users", label: "Users" },
+  { to: "/settings/service-accounts", label: "Service accounts", admin: true },
 ] as const;
 
 function SettingsLayout() {
+  const isAdmin = useIsAdmin();
+  const tabs = TABS.filter((tab) => isAdmin || !("admin" in tab));
   return (
     <div className="mx-auto max-w-5xl space-y-4">
       <h1 className="text-xl font-semibold">Settings</h1>
       <nav className="-mx-1 flex gap-1 overflow-x-auto pb-1">
-        {TABS.map((tab) => (
+        {tabs.map((tab) => (
           <Link
             key={tab.to}
             to={tab.to}

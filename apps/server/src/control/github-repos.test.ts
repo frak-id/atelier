@@ -6,6 +6,7 @@ import type { User } from "./types.ts";
 function user(id: string, token?: string): User {
   return {
     id,
+    kind: "human",
     username: `u${id}`,
     email: `${id}@x`,
     githubAccessToken: token,
@@ -84,6 +85,32 @@ describe("GitHubRepoService.listRepos", () => {
     const theirs = await service.listRepos("2");
     expect(theirs).toEqual({ connected: false, repos: [], truncated: false });
     expect(calls).toHaveLength(1);
+  });
+
+  test("a service account never browses with the host token, bypass included", async () => {
+    process.env.ATELIER_GITHUB_TOKEN = "gho_host";
+    try {
+      let called = false;
+      const bot = { ...user("sa_1", "tok-bot"), kind: "service" as const };
+      for (const mode of ["bypassed", "real"] as const) {
+        const service = new GitHubRepoService({
+          userService: { getById: () => bot },
+          mode: () => mode,
+          fetch: async () => {
+            called = true;
+            return json([]);
+          },
+        });
+        expect(await service.listRepos("sa_1")).toEqual({
+          connected: false,
+          repos: [],
+          truncated: false,
+        });
+      }
+      expect(called).toBe(false);
+    } finally {
+      delete process.env.ATELIER_GITHUB_TOKEN;
+    }
   });
 
   test("paginates until a short page and maps fields", async () => {

@@ -75,7 +75,10 @@ describe("canAccessSandbox", () => {
   };
   const deps = (bypassed = false): SandboxAccessDeps => ({
     isAuthBypassed: () => bypassed,
-    isOrgMember: (orgId, userId) => orgId === "acme" && userId === "bob",
+    isOrgMember: (orgId, userId) =>
+      orgId === "acme" && (userId === "bob" || userId === "bot"),
+    isServiceAccount: (userId) => userId === "bot" || userId === "agent",
+    isServerAdmin: (userId) => userId === "admin",
   });
 
   test("the owner and an org member are allowed, a non-member is not", () => {
@@ -103,7 +106,42 @@ describe("canAccessSandbox", () => {
     ).toBe(false);
   });
 
-  test("a bypassed-auth (local) server allows everything", () => {
+  test("a service account reaches only what it owns, not its org's sandboxes", () => {
+    expect(canAccessSandbox(deps(), "bot", owned)).toBe(false);
+    expect(
+      canAccessSandbox(deps(), "bot", {
+        ...owned,
+        metadata: { "atelier.dev/owner-id": "bot" },
+      }),
+    ).toBe(true);
+    // The people of the org still reach the account's sandboxes.
+    const botOwned = {
+      ...owned,
+      metadata: { "atelier.dev/owner-id": "agent" },
+    };
+    expect(canAccessSandbox(deps(), "bob", botOwned)).toBe(true);
+  });
+
+  test("a server admin reaches service-account sandboxes only", () => {
+    const botOwned = {
+      metadata: { "atelier.dev/owner-id": "agent" },
+      annotations: { "atelier.dev/org-id": "other" },
+    };
+    expect(canAccessSandbox(deps(), "admin", botOwned)).toBe(true);
+    expect(canAccessSandbox(deps(), "admin", owned)).toBe(false);
+    expect(canAccessSandbox(deps(), "mallory", botOwned)).toBe(false);
+  });
+
+  test("a bypassed-auth (local) server allows every person everything", () => {
     expect(canAccessSandbox(deps(true), "mallory", owned)).toBe(true);
+  });
+
+  test("a service account stays owner-only when auth is bypassed", () => {
+    expect(canAccessSandbox(deps(true), "bot", owned)).toBe(false);
+    expect(
+      canAccessSandbox(deps(true), "bot", {
+        metadata: { "atelier.dev/owner-id": "bot" },
+      }),
+    ).toBe(true);
   });
 });

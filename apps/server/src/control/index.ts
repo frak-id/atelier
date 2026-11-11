@@ -4,10 +4,18 @@
  * modules import control/'s interface (this barrel), never its internals.
  */
 
-export { type AuthUser, signJwt, verifyJwt } from "./auth.ts";
+export {
+  type AuthSurface,
+  type AuthUser,
+  type JwtClaims,
+  signJwt,
+  verifyJwt,
+} from "./auth.ts";
 export { isUserAuthorized } from "./authorization-policy.ts";
 export { type ControlContainer, createControlContainer } from "./container.ts";
 export { initDatabase } from "./db/client.ts";
+export type { GitCredentialService } from "./git-credentials.ts";
+export { GitHubAppError } from "./github-app.ts";
 export {
   buildOAuthRedirectUrl,
   exchangeCodeForToken,

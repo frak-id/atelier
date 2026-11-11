@@ -52,7 +52,14 @@ function mkUser(name: string): AuthUser {
   );
   control.orgMemberService.addMember(personal.id, u.id, "owner");
   control.userService.setPersonalOrg(u.id, personal.id);
-  return { id: u.id, username: u.username, email: u.email, avatarUrl: "" };
+  return {
+    id: u.id,
+    username: u.username,
+    email: u.email,
+    avatarUrl: "",
+    kind: "human",
+    scope: "full",
+  };
 }
 
 let previousMode: typeof config.server.mode;

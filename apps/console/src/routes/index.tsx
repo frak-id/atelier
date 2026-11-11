@@ -64,6 +64,7 @@ import {
 } from "@/lib/formatters";
 import {
   harnessFromAnnotations,
+  isServiceOwned,
   orgIdFromAnnotations,
   ownerFromAnnotations,
   sandboxNameFromAnnotations,
@@ -380,6 +381,9 @@ function SandboxRow({
             ) : null}
             {harness ? <Badge variant="outline">{harness}</Badge> : null}
             {owner ? <Badge variant="secondary">@{owner}</Badge> : null}
+            {isServiceOwned(sandbox.annotations) ? (
+              <Badge variant="info">service</Badge>
+            ) : null}
             {orgName ? <Badge variant="outline">{orgName}</Badge> : null}
             <span className="text-xs text-muted-foreground">
               {formatRelativeTime(sandbox.createdAt)}

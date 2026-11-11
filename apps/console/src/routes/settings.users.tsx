@@ -91,6 +91,7 @@ function UserRow({
     id: string;
     username: string;
     email: string;
+    kind: "human" | "service";
     avatarUrl?: string;
     personalOrgId?: string;
     createdAt: string;
@@ -118,6 +119,9 @@ function UserRow({
           ) : null}
           <span className="font-medium">{user.username}</span>
           {isYou ? <Badge variant="secondary">you</Badge> : null}
+          {user.kind === "service" ? (
+            <Badge variant="info">service</Badge>
+          ) : null}
           <span className="truncate text-sm text-muted-foreground">
             {user.email}
           </span>

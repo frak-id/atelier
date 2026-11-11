@@ -6,6 +6,7 @@ import {
   OWNER_ANNOTATION,
   OWNER_EMAIL_ANNOTATION,
   OWNER_ID_METADATA,
+  OWNER_KIND_ANNOTATION,
 } from "../shared/lib/git-attribution.ts";
 import {
   enrichSpec,
@@ -122,12 +123,12 @@ describe("enrichSpec", () => {
 });
 
 describe("resolveBootSpec", () => {
-  const users = (token: string | undefined) => ({
-    getById: (id: string) =>
-      id === "u1"
-        ? ({ username: "alice", email: "alice@x.test" } as never)
-        : undefined,
-    resolveGitHubToken: () => token,
+  const alice = { name: "alice", email: "alice@x.test" };
+  const credentials = (
+    token: string | undefined,
+    identity: { name: string; email: string } | undefined = alice,
+  ) => ({
+    resolve: async (id: string) => (id === "u1" ? { token, identity } : {}),
   });
   const secrets = {
     resolve: async (orgId: string | undefined, name: string) =>
@@ -147,7 +148,7 @@ describe("resolveBootSpec", () => {
   test("resolves secrets in the sandbox's org, and adds the owner's git files", async () => {
     const out = await resolveBootSpec(stored, {
       secrets,
-      users: users("ghp_now"),
+      credentials: credentials("ghp_now"),
     });
     expect(out.env).toEqual({ KEY: "org-1:KEY", PLAIN: "v" });
     expect(out.files?.find((f) => f.path === "/etc/key")?.content).toBe(
@@ -171,7 +172,7 @@ describe("resolveBootSpec", () => {
     };
     const out = await resolveBootSpec(withOld, {
       secrets,
-      users: users("ghp_new"),
+      credentials: credentials("ghp_new"),
     });
     expect(JSON.stringify(out)).not.toContain("ghp_old");
     expect(
@@ -182,7 +183,7 @@ describe("resolveBootSpec", () => {
   test("no token and no owner mean no credential file", async () => {
     const noToken = await resolveBootSpec(stored, {
       secrets,
-      users: users(undefined),
+      credentials: credentials(undefined),
     });
     expect(noToken.files?.some((f) => f.path === GIT_CREDENTIALS_PATH)).toBe(
       false,
@@ -190,8 +191,75 @@ describe("resolveBootSpec", () => {
     const { metadata: _m, ...ownerless } = stored;
     const out = await resolveBootSpec(ownerless, {
       secrets,
-      users: users("ghp_x"),
+      credentials: credentials("ghp_x"),
     });
     expect(JSON.stringify(out)).not.toContain("ghp_x");
+  });
+
+  test("a service account owner's files carry its bot identity and token", async () => {
+    const bot = { name: "daedalus[bot]", email: "1+daedalus[bot]@x.test" };
+    const out = await resolveBootSpec(stored, {
+      secrets,
+      credentials: credentials("ghs_install", bot),
+    });
+    const gitconfig = out.files?.find((f) => f.path === "/etc/gitconfig");
+    expect(gitconfig?.content).toContain("name = daedalus[bot]");
+    expect(gitconfig?.content).not.toContain("alice");
+    const creds = out.files?.find((f) => f.path === GIT_CREDENTIALS_PATH);
+    expect(creds?.content).toContain("ghs_install");
+  });
+
+  test("an identity without a token writes the gitconfig only", async () => {
+    const out = await resolveBootSpec(stored, {
+      secrets,
+      credentials: credentials(undefined, {
+        name: "daedalus[bot]",
+        email: "d@x.test",
+      }),
+    });
+    expect(out.files?.some((f) => f.path === "/etc/gitconfig")).toBe(true);
+    expect(out.files?.some((f) => f.path === GIT_CREDENTIALS_PATH)).toBe(false);
+  });
+
+  test("an owner the credentials don't know gets no git files", async () => {
+    const out = await resolveBootSpec(
+      { ...stored, metadata: { [OWNER_ID_METADATA]: "ghost" } },
+      { secrets, credentials: credentials("ghp_x") },
+    );
+    expect(JSON.stringify(out)).not.toContain("ghp_x");
+    expect(out.files?.some((f) => f.path === "/etc/gitconfig")).toBe(false);
+  });
+});
+
+describe("owner-kind stamp", () => {
+  const bot = { id: "sa_1", username: "daedalus[bot]", email: "d@x.invalid" };
+
+  test("a service-account owner stamps owner-kind: service", () => {
+    const out = enrichSpec(spec, { owner: { ...bot, kind: "service" } });
+    expect(out.annotations?.[OWNER_KIND_ANNOTATION]).toBe("service");
+  });
+
+  test("a person's sandbox carries none, whatever the caller sent", () => {
+    const forged = {
+      ...spec,
+      annotations: { [OWNER_KIND_ANNOTATION]: "service" },
+    };
+    for (const kind of ["human", undefined] as const) {
+      const out = enrichSpec(forged, { owner: { ...bot, kind } });
+      expect(out.annotations?.[OWNER_KIND_ANNOTATION]).toBeUndefined();
+    }
+  });
+
+  test("a fork re-stamps it for the new owner, never keeps the source's", () => {
+    const botSpec = enrichSpec(spec, { owner: { ...bot, kind: "service" } });
+    const toHuman = reattributeSpec(botSpec, {
+      id: "u1",
+      username: "alice",
+      email: "a@x.test",
+      kind: "human",
+    });
+    expect(toHuman.annotations?.[OWNER_KIND_ANNOTATION]).toBeUndefined();
+    const toBot = reattributeSpec(spec, { ...bot, kind: "service" });
+    expect(toBot.annotations?.[OWNER_KIND_ANNOTATION]).toBe("service");
   });
 });

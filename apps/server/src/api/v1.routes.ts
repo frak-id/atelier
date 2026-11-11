@@ -34,6 +34,7 @@ import { OWNER_ID_METADATA } from "../shared/lib/git-attribution.ts";
 import { createAuthPlugin } from "./auth.plugin.ts";
 import type { ServerContainer } from "./container.ts";
 import { createJobAccess, ownedJobMetadata } from "./job-access.ts";
+import { refuseServiceAccount } from "./refuse-service-account.ts";
 import {
   accessibleSandboxes,
   requireSandboxAccess,
@@ -218,6 +219,7 @@ export function createV1Routes(container: ServerContainer) {
         "/images",
         async ({ body, user, set }) => {
           control.defaultOrg.requireServerAdmin(user.id);
+          refuseServiceAccount(user, "base images");
           const record = await container.images.buildSeed(body.seed, {
             force: body.force,
           });
@@ -235,6 +237,7 @@ export function createV1Routes(container: ServerContainer) {
         "/images/register",
         ({ body, user }) => {
           control.defaultOrg.requireServerAdmin(user.id);
+          refuseServiceAccount(user, "base images");
           return container.images.registerExternal(body.name, body.ref);
         },
         { body: t.Object({ name: t.String(), ref: t.String() }) },
@@ -275,11 +278,14 @@ export function createV1Routes(container: ServerContainer) {
       // to every snapshot of its recipe. Empty lists clear them.
       .patch(
         "/prebuilds/:ref/surface",
-        ({ params, body, user }) =>
-          runtime.setPrebuildSurface(params.ref, body, {
+        ({ params, body, user }) => {
+          // A prebuild's dev servers start in the sandboxes booted from it.
+          refuseServiceAccount(user, "prebuild dev servers");
+          return runtime.setPrebuildSurface(params.ref, body, {
             userId: user.id,
             admin: control.defaultOrg.isServerAdmin(user.id),
-          }),
+          });
+        },
         {
           params: t.Object({ ref: t.String() }),
           body: t.Object({
@@ -307,6 +313,7 @@ export function createV1Routes(container: ServerContainer) {
       .post(
         "/toolsets",
         ({ body, user, set }) => {
+          refuseServiceAccount(user, "toolsets");
           const req = body as ToolsetBuildRequest;
           requireSourceAccess(container, user.id, req.source);
           const job = jobs.dispatch(
@@ -328,6 +335,7 @@ export function createV1Routes(container: ServerContainer) {
           // Unscoped by toolbox: server admins only (a toolbox's own versions
           // publish through `/api/toolboxes/:id/versions/:versionId/publish`).
           control.defaultOrg.requireServerAdmin(user.id);
+          refuseServiceAccount(user, "toolsets");
           return runtime.publishToolset((body as ToolsetRef).ref);
         },
         { body: ToolsetRefSchema },

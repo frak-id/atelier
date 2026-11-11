@@ -20,7 +20,14 @@ const spec = {
   metadata: { repo: "acme/app" },
 };
 
-function makeContainer(options: { tracking?: boolean } = {}) {
+function makeContainer(
+  options: {
+    tracking?: boolean;
+    stale?: unknown[];
+    token?: (userId: string) => Promise<string | undefined>;
+  } = {},
+) {
+  const probed: Array<string | undefined> = [];
   const rebuilt: unknown[] = [];
   const pruned: number[] = [];
   const release: Array<() => void> = [];
@@ -37,7 +44,18 @@ function makeContainer(options: { tracking?: boolean } = {}) {
   const container = {
     jobs,
     runtime: {
-      prebuilds: { findStale: async () => stale },
+      prebuilds: {
+        // Like the real one: the resolver is called per prebuild creator.
+        findStale: async (
+          resolve: (id: string) => Promise<string | undefined>,
+        ) => {
+          for (const s of options.stale ?? stale) {
+            const createdBy = (s as { createdBy?: string }).createdBy;
+            if (createdBy) probed.push(await resolve(createdBy));
+          }
+          return options.stale ?? stale;
+        },
+      },
       prebuild: async (s: unknown, o: unknown) => {
         rebuilt.push([s, o]);
         await new Promise<void>((resolve) => release.push(resolve));
@@ -53,10 +71,10 @@ function makeContainer(options: { tracking?: boolean } = {}) {
         get: (key: string) =>
           key === "prebuild.gitTracking" ? (options.tracking ?? true) : 3,
       },
-      userService: { resolveGitHubToken: () => undefined },
+      gitCredentials: { token: options.token ?? (async () => undefined) },
     },
   };
-  return { container, jobs, rebuilt, pruned, release };
+  return { container, jobs, rebuilt, pruned, release, probed };
 }
 
 describe("dispatchStalePrebuilds", () => {
@@ -72,11 +90,44 @@ describe("dispatchStalePrebuilds", () => {
     });
     expect(job?.metadata?.hash).toBe("h-new");
     expect(pruned).toEqual([3]);
-    // With the creator's token, so a private repo resolves.
-    expect(rebuilt[0]).toMatchObject([
-      spec,
-      { githubToken: "tok-alice", createdBy: "alice" },
-    ]);
+    // The job resolved the creator's token itself (below: not the probe's).
+    await Promise.resolve();
+    expect(rebuilt[0]).toMatchObject([spec, { createdBy: "alice" }]);
+    release[0]?.();
+  });
+
+  test("findStale gets the real token resolver; the job resolves its own token again", async () => {
+    const resolved: string[] = [];
+    let n = 0;
+    const { container, rebuilt, probed, release } = makeContainer({
+      token: async (userId) => {
+        resolved.push(userId);
+        return `tok-${++n}`;
+      },
+    });
+    expect(await dispatchStalePrebuilds(container as never)).toBe(1);
+    // Probe: first call. Job: a second call, whose token is what bakes
+    // (the probe's token may have expired while the job queued).
+    await new Promise((r) => setTimeout(r, 0));
+    expect(probed).toEqual(["tok-1"]);
+    expect(resolved).toEqual(["alice", "alice"]);
+    expect(rebuilt[0]).toMatchObject([spec, { githubToken: "tok-2" }]);
+    release[0]?.();
+  });
+
+  test("a creator-less rebuild runs without a token and without resolving", async () => {
+    const resolved: string[] = [];
+    const { container, rebuilt, release } = makeContainer({
+      stale: [{ ref: "r", hash: "h2", spec, githubToken: "probe" }],
+      token: async (userId) => {
+        resolved.push(userId);
+        return "x";
+      },
+    });
+    expect(await dispatchStalePrebuilds(container as never)).toBe(1);
+    await new Promise((r) => setTimeout(r, 0));
+    expect(resolved).toEqual([]);
+    expect(rebuilt[0]).toMatchObject([spec, { githubToken: undefined }]);
     release[0]?.();
   });
 

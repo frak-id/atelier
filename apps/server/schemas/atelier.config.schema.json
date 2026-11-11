@@ -363,6 +363,125 @@
           }
         }
       }
+    },
+    "serviceAccounts": {
+      "default": [],
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["name", "org"],
+        "properties": {
+          "name": {
+            "type": "string"
+          },
+          "org": {
+            "type": "string"
+          },
+          "role": {
+            "default": "member",
+            "anyOf": [
+              {
+                "const": "owner",
+                "type": "string"
+              },
+              {
+                "const": "member",
+                "type": "string"
+              }
+            ]
+          },
+          "description": {
+            "type": "string"
+          },
+          "github": {
+            "anyOf": [
+              {
+                "type": "object",
+                "required": ["appId", "installationId"],
+                "properties": {
+                  "appId": {
+                    "anyOf": [
+                      {
+                        "type": "string"
+                      },
+                      {
+                        "type": "number"
+                      }
+                    ]
+                  },
+                  "installationId": {
+                    "anyOf": [
+                      {
+                        "type": "string"
+                      },
+                      {
+                        "type": "number"
+                      }
+                    ]
+                  },
+                  "privateKeyEnv": {
+                    "type": "string"
+                  },
+                  "privateKeyFile": {
+                    "type": "string"
+                  },
+                  "repositories": {
+                    "type": "array",
+                    "items": {
+                      "type": "string"
+                    }
+                  },
+                  "permissions": {
+                    "type": "object",
+                    "patternProperties": {
+                      "^(.*)$": {
+                        "type": "string"
+                      }
+                    }
+                  }
+                }
+              },
+              {
+                "type": "object",
+                "required": ["tokenEnv", "gitName", "gitEmail"],
+                "properties": {
+                  "tokenEnv": {
+                    "type": "string"
+                  },
+                  "gitName": {
+                    "type": "string"
+                  },
+                  "gitEmail": {
+                    "type": "string"
+                  }
+                }
+              }
+            ]
+          },
+          "apiKey": {
+            "type": "object",
+            "required": ["env"],
+            "properties": {
+              "env": {
+                "type": "string"
+              },
+              "scope": {
+                "default": "mcp",
+                "anyOf": [
+                  {
+                    "const": "mcp",
+                    "type": "string"
+                  },
+                  {
+                    "const": "full",
+                    "type": "string"
+                  }
+                ]
+              }
+            }
+          }
+        }
+      }
     }
   }
 }

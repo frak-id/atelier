@@ -30,6 +30,7 @@ function readToken(stored: string | null): string | undefined {
 function rowToUser(row: typeof users.$inferSelect): User {
   return {
     id: row.id,
+    kind: row.kind,
     username: row.username,
     email: row.email,
     avatarUrl: row.avatarUrl ?? undefined,
@@ -54,6 +55,7 @@ export class UserRepository {
     const rows = getDatabase()
       .select({
         id: users.id,
+        kind: users.kind,
         username: users.username,
         email: users.email,
         avatarUrl: users.avatarUrl,
@@ -78,6 +80,7 @@ export class UserRepository {
       if (!entry) {
         entry = {
           id: row.id,
+          kind: row.kind,
           username: row.username,
           email: row.email,
           avatarUrl: row.avatarUrl ?? undefined,
@@ -127,6 +130,7 @@ export class UserRepository {
       .insert(users)
       .values({
         id: user.id,
+        kind: user.kind,
         username: user.username,
         email: user.email,
         avatarUrl: user.avatarUrl,

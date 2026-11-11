@@ -5,6 +5,12 @@ import { currentUserQuery } from "@/api/queries/auth";
  * config and raw toolset publishing are theirs alone, so the console hides
  * those actions from everyone else. */
 export function useIsAdmin(): boolean {
-  const { data: currentUser } = useQuery(currentUserQuery());
-  return currentUser?.admin === true;
+  return useAdminStatus().isAdmin;
+}
+
+/** `useIsAdmin` plus whether the current user is still loading, for pages
+ * that must not flash "admins only" on a hard reload. */
+export function useAdminStatus(): { isAdmin: boolean; isPending: boolean } {
+  const { data: currentUser, isPending } = useQuery(currentUserQuery());
+  return { isAdmin: currentUser?.admin === true, isPending };
 }

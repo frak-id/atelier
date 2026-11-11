@@ -28,7 +28,8 @@ import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { WebStandardStreamableHTTPServerTransport } from "@modelcontextprotocol/sdk/server/webStandardStreamableHttp.js";
 import { isInitializeRequest } from "@modelcontextprotocol/sdk/types.js";
 import { Elysia } from "elysia";
-import type { AuthUser } from "../../control/index.ts";
+import type { AuthSurface, AuthUser } from "../../control/index.ts";
+import { ForbiddenError } from "../../shared/errors.ts";
 import { isAuthBypassed } from "../../shared/lib/config.ts";
 import { createChildLogger } from "../../shared/lib/logger.ts";
 import type { ServerContainer } from "../container.ts";
@@ -87,6 +88,7 @@ function bearerFrom(request: Request): string | undefined {
 async function resolveMcpUser(
   container: ServerContainer,
   request: Request,
+  surface: AuthSurface,
 ): Promise<AuthUser> {
   const token = bearerFrom(request);
   // Auth-bypassed mode (local) has no real bearer token to send;
@@ -95,22 +97,30 @@ async function resolveMcpUser(
   // is bypassed and always returns the fixed mock user — so any non-empty
   // placeholder works.
   if (isAuthBypassed() && !token) {
-    return container.control.authService.resolveToken(MOCK_TOKEN);
+    return container.control.authService.resolveToken(MOCK_TOKEN, surface);
   }
-  return container.control.authService.resolveToken(token);
+  return container.control.authService.resolveToken(token, surface);
 }
 
 interface McpEndpoint {
   path: string;
+  /** What `resolveToken` checks an `mcp`-scoped key against. */
+  surface: AuthSurface;
   register: RegisterTools;
   /** Whether `user` may connect (403 otherwise). */
   allow: (container: ServerContainer, user: AuthUser) => boolean;
 }
 
 const ENDPOINTS: McpEndpoint[] = [
-  { path: "/mcp", register: registerSandboxMcp, allow: () => true },
+  {
+    path: "/mcp",
+    surface: "mcp",
+    register: registerSandboxMcp,
+    allow: () => true,
+  },
   {
     path: "/mcp/admin",
+    surface: "mcp-admin",
     register: registerAdminTools,
     allow: (container, user) =>
       container.control.defaultOrg.isServerAdmin(user.id),
@@ -143,8 +153,14 @@ function createMcpEndpoint(container: ServerContainer, endpoint: McpEndpoint) {
 
       let user: AuthUser;
       try {
-        user = await resolveMcpUser(container, request);
-      } catch {
+        user = await resolveMcpUser(container, request, endpoint.surface);
+      } catch (err) {
+        // A valid key that may not be used here (an `mcp`-scoped key on the
+        // admin MCP) is a 403, not a 401: re-authenticating won't help.
+        if (err instanceof ForbiddenError) {
+          set.status = 403;
+          return { error: "FORBIDDEN", message: err.message };
+        }
         set.status = 401;
         return { error: "UNAUTHORIZED", message: "Invalid or missing token" };
       }

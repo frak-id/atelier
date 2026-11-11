@@ -405,7 +405,9 @@ export class PrebuildService {
    * repos and so is skipped while any of its repos is private.
    */
   async findStale(
-    githubTokenOf: (userId: string) => string | undefined = () => undefined,
+    githubTokenOf: (
+      userId: string,
+    ) => string | undefined | Promise<string | undefined> = () => undefined,
   ): Promise<StalePrebuild[]> {
     const stale: StalePrebuild[] = [];
     const seen = new Set<string>();
@@ -413,7 +415,7 @@ export class PrebuildService {
       if (!snap.spec?.repos?.length) continue;
       try {
         const githubToken = snap.createdBy
-          ? githubTokenOf(snap.createdBy)
+          ? await githubTokenOf(snap.createdBy)
           : undefined;
         const { hash, unresolvedRepos } = await this.resolveContentKey(
           snap.spec,

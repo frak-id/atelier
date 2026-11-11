@@ -15,8 +15,8 @@
  *
  * TODO(generalize): ARCHITECTURAL SMELL — GitHub is hardcoded as *the* git
  * provider: the credential line is `x-access-token:…@github.com` and the
- * token plumbing is `resolveGitHubToken` end to end (control → api → runtime
- * prebuild). Git attribution is core; the provider-specific credential shape
+ * token plumbing is `GitCredentialService` end to end (control → api →
+ * runtime prebuild). Git attribution is core; the provider-specific credential shape
  * is not — GitLab/Bitbucket/self-hosted remotes get no credentials today.
  * Should become a provider-agnostic credential list (host → token) resolved
  * by control, with GitHub as just one entry.
@@ -27,6 +27,10 @@ import type { FileEntry } from "@atelier/spec";
 export const OWNER_ANNOTATION = "atelier.dev/owner";
 /** Display hint: the owner's git email. */
 export const OWNER_EMAIL_ANNOTATION = "atelier.dev/owner-email";
+/** Display hint: `service` when the owner is a service account (absent for
+ * a person). Server-owned, like the owner-id: a caller's value never
+ * survives enrichment. */
+export const OWNER_KIND_ANNOTATION = "atelier.dev/owner-kind";
 /** Opaque metadata: the owner's user id, so resume can re-resolve their token
  * regardless of who triggers the resume. */
 export const OWNER_ID_METADATA = "atelier.dev/owner-id";

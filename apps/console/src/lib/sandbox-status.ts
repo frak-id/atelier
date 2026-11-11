@@ -56,3 +56,12 @@ export function orgIdFromAnnotations(
 ): string | undefined {
   return annotations?.[SANDBOX_ORG_ANNOTATION];
 }
+
+const OWNER_KIND_ANNOTATION_KEY = "atelier.dev/owner-kind";
+
+/** True when a service account owns the sandbox (shown as a "service" badge). */
+export function isServiceOwned(
+  annotations: Record<string, string> | undefined,
+): boolean {
+  return annotations?.[OWNER_KIND_ANNOTATION_KEY] === "service";
+}

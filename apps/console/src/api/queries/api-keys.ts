@@ -20,7 +20,13 @@ export function apiKeysListQuery() {
 export function useCreateApiKey() {
   const queryClient = useQueryClient();
   return useMutation({
-    mutationFn: async (body: { name: string; expiresAt?: string }) => {
+    // The response carries the one-time raw key: don't keep it cached.
+    gcTime: 0,
+    mutationFn: async (body: {
+      name: string;
+      expiresAt?: string;
+      scope?: "full" | "mcp";
+    }) => {
       return unwrap(
         await api.api["api-keys"].post(body),
         "Failed to create API key",

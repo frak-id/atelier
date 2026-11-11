@@ -71,6 +71,10 @@ function useInvalidateSandboxes() {
   const queryClient = useQueryClient();
   return () => {
     queryClient.invalidateQueries({ queryKey: queryKeys.sandboxes.all });
+    // Service accounts list a per-account sandboxCount.
+    queryClient.invalidateQueries({
+      queryKey: queryKeys.serviceAccounts.list(),
+    });
   };
 }
 

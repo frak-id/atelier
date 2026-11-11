@@ -473,7 +473,8 @@ resolution, job tracking and auto-resume. `api/container.ts` only wires.
 ### MCP
 
 Two endpoints, one auth. The bearer token is an `atl_` API key or a session
-JWT. Each endpoint keeps its own session map; a session id from `/mcp` is
+JWT. A key with the `mcp` scope opens `/mcp` only. Agents shared by several
+people use a service account's key ([service accounts](service-accounts.md)). Each endpoint keeps its own session map; a session id from `/mcp` is
 unknown (404) on `/mcp/admin`.
 
 - `/mcp` has 13 tools, in this order: `whoami`, `get_sandbox`,
@@ -557,7 +558,8 @@ The MCP tools (`api/mcp/tools/tasks.ts`) and the console routes
 ### Console
 
 Top navigation: Sandboxes, Spawn, Library (prebuilds, toolboxes and toolsets,
-images), Settings (API keys, SSH keys, secrets, config, organizations, users).
+images), Settings (API keys, SSH keys, secrets, config, organizations, users,
+service accounts).
 The home page leads with the task inbox (needs review, running, failed, seen)
 above the sandbox list. A jobs page (`/jobs`) shows the job feed with logs and
 cancel. Actions that need a server admin are hidden from other users.

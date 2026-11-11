@@ -65,18 +65,23 @@ export function createJobAccess({
     const labels = sandboxId ? runtime.getLabels(sandboxId) : undefined;
     return labels !== undefined && control.canAccessSandbox(userId, labels);
   };
+  // A service account is never treated as an admin here, even when it owns
+  // the default org: it sees and cancels its own jobs only.
+  const isAdmin = (userId: string): boolean =>
+    control.userService.getById(userId)?.kind !== "service" &&
+    control.defaultOrg.isServerAdmin(userId);
   return {
     canSee(userId, job) {
       return (
         job.kind === "image-build" ||
         job.metadata?.owner === userId ||
-        control.defaultOrg.isServerAdmin(userId) ||
+        isAdmin(userId) ||
         mayAccessSandbox(userId, job)
       );
     },
     canCancel(userId, job) {
       const owner = job.metadata?.owner;
-      if (owner === userId || control.defaultOrg.isServerAdmin(userId)) {
+      if (owner === userId || isAdmin(userId)) {
         return true;
       }
       return owner === undefined && mayAccessSandbox(userId, job);

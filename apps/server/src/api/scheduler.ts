@@ -8,6 +8,7 @@
 import { prebuildJobTarget } from "@atelier/spec";
 import { logger, rotateLogFile } from "../shared/lib/logger.ts";
 import type { ServerContainer } from "./container.ts";
+import { GitCredentialRefresher } from "./git-credential-refresh.ts";
 import { runDueToolboxRefreshes } from "./toolbox-refresh.ts";
 
 /** The `jobs` table is append-only (one row per long op forever), so keep a
@@ -40,11 +41,14 @@ export async function dispatchStalePrebuilds(
   container: ServerContainer,
 ): Promise<number> {
   const { runtime, jobs, control } = container;
-  const { serverConfigService, userService } = control;
+  const { serverConfigService, gitCredentials } = control;
   if (!serverConfigService.get("prebuild.gitTracking")) return 0;
-  // Private repos are reached with the prebuild creator's own token.
+  // Private repos are reached with the prebuild creator's own token (a
+  // service account's own credential, never a person's). This token serves
+  // the staleness probe only: the queued job resolves its own, as an App
+  // token can expire while a job waits for the pool.
   const stale = await runtime.prebuilds.findStale((userId) =>
-    userService.resolveGitHubToken(userId),
+    gitCredentials.token(userId),
   );
   let dispatched = 0;
   for (const rebuild of stale) {
@@ -62,10 +66,13 @@ export async function dispatchStalePrebuilds(
         target: prebuildJobTarget(rebuild.spec),
         metadata: { ...rebuild.spec.metadata, hash: rebuild.hash },
       },
-      (signal, log) => {
+      async (signal, log) => {
         log(`Upstream moved for ${rebuild.ref}; rebuilding`);
+        const githubToken = rebuild.createdBy
+          ? await gitCredentials.token(rebuild.createdBy)
+          : undefined;
         return runtime.prebuild(rebuild.spec, {
-          githubToken: rebuild.githubToken,
+          githubToken,
           createdBy: rebuild.createdBy,
           signal,
           onLog: log,
@@ -115,6 +122,30 @@ export function startScheduler(container: ServerContainer): void {
     guarded("prebuild staleness check", async () => {
       await dispatchStalePrebuilds(container);
     }),
+  );
+
+  // Config-declared service accounts. The env vars and the config file are
+  // read at process start, so a changed key/token env var or an edited
+  // `serviceAccounts` list applies on restart; a pass picks up an org
+  // created since, and a changed `privateKeyFile`.
+  Bun.cron(
+    "*/5 * * * *",
+    guarded("service account reconcile", () =>
+      container.control.reconcileServiceAccounts(),
+    ),
+  );
+
+  // Service-account sandboxes: an App token lasts an hour, so keep the
+  // credential file of running ones current.
+  const credentialRefresh = new GitCredentialRefresher({
+    runtime: container.runtime,
+    credentials: container.control.gitCredentials,
+    isServiceAccount: (id) =>
+      container.control.userService.getById(id)?.kind === "service",
+  });
+  Bun.cron(
+    "*/5 * * * *",
+    guarded("git credential refresh", () => credentialRefresh.tick()),
   );
 
   // The server log file (production) rotates by size.

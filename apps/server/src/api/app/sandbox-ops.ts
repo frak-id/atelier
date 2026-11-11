@@ -30,7 +30,7 @@ import {
   type SandboxSpec,
   type SnapshotRef,
 } from "@atelier/spec";
-import type { ControlContainer } from "../../control/index.ts";
+import type { ControlContainer, UserKind } from "../../control/index.ts";
 import type {
   JobRecord,
   JobService,
@@ -82,6 +82,7 @@ export interface SandboxActor {
   id: string;
   username: string;
   email: string;
+  kind: UserKind;
 }
 
 export interface SandboxOpsDeps {
@@ -400,7 +401,7 @@ export class SandboxOps {
     if (prebuild) {
       onProgress("resolving prebuild…");
       const options = {
-        githubToken: control.userService.resolveGitHubToken(user.id),
+        githubToken: await control.gitCredentials.token(user.id),
         createdBy: user.id,
       };
       // A cached prebuild is a plain lookup. A bake is a pooled job (in the
@@ -437,7 +438,12 @@ export class SandboxOps {
     );
     const enriched = control.enrichSpec(withToolboxFiles(spec, applied), {
       toolboxHarnessId: toolboxHarness(applied),
-      owner: { id: user.id, username: user.username, email: user.email },
+      owner: {
+        id: user.id,
+        username: user.username,
+        email: user.email,
+        kind: user.kind,
+      },
     });
     // Dedupe materialized refs (a toolbox can be both auto-injected and
     // picked) so the agent never extracts the same artifact twice.
@@ -632,7 +638,12 @@ export class SandboxOps {
         derive: (sourceSpec) => ({
           spec: control.reattributeSpec(
             sourceSpec,
-            { id: user.id, username: user.username, email: user.email },
+            {
+              id: user.id,
+              username: user.username,
+              email: user.email,
+              kind: user.kind,
+            },
             body.metadata,
           ),
         }),
@@ -771,15 +782,14 @@ export class SandboxOps {
   }
 
   /** Bake a prebuild as a pooled job (`POST /v1/prebuilds`, MCP
-   * `manage_prebuilds`). The GitHub token is resolved now, in request scope,
-   * for cloning private repos; it is never baked into the shared artifact. */
+   * `manage_prebuilds`). The GitHub token is resolved when the job runs, for
+   * cloning private repos; it is never baked into the shared artifact. */
   startPrebuild(
     user: SandboxActor,
     spec: PrebuildSpec,
     options: { force?: boolean } = {},
   ): JobRecord {
     requireSourceAccess(this.guard, user.id, spec.source);
-    const githubToken = this.control.userService.resolveGitHubToken(user.id);
     const surfaceAdmin = this.control.defaultOrg.isServerAdmin(user.id);
     return this.jobs.dispatch(
       {
@@ -787,10 +797,11 @@ export class SandboxOps {
         target: prebuildJobTarget(spec),
         metadata: ownedJobMetadata(user.id, spec.metadata),
       },
-      (signal, log) =>
+      async (signal, log) =>
         this.runtime.prebuild(spec, {
           force: options.force === true,
-          githubToken,
+          // Resolved in the job: an App token mint is a network call.
+          githubToken: await this.control.gitCredentials.token(user.id),
           createdBy: user.id,
           signal,
           onLog: log,

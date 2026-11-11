@@ -156,6 +156,10 @@ export class GitHubRepoService {
 
   /** The caller's OWN token. Deliberately no cross-user fallback. */
   private tokenFor(userId: string): string | undefined {
+    // A service account never browses with a person's or the host's token.
+    if (this.deps.userService.getById(userId)?.kind === "service") {
+      return undefined;
+    }
     const mode = this.mode();
     if (mode === "bypassed") {
       return process.env.ATELIER_GITHUB_TOKEN?.trim() || undefined;

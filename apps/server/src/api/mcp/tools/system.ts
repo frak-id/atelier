@@ -26,7 +26,7 @@ export function registerSystemTools(
     {
       title: "Who am I",
       description:
-        "Your username, organizations, and what a new sandbox can be built " +
+        "Your id, kind (`human` or `service` account), username, organizations, and what a new sandbox can be built " +
         "from. Call it first. `defaultOrgId` is where `create_sandbox` runs " +
         "without `orgId`; `defaultImage` is the base image; `toolboxes` " +
         "lists the `selector`s `create_sandbox` takes (`autoInclude` ones " +
@@ -34,6 +34,8 @@ export function registerSystemTools(
         "(`ref` goes in `spec.source.snapshot`, or just pass `repo`).",
       inputSchema: {},
       outputSchema: {
+        id: z.string(),
+        kind: z.enum(["human", "service"]),
         username: z.string(),
         orgs: z.array(z.object({}).passthrough()),
         defaultOrgId: z.string().optional(),
@@ -84,6 +86,8 @@ export function registerSystemTools(
         });
 
       return text({
+        id: user.id,
+        kind: user.kind,
         username: user.username,
         orgs,
         ...(personalOrgId ? { personalOrgId } : {}),

@@ -185,7 +185,14 @@ function newUser(): AuthUser {
   );
   control.orgMemberService.addMember(personal.id, u.id, "owner");
   control.userService.setPersonalOrg(u.id, personal.id);
-  return { id: u.id, username: u.username, email: u.email, avatarUrl: "" };
+  return {
+    id: u.id,
+    username: u.username,
+    email: u.email,
+    avatarUrl: "",
+    kind: "human",
+    scope: "full",
+  };
 }
 
 function personalOrgOf(user: AuthUser): string {
@@ -382,6 +389,36 @@ describe("manage_images", () => {
       name: "nope",
     });
     expect(missing.data.error).toBe("NOT_FOUND");
+  });
+});
+
+describe("an admin service account", () => {
+  const asService = (): AuthUser => ({ ...newUser(), kind: "service" });
+
+  test("can't change what runs in people's sandboxes: toolboxes, images", async () => {
+    const user = asService();
+    const { call, calls } = await connectAs(user);
+    const config = { slug: "x", description: "d", build: [], paths: [] };
+    for (const args of [
+      { action: "create", config },
+      { action: "update", id: "tb", config: { description: "y" } },
+      { action: "delete", id: "tb" },
+      { action: "publish", id: "tb", versionId: "v" },
+      { action: "pin_version", id: "tb", versionId: null },
+    ]) {
+      const res = await call("manage_toolbox", args);
+      expect([args.action, res.data.error]).toEqual([args.action, "FORBIDDEN"]);
+    }
+    const rebuild = await call("manage_images", {
+      action: "rebuild",
+      name: "dev-rust",
+    });
+    expect(rebuild.data.error).toBe("FORBIDDEN");
+    expect(calls.built).toEqual([]);
+    // It can still read them.
+    expect((await call("manage_toolbox", { action: "list" })).isError).toBe(
+      false,
+    );
   });
 });
 

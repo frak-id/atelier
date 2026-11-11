@@ -4,10 +4,15 @@
  * list endpoints) and, per key owner, to SSH.
  *
  * A caller may reach a sandbox when:
- *  - auth is bypassed (local/mock single-user modes), or
- *  - the caller created it (owner-id) or belongs to the org it was created
- *    in (org-id).
- * A sandbox with neither label is reachable by nobody (every create path
+ *  - the caller created it (owner-id), or
+ *  - the caller is a person and auth is bypassed (local single-user mode), or
+ *  - the caller is a person (not a service account) in the org it was
+ *    created in (org-id), or
+ *  - the caller is a server admin and the sandbox's owner is a service
+ *    account (to inspect and destroy what agents left behind).
+ * A service account reaches only the sandboxes it owns (also when auth is
+ * bypassed): another member's sandbox holds that person's git token. A
+ * sandbox with neither label is reachable by nobody (every create path
  * records the owner).
  * Callers turn a denial into `NotFoundError` so a sandbox's existence is not
  * revealed.
@@ -26,6 +31,8 @@ export interface SandboxAccessDeps {
   /** Evaluated per call: auth is bypassed in `local`/`mock` modes. */
   isAuthBypassed: () => boolean;
   isOrgMember: (orgId: string, userId: string) => boolean;
+  isServiceAccount: (userId: string) => boolean;
+  isServerAdmin: (userId: string) => boolean;
 }
 
 /** The sandbox's recorded creator. */
@@ -51,8 +58,18 @@ export function canAccessSandbox(
   userId: string,
   labels: SandboxLabels,
 ): boolean {
+  const ownerId = sandboxOwnerId(labels);
+  // Before the bypass: a service account never reaches a person's sandbox,
+  // local mode included.
+  if (deps.isServiceAccount(userId)) return ownerId === userId;
   if (deps.isAuthBypassed()) return true;
-  return isOwnerOrOrgMember(deps, userId, labels);
+  if (ownerId === userId) return true;
+  if (isOwnerOrOrgMember(deps, userId, labels)) return true;
+  return (
+    ownerId !== undefined &&
+    deps.isServiceAccount(ownerId) &&
+    deps.isServerAdmin(userId)
+  );
 }
 
 /**
