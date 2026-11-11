@@ -97,6 +97,18 @@ spec:
                 secretKeyRef:
                   name: atelier-v2-secrets
                   key: SANDBOX_SECRETS_KEY
+            # The `frak-agents` service account (30-config.yaml
+            # `serviceAccounts`). Secret written by infra-core.
+            - name: FRAK_AGENTS_API_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: atelier-v2-service-accounts
+                  key: FRAK_AGENTS_API_KEY
+            - name: FRAK_AGENTS_GITHUB_APP_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: atelier-v2-service-accounts
+                  key: FRAK_AGENTS_GITHUB_APP_KEY
           resources:
             requests:
               memory: "256Mi"

@@ -6,7 +6,10 @@
 # README.md "Cluster prerequisites").
 #
 # Only infrastructure keys (domains, namespaces, auth, registry, ports, storage,
-# runtime class, ingress annotations, image builder) belong here. Operational
+# runtime class, ingress annotations, image builder, service accounts) belong
+# here. `serviceAccounts` declares `frak-agents`, the account AgentGateway's
+# agents use: its App key and API key come from the `atelier-v2-service-
+# accounts` Secret (infra-core), which must exist first (see README.md). Operational
 # keys (idle auto-pause, retention, jobs concurrency, default image/size/
 # resources, agent image) are edited by server admins on the console Config
 # page: leave them out so they stay editable; setting one here locks it
@@ -84,5 +87,18 @@ data:
           "secretName": "buildkit-client-tls",
           "serverName": "buildkitd.buildkit.svc.cluster.local"
         }
-      }
+      },
+      "serviceAccounts": [
+        {
+          "name": "frak-agents",
+          "org": "frak",
+          "description": "Agents behind AgentGateway (LibreChat, CLI agents)",
+          "github": {
+            "appId": "5719507",
+            "installationId": "181043667",
+            "privateKeyEnv": "FRAK_AGENTS_GITHUB_APP_KEY"
+          },
+          "apiKey": { "env": "FRAK_AGENTS_API_KEY", "scope": "mcp" }
+        }
+      ]
     }
