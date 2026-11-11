@@ -29,6 +29,7 @@ import {
   OwnerScopeSection,
   OwnerScopeSections,
 } from "@/components/owner-scope-sections";
+import { ToolboxSuggestions } from "@/components/toolbox-suggestions";
 import { ToolboxVersionsPanel } from "@/components/toolbox-versions-panel";
 import { ToolsetsSection } from "@/components/toolsets-section";
 import { Badge } from "@/components/ui/badge";
@@ -107,7 +108,7 @@ function ToolboxScopeSection({
           {error instanceof Error ? error.message : "Failed to load"}
         </p>
       ) : toolboxes.length === 0 ? (
-        <p className="text-sm text-muted-foreground">No toolboxes yet.</p>
+        <ToolboxSuggestions scope={scope} toolboxes={toolboxes} />
       ) : (
         <div className="space-y-2">
           {toolboxes.map((toolbox) => (
@@ -118,6 +119,7 @@ function ToolboxScopeSection({
               artifact={artifactByName.get(toolboxArtifactName(toolbox))}
             />
           ))}
+          <ToolboxSuggestions scope={scope} toolboxes={toolboxes} />
         </div>
       )}
     </OwnerScopeSection>

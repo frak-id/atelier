@@ -75,8 +75,13 @@ function LinesTextarea({
 /** A stable empty list, so an unset field doesn't resync on every render. */
 const NO_LINES: string[] = [];
 
-function toInput(toolbox?: ToolboxConfig): ToolboxConfigInput {
-  if (!toolbox) return { slug: "", description: "", build: [], paths: [] };
+function toInput(
+  toolbox?: ToolboxConfig,
+  initial?: ToolboxConfigInput,
+): ToolboxConfigInput {
+  if (!toolbox) {
+    return initial ?? { slug: "", description: "", build: [], paths: [] };
+  }
   return {
     slug: toolbox.slug,
     description: toolbox.description,
@@ -104,12 +109,15 @@ function toInput(toolbox?: ToolboxConfig): ToolboxConfigInput {
  * ports/harness/source) for a dialog to stay legible. `toolbox` present =>
  * update; absent => create. JSON stays the source of truth via
  * `SpecEditorShell`; this component owns only the visual form + save wiring.
+ * `initial` prefills a create (a suggested toolbox); ignored on edit.
  */
 export function ToolboxEditor({
   toolbox,
+  initial,
   owner,
 }: {
   toolbox?: ToolboxConfig;
+  initial?: ToolboxConfigInput;
   owner: string;
 }) {
   const navigate = useNavigate();
@@ -119,7 +127,7 @@ export function ToolboxEditor({
   const isPending = createToolbox.isPending || updateToolbox.isPending;
 
   const [input, setInput] = useState<ToolboxConfigInput>(() =>
-    toInput(toolbox),
+    toInput(toolbox, initial),
   );
   // The processes/ports form validates locally (names, ports, readiness),
   // outside the shell's whole-spec parse; track it so Save can't persist a
@@ -238,7 +246,7 @@ function ToolboxVisualForm({
           value={spec.description}
           onChange={(e) => onChange({ ...spec, description: e.target.value })}
           required
-          placeholder="opencode + code-server (default)"
+          placeholder="opencode coding agent"
         />
       </div>
       <div className="space-y-1">

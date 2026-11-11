@@ -27,7 +27,9 @@ over MCP.
   notifications.
 - **Toolboxes.** Org-owned recipes (build steps, paths, processes, ports,
   files) compiled into versioned toolset artifacts that every spawn mounts. A
-  toolbox can auto-inject into every sandbox of its org.
+  toolbox can auto-inject into every sandbox of its org. The base images ship
+  no coding agent: the console's Library suggests starter toolboxes (opencode,
+  pi with CLIProxyAPI, code-server).
 - **Access.** A browser terminal, SSH through the server's own gateway, and
   public HTTPS URLs per port behind forward-auth.
 
