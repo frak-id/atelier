@@ -1,7 +1,8 @@
 # Atelier - dev-base image
-# Minimal development environment with Bun and Git
-# code-server and opencode are materialized into ~/.local/bin by the org
-# toolbox toolset artifact (docs/archive/proposals/composed-prebuild-volumes.md), not /opt/shared.
+# Minimal development environment with Bun and Git. No agent harness is baked
+# in: opencode, pi and tools like code-server come from toolboxes, whose
+# toolset artifacts materialize into ~/.local
+# (docs/archive/proposals/composed-prebuild-volumes.md), not /opt/shared.
 #
 # Build: docker build -t atelier/dev-base .
 # Export: docker export $(docker create atelier/dev-base) | tar -C ./rootfs -xf -
@@ -121,17 +122,14 @@ RUN curl -fsSL https://bun.sh/install | BUN_INSTALL=/home/dev/.bun bash \
 # Layer 5: Directory structure + permissions
 RUN mkdir -p /etc/sandbox/secrets /var/log/sandbox \
     /home/dev/.local/share/code-server/User \
-    /home/dev/.local/share/opencode \
-    /home/dev/.config/opencode \
-    /home/dev/.cache/oh-my-opencode \
     /.atelier \
     && chown -R dev:dev /home/dev /var/log/sandbox /etc/sandbox /.atelier \
     && chmod 775 /etc/sandbox /etc/sandbox/secrets /var/log/sandbox /.atelier
 
 # Layer 6: Profile scripts + config files (most likely to change)
 # Toolset artifacts (docs/archive/proposals/composed-prebuild-volumes.md) materialize binaries into
-# ~/.local/bin — the org toolbox (opencode, code-server) lands there instead
-# of the retired /opt/shared PVC. A login shell (supervisor spawns via
+# ~/.local/bin — toolboxes (opencode, pi, code-server) land there instead of
+# the retired /opt/shared PVC. A login shell (supervisor spawns via
 # `bash -l -c`) sources this, so PATH reaches every supervised process,
 # interactive terminal, and exec/hooks call.
 RUN echo 'export PATH="$HOME/.local/bin:$PATH"' > /etc/profile.d/local-bin.sh \

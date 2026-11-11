@@ -5,7 +5,6 @@
   "tools": [
     "chromium",
     "code-server",
-    "opencode",
     "bun",
     "node",
     "git",
