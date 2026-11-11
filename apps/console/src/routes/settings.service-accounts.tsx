@@ -381,7 +381,7 @@ function AccountFormDialog({
                   id="sa-name"
                   value={form.name}
                   onChange={(e) => patch({ name: e.target.value })}
-                  placeholder="daedalus"
+                  placeholder="coding-agent"
                   pattern="[a-z0-9]([a-z0-9\-]{0,37}[a-z0-9])?"
                   title="Lowercase letters, digits and dashes, up to 39 characters"
                   required

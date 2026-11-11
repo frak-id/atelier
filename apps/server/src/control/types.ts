@@ -144,7 +144,7 @@ export type ServiceAccountGitHubSummary =
 export interface ServiceAccount {
   /** The `users.id` (`sa_…`). */
   id: string;
-  /** The name it was created with (`daedalus`). */
+  /** The name it was created with (`coding-agent`). */
   name: string;
   /** `users.username`: `<name>[bot]`, never a valid GitHub login. */
   username: string;

@@ -163,26 +163,26 @@ needs: an installation token expires within the hour, a static token does not.
 {
   "serviceAccounts": [
     {
-      "name": "daedalus",
-      "org": "circles",            // org slug; must exist
+      "name": "coding-agent",
+      "org": "agents",             // org slug; must exist
       "role": "member",            // default
-      "description": "LibreChat agent",
+      "description": "Agents behind our MCP gateway",
       "github": {
         "appId": "123456",
         "installationId": "7890123",
-        "privateKeyEnv": "DAEDALUS_GITHUB_APP_KEY", // or "privateKeyFile": "/etc/atelier/daedalus.pem"
-        "repositories": ["circles-flow"],           // optional
+        "privateKeyEnv": "CODING_AGENT_GITHUB_APP_KEY", // or "privateKeyFile": "/etc/atelier/coding-agent.pem"
+        "repositories": ["my-repo"],                // optional
         "permissions": { "contents": "write", "pull_requests": "write" } // optional
       },
-      "apiKey": { "env": "DAEDALUS_ATELIER_API_KEY", "scope": "mcp" }
+      "apiKey": { "env": "CODING_AGENT_API_KEY", "scope": "mcp" }
     }
   ]
 }
 ```
 
 A static token instead of an App:
-`"github": { "tokenEnv": "DAEDALUS_GITHUB_TOKEN", "gitName": "circles-bot",
-"gitEmail": "bot@circles.example" }`.
+`"github": { "tokenEnv": "CODING_AGENT_GITHUB_TOKEN", "gitName": "my-bot",
+"gitEmail": "bot@example.com" }`.
 
 Secrets never go in the file. The App private key comes from `privateKeyEnv`
 or `privateKeyFile` (exactly one), a static token from `tokenEnv`, and the
