@@ -22,6 +22,7 @@ import {
 } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { NativeSelect } from "@/components/ui/native-select";
 import { Skeleton } from "@/components/ui/skeleton";
 import { formatRelativeTime } from "@/lib/formatters";
 
@@ -73,6 +74,7 @@ function ApiKeyRow({
     id: string;
     name: string;
     keyPrefix: string;
+    scope: "full" | "mcp";
     createdAt: string;
     lastUsedAt: string | null;
     expiresAt: string | null;
@@ -88,6 +90,9 @@ function ApiKeyRow({
           <span className="truncate font-medium">{apiKey.name}</span>
           <Badge variant="outline" className="font-mono">
             {apiKey.keyPrefix}…
+          </Badge>
+          <Badge variant={apiKey.scope === "mcp" ? "info" : "secondary"}>
+            {apiKey.scope === "mcp" ? "MCP only" : "Full access"}
           </Badge>
           <span className="text-xs text-muted-foreground">
             created {formatRelativeTime(apiKey.createdAt)}
@@ -143,6 +148,7 @@ function CreateApiKeyDialog({
   const createKey = useCreateApiKey();
   const [name, setName] = useState("");
   const [expiresAt, setExpiresAt] = useState("");
+  const [scope, setScope] = useState<"full" | "mcp">("full");
   const [rawKey, setRawKey] = useState<string | null>(null);
   const openRef = useRef(open);
   useEffect(() => {
@@ -152,14 +158,16 @@ function CreateApiKeyDialog({
   function reset() {
     setName("");
     setExpiresAt("");
+    setScope("full");
     setRawKey(null);
+    createKey.reset();
   }
 
   function handleSubmit(event: FormEvent) {
     event.preventDefault();
     if (!name) return;
     createKey.mutate(
-      { name, expiresAt: expiresAt || undefined },
+      { name, expiresAt: expiresAt || undefined, scope },
       {
         onSuccess: (data) => {
           // If the user dismissed the dialog before the response arrived, don't
@@ -170,14 +178,13 @@ function CreateApiKeyDialog({
     );
   }
 
+  function handleOpenChange(next: boolean) {
+    if (!next) reset();
+    onOpenChange(next);
+  }
+
   return (
-    <Dialog
-      open={open}
-      onOpenChange={(next) => {
-        if (!next) reset();
-        onOpenChange(next);
-      }}
-    >
+    <Dialog open={open} onOpenChange={handleOpenChange}>
       <DialogContent>
         {rawKey ? (
           <>
@@ -195,8 +202,10 @@ function CreateApiKeyDialog({
                 size="icon"
                 variant="outline"
                 onClick={() => {
-                  navigator.clipboard.writeText(rawKey);
-                  toast.success("Copied to clipboard");
+                  navigator.clipboard
+                    .writeText(rawKey)
+                    .then(() => toast.success("Copied to clipboard"))
+                    .catch(() => toast.error("Failed to copy to clipboard"));
                 }}
                 aria-label="Copy API key"
               >
@@ -239,12 +248,27 @@ function CreateApiKeyDialog({
                   onChange={(e) => setExpiresAt(e.target.value)}
                 />
               </div>
+              <div className="space-y-1">
+                <Label htmlFor="key-scope">Access</Label>
+                <NativeSelect
+                  id="key-scope"
+                  value={scope}
+                  onChange={(e) => setScope(e.target.value as "full" | "mcp")}
+                >
+                  <option value="full">Full access</option>
+                  <option value="mcp">MCP only</option>
+                </NativeSelect>
+                <p className="text-xs text-muted-foreground">
+                  MCP-only keys work on /mcp only, not on /mcp/admin or the HTTP
+                  API.
+                </p>
+              </div>
             </div>
             <DialogFooter>
               <Button
                 type="button"
                 variant="outline"
-                onClick={() => onOpenChange(false)}
+                onClick={() => handleOpenChange(false)}
               >
                 Cancel
               </Button>

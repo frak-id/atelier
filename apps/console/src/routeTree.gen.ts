@@ -26,6 +26,7 @@ import { Route as SettingsImagesRouteImport } from "./routes/settings.images"
 import { Route as SettingsOrganizationsRouteImport } from "./routes/settings.organizations"
 import { Route as SettingsPrebuildsRouteImport } from "./routes/settings.prebuilds"
 import { Route as SettingsSecretsRouteImport } from "./routes/settings.secrets"
+import { Route as SettingsServiceAccountsRouteImport } from "./routes/settings.service-accounts"
 import { Route as SettingsSshKeysRouteImport } from "./routes/settings.ssh-keys"
 import { Route as SettingsToolboxesRouteImport } from "./routes/settings.toolboxes"
 import { Route as SettingsUsersRouteImport } from "./routes/settings.users"
@@ -123,6 +124,11 @@ const SettingsSecretsRoute = SettingsSecretsRouteImport.update({
   path: "/secrets",
   getParentRoute: () => SettingsRoute,
 } as any)
+const SettingsServiceAccountsRoute = SettingsServiceAccountsRouteImport.update({
+  id: "/service-accounts",
+  path: "/service-accounts",
+  getParentRoute: () => SettingsRoute,
+} as any)
 const SettingsSshKeysRoute = SettingsSshKeysRouteImport.update({
   id: "/ssh-keys",
   path: "/ssh-keys",
@@ -196,6 +202,7 @@ export interface FileRoutesByFullPath {
   "/settings/organizations": typeof SettingsOrganizationsRoute
   "/settings/prebuilds": typeof SettingsPrebuildsRoute
   "/settings/secrets": typeof SettingsSecretsRoute
+  "/settings/service-accounts": typeof SettingsServiceAccountsRoute
   "/settings/ssh-keys": typeof SettingsSshKeysRoute
   "/settings/toolboxes": typeof SettingsToolboxesRoute
   "/settings/users": typeof SettingsUsersRoute
@@ -221,6 +228,7 @@ export interface FileRoutesByTo {
   "/settings/organizations": typeof SettingsOrganizationsRoute
   "/settings/prebuilds": typeof SettingsPrebuildsRoute
   "/settings/secrets": typeof SettingsSecretsRoute
+  "/settings/service-accounts": typeof SettingsServiceAccountsRoute
   "/settings/ssh-keys": typeof SettingsSshKeysRoute
   "/settings/toolboxes": typeof SettingsToolboxesRoute
   "/settings/users": typeof SettingsUsersRoute
@@ -252,6 +260,7 @@ export interface FileRoutesById {
   "/settings/organizations": typeof SettingsOrganizationsRoute
   "/settings/prebuilds": typeof SettingsPrebuildsRoute
   "/settings/secrets": typeof SettingsSecretsRoute
+  "/settings/service-accounts": typeof SettingsServiceAccountsRoute
   "/settings/ssh-keys": typeof SettingsSshKeysRoute
   "/settings/toolboxes": typeof SettingsToolboxesRoute
   "/settings/users": typeof SettingsUsersRoute
@@ -284,6 +293,7 @@ export interface FileRouteTypes {
     | "/settings/organizations"
     | "/settings/prebuilds"
     | "/settings/secrets"
+    | "/settings/service-accounts"
     | "/settings/ssh-keys"
     | "/settings/toolboxes"
     | "/settings/users"
@@ -309,6 +319,7 @@ export interface FileRouteTypes {
     | "/settings/organizations"
     | "/settings/prebuilds"
     | "/settings/secrets"
+    | "/settings/service-accounts"
     | "/settings/ssh-keys"
     | "/settings/toolboxes"
     | "/settings/users"
@@ -339,6 +350,7 @@ export interface FileRouteTypes {
     | "/settings/organizations"
     | "/settings/prebuilds"
     | "/settings/secrets"
+    | "/settings/service-accounts"
     | "/settings/ssh-keys"
     | "/settings/toolboxes"
     | "/settings/users"
@@ -484,6 +496,13 @@ declare module "@tanstack/react-router" {
       preLoaderRoute: typeof SettingsSecretsRouteImport
       parentRoute: typeof SettingsRoute
     }
+    "/settings/service-accounts": {
+      id: "/settings/service-accounts"
+      path: "/service-accounts"
+      fullPath: "/settings/service-accounts"
+      preLoaderRoute: typeof SettingsServiceAccountsRouteImport
+      parentRoute: typeof SettingsRoute
+    }
     "/settings/ssh-keys": {
       id: "/settings/ssh-keys"
       path: "/ssh-keys"
@@ -618,6 +637,7 @@ interface SettingsRouteChildren {
   SettingsOrganizationsRoute: typeof SettingsOrganizationsRoute
   SettingsPrebuildsRoute: typeof SettingsPrebuildsRoute
   SettingsSecretsRoute: typeof SettingsSecretsRoute
+  SettingsServiceAccountsRoute: typeof SettingsServiceAccountsRoute
   SettingsSshKeysRoute: typeof SettingsSshKeysRoute
   SettingsToolboxesRoute: typeof SettingsToolboxesRoute
   SettingsUsersRoute: typeof SettingsUsersRoute
@@ -631,6 +651,7 @@ const SettingsRouteChildren: SettingsRouteChildren = {
   SettingsOrganizationsRoute: SettingsOrganizationsRoute,
   SettingsPrebuildsRoute: SettingsPrebuildsRoute,
   SettingsSecretsRoute: SettingsSecretsRoute,
+  SettingsServiceAccountsRoute: SettingsServiceAccountsRoute,
   SettingsSshKeysRoute: SettingsSshKeysRoute,
   SettingsToolboxesRoute: SettingsToolboxesRoute,
   SettingsUsersRoute: SettingsUsersRoute,

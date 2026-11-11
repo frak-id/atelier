@@ -292,6 +292,10 @@ function OrgMembers({ orgId, role }: { orgId: string; role: OrgMemberRole }) {
     isError,
   } = useQuery(orgMembersQuery(orgId));
   const { data: currentUser } = useQuery(currentUserQuery());
+  const { data: directory } = useQuery(usersDirectoryQuery());
+  const serviceIds = new Set(
+    directory?.filter((user) => user.kind === "service").map((u) => u.id),
+  );
   const [addOpen, setAddOpen] = useState(false);
   const [pendingRemove, setPendingRemove] = useState<
     { userId: string; username: string } | undefined
@@ -313,7 +317,10 @@ function OrgMembers({ orgId, role }: { orgId: string; role: OrgMemberRole }) {
       ) : (
         members?.map((member) => {
           const isSelf = member.userId === currentUser?.id;
-          const manageable = canManage && !isSelf;
+          // Service accounts are managed in Settings > Service accounts: the
+          // server refuses role changes and removal here.
+          const isService = serviceIds.has(member.userId);
+          const manageable = canManage && !isSelf && !isService;
           return (
             <div
               key={member.id}
@@ -347,6 +354,14 @@ function OrgMembers({ orgId, role }: { orgId: string; role: OrgMemberRole }) {
                 ) : (
                   <Badge variant="secondary">{member.role}</Badge>
                 )}
+                {isService ? (
+                  <>
+                    <Badge variant="info">service</Badge>
+                    <span className="text-xs text-muted-foreground">
+                      Managed in Service accounts
+                    </span>
+                  </>
+                ) : null}
                 <span className="text-xs text-muted-foreground">
                   {formatRelativeTime(member.joinedAt)}
                 </span>
@@ -455,7 +470,10 @@ function AddMemberDialog({
   const [role, setRole] = useState<OrgMemberRole>("member");
 
   const memberIds = new Set(members?.map((m) => m.userId) ?? []);
-  const candidates = (users ?? []).filter((user) => !memberIds.has(user.id));
+  const candidates = (users ?? []).filter(
+    // Service accounts are managed in Settings > Service accounts.
+    (user) => user.kind !== "service" && !memberIds.has(user.id),
+  );
 
   function reset() {
     setUserId("");

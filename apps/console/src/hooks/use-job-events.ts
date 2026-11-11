@@ -199,6 +199,10 @@ function invalidateForKind(queryClient: QueryClient, job: Job): void {
       // onSuccess already refreshes), so this is a belt-and-suspenders
       // refresh of the sandbox list for any other watcher.
       queryClient.invalidateQueries({ queryKey: queryKeys.sandboxes.all });
+      // Service accounts list a per-account sandboxCount.
+      queryClient.invalidateQueries({
+        queryKey: queryKeys.serviceAccounts.list(),
+      });
       break;
   }
 }

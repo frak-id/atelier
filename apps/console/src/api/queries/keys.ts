@@ -35,6 +35,12 @@ export const queryKeys = {
     all: ["api-keys"] as const,
     list: () => [...queryKeys.apiKeys.all, "list"] as const,
   },
+  serviceAccounts: {
+    all: ["service-accounts"] as const,
+    list: () => [...queryKeys.serviceAccounts.all, "list"] as const,
+    keys: (id: string) =>
+      [...queryKeys.serviceAccounts.all, "keys", id] as const,
+  },
   sshKeys: {
     all: ["ssh-keys"] as const,
     list: () => [...queryKeys.sshKeys.all, "list"] as const,
