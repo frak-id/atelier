@@ -36,6 +36,8 @@ function mkUser(name: string): void {
     username: name,
     email: `${name}@x.test`,
     avatarUrl: "",
+    kind: "human",
+    scope: "full",
   };
 }
 
@@ -232,10 +234,11 @@ describe("`repo` on the create body", () => {
     bakedFor.length = 0;
     fallbackWarning = "could not build the current prebuild";
     const res = await call("alice", "POST", "/v1/sandboxes", { ...body, repo });
-    fallbackWarning = undefined;
     expect(res.status).toBe(202);
     const id = ((await res.json()) as { id: string }).id;
+    // The bake runs in the job: keep the failure armed until it has settled.
     await settle(id);
+    fallbackWarning = undefined;
     expect(captured[0]?.source).toEqual({ snapshot: "snap:last-good" });
     const job = jobs.get(id);
     expect(job.status).toBe("succeeded");

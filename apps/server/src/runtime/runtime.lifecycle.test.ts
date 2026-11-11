@@ -611,7 +611,8 @@ describe("prebuild creator", () => {
       createdAt: new Date().toISOString(),
     });
     const asked: string[] = [];
-    const stale = await runtime.prebuilds.findStale((userId) => {
+    // An async resolver: a service account's token is minted over the network.
+    const stale = await runtime.prebuilds.findStale(async (userId) => {
       asked.push(userId);
       return `tok-${userId}`;
     });
@@ -631,6 +632,54 @@ describe("prebuild creator", () => {
     expect(snapshots.get(fresh.ref)?.createdBy).toBe("alice");
     // Nothing is stale any more.
     expect(await runtime.prebuilds.findStale()).toEqual([]);
+  });
+
+  test("a failing token resolver skips that prebuild and the check goes on", async () => {
+    const { runtime, snapshots } = makeRuntime();
+    for (const [who, hash] of [
+      ["bob", "h-bob"],
+      ["alice", "h-alice"],
+    ] as const) {
+      snapshots.put({
+        hash,
+        kind: "prebuild",
+        ref: `snap-${who}`,
+        image: "registry.test/base:1",
+        spec: baked,
+        createdBy: who,
+        createdAt: new Date().toISOString(),
+      });
+    }
+    const asked: string[] = [];
+    const stale = await runtime.prebuilds.findStale(async (userId) => {
+      asked.push(userId);
+      if (userId === "bob") throw new Error("mint failed");
+      return `tok-${userId}`;
+    });
+    expect([...asked].sort()).toEqual(["alice", "bob"]);
+    expect(stale.map((s) => s.createdBy)).toEqual(["alice"]);
+  });
+});
+
+describe("writeFilesQuietly", () => {
+  test("writes like patchFiles but is not activity", async () => {
+    const { runtime } = makeRuntime();
+    await runtime.create(spec, { id: "sb1" });
+    const file = [{ path: "/etc/x", content: "v" }];
+
+    const quiet = await runtime.writeFilesQuietly("sb1", file);
+    expect(quiet.results).toEqual([{ path: "/etc/x", success: true }]);
+    expect(runtime.activityRecord("sb1").last.api).toBeUndefined();
+
+    await runtime.patchFiles("sb1", file);
+    expect(runtime.activityRecord("sb1").last.api).toBeDefined();
+  });
+
+  test("refuses a sandbox that is not running", async () => {
+    const { runtime } = makeRuntime();
+    await runtime.create(spec, { id: "sb1" });
+    await runtime.pause("sb1");
+    await expect(runtime.writeFilesQuietly("sb1", [])).rejects.toThrow();
   });
 });
 

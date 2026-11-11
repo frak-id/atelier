@@ -12,6 +12,9 @@ import type { OrgMemberRepository } from "./org-member.repository.ts";
 
 const log = createChildLogger("org-member-service");
 
+const SERVICE_ACCOUNT_MANAGED =
+  "Service accounts are managed in Settings > Service accounts";
+
 /**
  * The RBAC guard for the whole control layer. Two roles: `owner` (members,
  * secrets, rename/delete the org) and `member` (everything else in the org).
@@ -58,6 +61,7 @@ export class OrgMemberService {
     role: OrgMemberRole = "member",
   ): OrgMember {
     this.requireOwner(orgId, actorId);
+    this.assertNotServiceAccount(userId);
     return this.addMember(orgId, userId, role);
   }
 
@@ -91,7 +95,7 @@ export class OrgMemberService {
 
   /**
    * Change `targetId`'s role on behalf of `actorId` (an owner). An org always
-   * keeps at least one owner.
+   * keeps at least one owner. A service account's role is not changed here.
    */
   updateRole(
     orgId: string,
@@ -100,17 +104,33 @@ export class OrgMemberService {
     role: OrgMemberRole,
   ): OrgMember {
     this.requireOwner(orgId, actorId);
-    const member = this.getMembership(orgId, targetId);
-    if (!member) throw new NotFoundError("OrgMember", `${orgId}/${targetId}`);
+    this.assertNotServiceAccount(targetId);
+    const updated = this.setRole(orgId, targetId, role);
+    log.info({ orgId, actorId, targetId, role }, "Member role changed");
+    return updated;
+  }
+
+  /** Unchecked role change, for the service-account service (the admin
+   * routes authorize it). Still keeps at least one owner. */
+  setRole(orgId: string, userId: string, role: OrgMemberRole): OrgMember {
+    const member = this.getMembership(orgId, userId);
+    if (!member) throw new NotFoundError("OrgMember", `${orgId}/${userId}`);
     if (member.role === "owner" && role !== "owner") {
       this.assertNotLastOwner(orgId);
     }
-
     this.orgMemberRepository.updateRole(member.id, role);
-    const updated = this.orgMemberRepository.getByOrgAndUser(orgId, targetId);
+    const updated = this.orgMemberRepository.getByOrgAndUser(orgId, userId);
     if (!updated) throw new Error("Failed to update member");
-    log.info({ orgId, actorId, targetId, role }, "Member role changed");
     return updated;
+  }
+
+  /** Unchecked removal, for the service-account service. Keeps at least one
+   * owner. A user who isn't a member is a no-op. */
+  removeUnchecked(orgId: string, userId: string): void {
+    const member = this.getMembership(orgId, userId);
+    if (!member) return;
+    if (member.role === "owner") this.assertNotLastOwner(orgId);
+    this.orgMemberRepository.deleteByOrgAndUser(orgId, userId);
   }
 
   /**
@@ -119,6 +139,10 @@ export class OrgMemberService {
    * last owner can never leave or be removed.
    */
   removeMember(orgId: string, actorId: string, targetId: string): void {
+    // A service account can't leave on its own, nor be removed by an org
+    // owner: only a server admin changes its membership.
+    this.assertNotServiceAccount(targetId);
+    this.assertNotServiceAccount(actorId);
     const member = this.getMembership(orgId, targetId);
     if (actorId === targetId) {
       if (!member)
@@ -133,6 +157,12 @@ export class OrgMemberService {
 
     this.orgMemberRepository.deleteByOrgAndUser(orgId, targetId);
     log.info({ orgId, actorId, targetId }, "Member removed from organization");
+  }
+
+  private assertNotServiceAccount(userId: string): void {
+    if (this.userRepository.getById(userId)?.kind === "service") {
+      throw new ForbiddenError(SERVICE_ACCOUNT_MANAGED);
+    }
   }
 
   private assertNotLastOwner(orgId: string): void {

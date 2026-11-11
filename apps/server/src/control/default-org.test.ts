@@ -73,6 +73,24 @@ describe("default org", () => {
     expect(() => control.defaultOrg.requireServerAdmin(owner)).not.toThrow();
   });
 
+  test("a service account is an admin only as an owner of the default org", () => {
+    control.defaultOrg.joinDefaultOrg(user());
+    const team = control.organizationService.getBySlug("team");
+    const orgId = team?.id ?? "";
+    const other = control.organizationService.create("Elsewhere", "elsewhere");
+    const make = (n: string, org: string, role: "owner" | "member") =>
+      control.serviceAccountService.create({ name: n, orgId: org, role }).id;
+    expect(
+      control.defaultOrg.isServerAdmin(make("sa-own", orgId, "owner")),
+    ).toBe(true);
+    expect(
+      control.defaultOrg.isServerAdmin(make("sa-mem", orgId, "member")),
+    ).toBe(false);
+    expect(
+      control.defaultOrg.isServerAdmin(make("sa-oth", other.id, "owner")),
+    ).toBe(false);
+  });
+
   test("the default org's slug can't be taken, changed or deleted through the API", () => {
     control.defaultOrg.joinDefaultOrg(user());
     const team = control.organizationService.getBySlug("team");

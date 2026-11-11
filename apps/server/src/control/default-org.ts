@@ -6,6 +6,7 @@
  * With no `defaultOrg` configured there is no admin concept: everyone is an
  * admin. Production refuses to start without it (`validateConfig`).
  * Auth-bypassed modes (local) are single-user: everyone is an admin there too.
+ * Neither shortcut applies to a service account.
  */
 import { ForbiddenError, ValidationError } from "../shared/errors.ts";
 import { config, isAuthBypassed } from "../shared/lib/config.ts";
@@ -18,11 +19,13 @@ const log = createChildLogger("default-org");
 export interface DefaultOrgDeps {
   organizationService: OrganizationService;
   orgMemberService: OrgMemberService;
+  isServiceAccount: (userId: string) => boolean;
 }
 
 export function createDefaultOrg({
   organizationService,
   orgMemberService,
+  isServiceAccount,
 }: DefaultOrgDeps) {
   /** The configured team org, when it is set and exists. */
   const defaultOrgId = (): string | undefined => {
@@ -31,6 +34,15 @@ export function createDefaultOrg({
   };
 
   const isServerAdmin = (userId: string): boolean => {
+    // A service account is an admin only as a real owner of the configured
+    // default org: never through the open modes.
+    if (isServiceAccount(userId)) {
+      const orgId = defaultOrgId();
+      return (
+        !!orgId &&
+        orgMemberService.getMembership(orgId, userId)?.role === "owner"
+      );
+    }
     if (isAuthBypassed() || !config.auth.defaultOrg) return true;
     const orgId = defaultOrgId();
     if (!orgId) return false;

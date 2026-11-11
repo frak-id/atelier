@@ -5,7 +5,7 @@
  * pipeline.
  */
 
-import { isAuthBypassed } from "../shared/lib/config.ts";
+import { config, isAuthBypassed } from "../shared/lib/config.ts";
 import { AuthService } from "./auth.ts";
 import { createDefaultOrg } from "./default-org.ts";
 import {
@@ -14,6 +14,8 @@ import {
   reattributeSpec,
   resolveBootSpec,
 } from "./enrichment.ts";
+import { GitCredentialService } from "./git-credentials.ts";
+import { GitHubAppClient } from "./github-app.ts";
 import { GitHubRepoService } from "./github-repos.ts";
 import { ApiKeyRepository, ApiKeyService } from "./modules/api-key/index.ts";
 import { IdlePolicyService } from "./modules/idle-policy/index.ts";
@@ -34,6 +36,10 @@ import {
   ServerConfigRepository,
   ServerConfigService,
 } from "./modules/server-config/index.ts";
+import {
+  ServiceAccountRepository,
+  ServiceAccountService,
+} from "./modules/service-account/index.ts";
 import { SshKeyRepository, SshKeyService } from "./modules/ssh-key/index.ts";
 import { ToolboxRepository, ToolboxService } from "./modules/toolbox/index.ts";
 import {
@@ -47,6 +53,7 @@ import {
   type SandboxLabels,
   sandboxSshKeys,
 } from "./sandbox-access.ts";
+import { createServiceAccountReconciler } from "./service-account-config.ts";
 
 export function createControlContainer() {
   const userRepository = new UserRepository();
@@ -58,6 +65,7 @@ export function createControlContainer() {
   const serverConfigRepository = new ServerConfigRepository();
   const toolboxRepository = new ToolboxRepository();
   const toolboxVersionRepository = new ToolboxVersionRepository();
+  const serviceAccountRepository = new ServiceAccountRepository();
 
   const userService = new UserService(userRepository);
   const organizationService = new OrganizationService(organizationRepository);
@@ -77,18 +85,47 @@ export function createControlContainer() {
   const ownershipTransferService = new OwnershipTransferService(
     new OwnershipTransferRepository(),
   );
+  const gitCredentials = new GitCredentialService({
+    users: userService,
+    serviceAccounts: serviceAccountRepository,
+    app: new GitHubAppClient(),
+  });
+
+  const serviceAccountService = new ServiceAccountService({
+    repository: serviceAccountRepository,
+    organizations: organizationService,
+    orgMembers: orgMemberService,
+    apiKeys: apiKeyService,
+    users: userRepository,
+    // `forget` never rejects: a failed revocation is logged inside.
+    credentialDropped: (id, change) =>
+      void gitCredentials.forget(id, { revoke: change === "removed" }),
+  });
+  const serviceAccountReconciler = createServiceAccountReconciler({
+    declared: () => config.serviceAccounts,
+    accounts: serviceAccountService,
+    repository: serviceAccountRepository,
+    organizations: organizationService,
+    orgMembers: orgMemberService,
+    apiKeys: apiKeyService,
+  });
   const authService = new AuthService({ apiKeyService, userService });
   const gitHubRepoService = new GitHubRepoService({ userService });
 
+  const isServiceAccount = (userId: string) =>
+    userService.getById(userId)?.kind === "service";
   const defaultOrg = createDefaultOrg({
     organizationService,
     orgMemberService,
+    isServiceAccount,
   });
 
   const accessDeps: SandboxAccessDeps = {
     isAuthBypassed,
     isOrgMember: (orgId, userId) =>
       orgMemberService.getMembership(orgId, userId) !== undefined,
+    isServiceAccount,
+    isServerAdmin: defaultOrg.isServerAdmin,
   };
 
   return {
@@ -98,6 +135,10 @@ export function createControlContainer() {
     apiKeyService,
     sshKeyService,
     secretService,
+    serviceAccountService,
+    /** Make the database match `serviceAccounts` in the config (startup, then
+     * every few minutes from the scheduler). Never throws. */
+    reconcileServiceAccounts: () => serviceAccountReconciler.reconcile(),
     serverConfigService,
     idlePolicyService,
     toolboxService,
@@ -105,6 +146,9 @@ export function createControlContainer() {
     authService,
     gitHubRepoService,
     ownershipTransferService,
+    /** Git identity and GitHub token of a sandbox owner (people and
+     * service accounts alike). */
+    gitCredentials,
     /** `auth.defaultOrg`: default spawn org, auto-join, server admins. */
     defaultOrg,
     /** Create-time enrichment: what `api/` hands to `runtime.create()` and
@@ -116,7 +160,10 @@ export function createControlContainer() {
     /** Boot-time resolution, injected into the runtime: a stored spec in,
      * the spec a boot runs with (secrets and fresh git files) out. */
     resolveBootSpec: (spec: Parameters<typeof resolveBootSpec>[0]) =>
-      resolveBootSpec(spec, { secrets: secretService, users: userService }),
+      resolveBootSpec(spec, {
+        secrets: secretService,
+        credentials: gitCredentials,
+      }),
     /** Re-attribute a stored spec to a new owner (fork); pure, no deps. */
     reattributeSpec,
     /** The SSH public keys allowed into one sandbox (see sandbox-access.ts). */

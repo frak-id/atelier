@@ -33,6 +33,7 @@ const rows: JobRecord[] = [
   }),
   job("pause-alice-box", { kind: "sandbox-pause", target: "alice-box" }),
   job("image", { kind: "image-build", target: "dev-base" }),
+  job("bot-bake", { metadata: { owner: "bot" } }),
 ];
 
 const canceled: string[] = [];
@@ -75,7 +76,14 @@ beforeAll(async () => {
       },
       canAccessSandbox: (userId: string, l: { metadata?: object }) =>
         (l.metadata as Record<string, string>)[OWNER] === userId,
-      defaultOrg: { isServerAdmin: (userId: string) => userId === "root" },
+      // "bot" is a service account that happens to own the default org.
+      userService: {
+        getById: (id: string) => ({ kind: id === "bot" ? "service" : "human" }),
+      },
+      defaultOrg: {
+        isServerAdmin: (userId: string) =>
+          userId === "root" || userId === "bot",
+      },
     },
   } as unknown as ServerContainer;
   const { createV1Routes } = await import("./v1.routes.ts");
@@ -119,6 +127,10 @@ describe("GET /v1/jobs", () => {
     expect(await visibleIds("root")).toHaveLength(rows.length);
   });
 
+  test("a service account sees its own jobs only, even as an admin", async () => {
+    expect(await visibleIds("bot")).toEqual(["bot-bake", "image"]);
+  });
+
   test("the limit applies after the scoping", async () => {
     const res = await request("bob", "GET", "/v1/jobs?limit=1");
     expect(((await res.json()) as JobRecord[]).map((j) => j.id)).toEqual([
@@ -157,6 +169,17 @@ describe("POST /v1/jobs/:id/cancel", () => {
     const res = await request("bob", "POST", "/v1/jobs/image/cancel");
     expect(res.status).toBe(403);
     expect(canceled).toEqual([]);
+  });
+
+  test("a service account cancels its own job, not another's, even as an admin", async () => {
+    expect(
+      (await request("bot", "POST", "/v1/jobs/alice-bake/cancel")).status,
+    ).toBe(404);
+    expect(
+      (await request("bot", "POST", "/v1/jobs/bot-bake/cancel")).status,
+    ).toBe(200);
+    expect(canceled).toEqual(["bot-bake"]);
+    canceled.length = 0;
   });
 
   test("the owner and a server admin cancel", async () => {

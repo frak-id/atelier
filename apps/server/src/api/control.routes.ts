@@ -18,10 +18,13 @@ import {
 import { isAuthBypassed } from "../shared/lib/config.ts";
 import { createAuthPlugin } from "./auth.plugin.ts";
 import type { ServerContainer } from "./container.ts";
+import { refuseServiceAccount } from "./refuse-service-account.ts";
 import { resolveToolboxOrg } from "./toolbox-access.ts";
 import { startToolboxRefresh } from "./toolbox-refresh.ts";
 
 const OrgRoleSchema = t.Union([t.Literal("owner"), t.Literal("member")]);
+
+const ApiKeyScopeSchema = t.Union([t.Literal("full"), t.Literal("mcp")]);
 
 const OrgSlugSchema = t.String({
   minLength: 1,
@@ -44,15 +47,22 @@ export function createControlRoutes(container: ServerContainer) {
 
   const apiKeyRoutes = new Elysia({ prefix: "/api-keys" })
     .use(authPlugin)
+    .onBeforeHandle(({ user }) => refuseServiceAccount(user, "API keys"))
     .get("/", ({ user }) => control.apiKeyService.listByUser(user.id))
     .post(
       "/",
       ({ user, body }) =>
-        control.apiKeyService.create(user.id, body.name, body.expiresAt),
+        control.apiKeyService.create(
+          user.id,
+          body.name,
+          body.expiresAt,
+          body.scope,
+        ),
       {
         body: t.Object({
           name: t.String({ minLength: 1, maxLength: 100 }),
           expiresAt: t.Optional(t.String()),
+          scope: t.Optional(ApiKeyScopeSchema),
         }),
       },
     )
@@ -63,6 +73,7 @@ export function createControlRoutes(container: ServerContainer) {
 
   const sshKeyRoutes = new Elysia({ prefix: "/ssh-keys" })
     .use(authPlugin)
+    .onBeforeHandle(({ user }) => refuseServiceAccount(user, "SSH keys"))
     .get("/", ({ user }) => control.sshKeyService.listByUserId(user.id))
     .post(
       "/",
@@ -151,6 +162,7 @@ export function createControlRoutes(container: ServerContainer) {
     .post(
       "/",
       ({ user, body }) => {
+        refuseServiceAccount(user, "organizations");
         // Resolve the caller before creating: a failing `addMember` after the
         // insert would leave an org nobody belongs to.
         control.userService.getByIdOrThrow(user.id);
@@ -298,6 +310,8 @@ export function createControlRoutes(container: ServerContainer) {
     });
 
   const { toolboxOps } = container;
+  // A toolbox runs in every member's sandbox: a service account only uses
+  // them, so create, update, delete, pin and publish refuse it.
   const toolboxRoutes = new Elysia({ prefix: "/toolboxes" })
     .use(authPlugin)
     .get(
@@ -310,7 +324,10 @@ export function createControlRoutes(container: ServerContainer) {
     )
     .post(
       "/",
-      ({ user, query, body }) => toolboxOps.create(user.id, query.owner, body),
+      ({ user, query, body }) => {
+        refuseServiceAccount(user, "toolboxes");
+        return toolboxOps.create(user.id, query.owner, body);
+      },
       {
         query: t.Object({ owner: t.Optional(t.String()) }),
         body: ToolboxConfigInputSchema,
@@ -318,10 +335,14 @@ export function createControlRoutes(container: ServerContainer) {
     )
     .patch(
       "/:id",
-      ({ user, params, body }) => toolboxOps.update(user.id, params.id, body),
+      ({ user, params, body }) => {
+        refuseServiceAccount(user, "toolboxes");
+        return toolboxOps.update(user.id, params.id, body);
+      },
       { body: ToolboxConfigPatchSchema },
     )
     .delete("/:id", ({ user, params, set }) => {
+      refuseServiceAccount(user, "toolboxes");
       toolboxOps.delete(user.id, params.id);
       set.status = 204;
     })
@@ -376,9 +397,12 @@ export function createControlRoutes(container: ServerContainer) {
     })
     .put(
       "/:id/active-version",
-      ({ user, params, body }) => ({
-        activeVersionId: toolboxOps.pin(user.id, params.id, body.versionId),
-      }),
+      ({ user, params, body }) => {
+        refuseServiceAccount(user, "toolboxes");
+        return {
+          activeVersionId: toolboxOps.pin(user.id, params.id, body.versionId),
+        };
+      },
       {
         body: t.Object({
           versionId: t.Union([t.String(), t.Null()]),
@@ -388,9 +412,10 @@ export function createControlRoutes(container: ServerContainer) {
     // Mark a version's artifact as shareable (flip `private` off). Same
     // bytes, same digest: publishing never changes what a pin replays. Scoped
     // to the toolbox's owner, unlike the raw `POST /v1/toolsets/publish`.
-    .post("/:id/versions/:versionId/publish", ({ user, params }) =>
-      toolboxOps.publish(user.id, params.id, params.versionId),
-    )
+    .post("/:id/versions/:versionId/publish", ({ user, params }) => {
+      refuseServiceAccount(user, "toolboxes");
+      return toolboxOps.publish(user.id, params.id, params.versionId);
+    })
     .delete("/:id/versions/:versionId", ({ user, params, set }) => {
       toolboxOps.deleteVersion(user.id, params.id, params.versionId);
       set.status = 204;

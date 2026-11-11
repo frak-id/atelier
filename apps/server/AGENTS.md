@@ -99,9 +99,12 @@ stream code that participates in the `App` type may need the same cast.
 ## Sandbox access rule
 
 `control/sandbox-access.ts` (`canAccessSandbox`) is the one rule for who may
-address a sandbox id: the owner (`atelier.dev/owner-id`) or a member of its
-org (`atelier.dev/org-id`). Auth-bypassed mode is open, and a sandbox with
-neither label is reachable by nobody. `api/sandbox-guard.ts` binds it: one
+address a sandbox id: the owner (`atelier.dev/owner-id`), a person who is a
+member of its org (`atelier.dev/org-id`), or a server admin when the owner is
+a service account. A service account reaches ONLY the sandboxes it owns, in
+local mode too: an org member's sandbox holds that person's git token.
+Auth-bypassed mode is open to people, and a sandbox with neither label is reachable by nobody. SSH keeps the
+plain owner/org rule (`sandboxSshKeys`). `api/sandbox-guard.ts` binds it: one
 `onBeforeHandle` guard per router whose `:id` is a sandbox, `requireSandboxAccess`
 in WS `open` handlers and in every MCP tool taking a sandbox id, and
 `accessibleSandboxes` for list endpoints. Denied and unknown both answer
@@ -122,11 +125,45 @@ changed by its creator or an admin, and `GET /v1/prebuilds` masks `env` values
 and file contents for everyone else. The default org's slug is reserved: it
 cannot be renamed, deleted or created through the API (only
 `joinDefaultOrg` creates it on a fresh install). In local mode, or when
-`auth.defaultOrg` is unset (only allowed outside production), everyone is an
-admin.
+`auth.defaultOrg` is unset (only allowed outside production), every person is an
+admin; a service account never is, unless it owns the default org.
+
+## Service accounts
+
+A service account (SA) is a `users` row of kind `service` (id `sa_…`,
+username `<name>[bot]`) plus a `service_accounts` row, managed by server
+admins at `/api/service-accounts` (`api/service-accounts.routes.ts`,
+`control/modules/service-account/`). Agents use it through `/mcp` with its own
+API key and own sandboxes. Rules:
+
+- Never implicitly an admin: `member` of its org, `owner` only if an admin
+  says so. Never a console login (a JWT whose `sub` is an SA is refused), no
+  self-service API/SSH keys or org creation (403), and `OrgMemberService`
+  refuses invite/role/remove on it; only `ServiceAccountService` changes its
+  membership (unchecked `addMember`/`setRole`/`removeUnchecked`).
+- API keys carry a `scope`: `mcp` works on `/mcp` only (403 on `/mcp/admin` and
+  on every route using the auth plugin, `AuthService.resolveToken(token,
+  surface)`), `full` everywhere. Admin-created SA keys default to `mcp`.
+- Its GitHub credential (App installation token or static token) is its own,
+  never a person's token, also in local mode (`resolveGitHubToken` returns
+  nothing for an SA). `control/git-credentials.ts` (`GitCredentialService`)
+  is the one place that turns an owner id into a token and git identity:
+  boot (`resolveBootSpec`), prebuild bakes and the staleness check all go
+  through it. `api/git-credential-refresh.ts` rewrites the git files of
+  running SA sandboxes every 5 minutes (App tokens last an hour) with
+  `runtime.writeFilesQuietly`, which doesn't count as activity.
+- `sandbox.config.json` `serviceAccounts` declares accounts
+  (`control/service-account-config.ts`, reconciled at startup and every 5
+  minutes). Such accounts are `managedBy: "config"`: not editable or deletable
+  in the console; their config key (hash of an env var's value) is not
+  revocable. An account dropped from the file becomes console-managed and its
+  config key is revoked.
+- Sandboxes of an SA carry `atelier.dev/owner-kind: service` (stamped by
+  `stampOwner`, never caller-supplied).
 
 ## Related docs
 
+- Service accounts: `docs/service-accounts.md`
 - Idle auto-pause and auto-resume: `docs/idle-autopause.md`
 - Toolbox versions, refresh and transfer: `docs/toolbox-versions.md`
 - Config keys: `docs/advanced-configuration.md`

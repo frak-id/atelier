@@ -28,21 +28,24 @@ import {
   OWNER_ANNOTATION,
   OWNER_EMAIL_ANNOTATION,
   OWNER_ID_METADATA,
+  OWNER_KIND_ANNOTATION,
 } from "../shared/lib/git-attribution.ts";
 import { createChildLogger } from "../shared/lib/logger.ts";
 
 /** Display/routing annotation a composed harness stamps onto the spec. */
 const HARNESS_ANNOTATION = "atelier.dev/harness";
 
+import type { GitCredentialService } from "./git-credentials.ts";
 import type { SecretService } from "./modules/secret/index.ts";
-import type { UserService } from "./modules/user/index.ts";
+import type { UserKind } from "./types.ts";
 
 const log = createChildLogger("enrichment");
 
-/** What `resolveBootSpec` reads: secret values and the owner's identity/token. */
+/** What `resolveBootSpec` reads: secret values and the owner's git
+ * identity and token. */
 export interface BootSpecDeps {
   secrets: SecretService;
-  users: Pick<UserService, "getById" | "resolveGitHubToken">;
+  credentials: Pick<GitCredentialService, "resolve">;
 }
 
 /**
@@ -54,6 +57,8 @@ export interface OwnerContext {
   id: string;
   username: string;
   email: string;
+  /** `service` stamps the owner-kind annotation; absent means a person. */
+  kind?: UserKind;
 }
 
 /** Options carrying pre-resolved, per-request enrichment hints. */
@@ -176,12 +181,19 @@ function stampOwner(
   owner: OwnerContext | undefined,
 ): SandboxSpec {
   if (!owner) return spec;
+  // Server-owned like the owner-id: a caller-supplied owner-kind never
+  // survives, a person's sandbox carries none.
+  const { [OWNER_KIND_ANNOTATION]: _callerKind, ...callerAnnotations } =
+    spec.annotations ?? {};
   return {
     ...spec,
     annotations: {
-      ...spec.annotations,
+      ...callerAnnotations,
       [OWNER_ANNOTATION]: owner.username,
       [OWNER_EMAIL_ANNOTATION]: owner.email,
+      ...(owner.kind === "service"
+        ? { [OWNER_KIND_ANNOTATION]: "service" }
+        : {}),
     },
     metadata: {
       ...spec.metadata,
@@ -206,6 +218,7 @@ export function reattributeSpec(
   const {
     [OWNER_ANNOTATION]: _owner,
     [OWNER_EMAIL_ANNOTATION]: _ownerEmail,
+    [OWNER_KIND_ANNOTATION]: _ownerKind,
     ...annotations
   } = spec.annotations ?? {};
   return stampOwner(
@@ -239,7 +252,7 @@ export function enrichSpec(
  */
 export async function resolveBootSpec(
   spec: SandboxSpec,
-  { secrets, users }: BootSpecDeps,
+  { secrets, credentials }: BootSpecDeps,
 ): Promise<SandboxSpec> {
   const resolved = await resolveSecrets(
     spec,
@@ -247,10 +260,10 @@ export async function resolveBootSpec(
     secrets,
   );
   const ownerId = spec.metadata?.[OWNER_ID_METADATA];
-  const owner = ownerId ? users.getById(ownerId) : undefined;
+  const credential = ownerId ? await credentials.resolve(ownerId) : undefined;
   const gitFiles = buildGitAttributionFiles({
-    identity: owner ? { name: owner.username, email: owner.email } : undefined,
-    githubToken: ownerId ? users.resolveGitHubToken(ownerId) : undefined,
+    identity: credential?.identity,
+    githubToken: credential?.token,
   });
   const files = [
     // Stale git files from a spec stored before they were added at boot are

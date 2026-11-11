@@ -54,6 +54,8 @@ function mkUser(name: string): AuthUser {
     username: `ar-${name}`,
     email: u.email,
     avatarUrl: "",
+    kind: "human" as const,
+    scope: "full" as const,
   };
   users[`tok-${name}`] = user;
   return user;

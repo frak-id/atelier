@@ -412,6 +412,65 @@ const SnapshotConfigSchema = Type.Object(
 );
 
 // ---------------------------------------------------------------------------
+// Service accounts
+// ---------------------------------------------------------------------------
+
+/** An App credential: the private key comes from an env var or a file. */
+const ServiceAccountAppSchema = Type.Object({
+  appId: Type.Union([Type.String(), Type.Number()]),
+  installationId: Type.Union([Type.String(), Type.Number()]),
+  /** Env var holding the PEM private key (exactly one of env/file). */
+  privateKeyEnv: Type.Optional(Type.String()),
+  /** Path of the PEM private key (exactly one of env/file). */
+  privateKeyFile: Type.Optional(Type.String()),
+  /** Bare repository names the installation token is limited to. */
+  repositories: Type.Optional(Type.Array(Type.String())),
+  /** Wanted installation permissions, e.g. `{ "contents": "write" }`. */
+  permissions: Type.Optional(Type.Record(Type.String(), Type.String())),
+});
+
+/** A static token (a PAT or machine-user token) read from an env var. */
+const ServiceAccountTokenSchema = Type.Object({
+  tokenEnv: Type.String(),
+  gitName: Type.String(),
+  gitEmail: Type.String(),
+});
+
+/**
+ * A service account declared in the config: reconciled at startup and every
+ * few minutes. Managed accounts can't be edited or deleted in the console.
+ * Secrets are never in the file: they come from env vars (or a key file).
+ */
+const ServiceAccountConfigSchema = Type.Object({
+  /** `^[a-z0-9](?:[a-z0-9-]{0,37}[a-z0-9])?$`; its git login is `<name>[bot]` */
+  name: Type.String(),
+  /** Slug of the (team) organization it belongs to; must exist */
+  org: Type.String(),
+  role: Type.Optional(
+    Type.Union([Type.Literal("owner"), Type.Literal("member")], {
+      default: "member",
+    }),
+  ),
+  description: Type.Optional(Type.String()),
+  github: Type.Optional(
+    Type.Union([ServiceAccountAppSchema, ServiceAccountTokenSchema]),
+  ),
+  /** The account's API key, supplied by an env var (`atl_` + 32+ chars) */
+  apiKey: Type.Optional(
+    Type.Object({
+      env: Type.String(),
+      scope: Type.Optional(
+        Type.Union([Type.Literal("mcp"), Type.Literal("full")], {
+          default: "mcp",
+        }),
+      ),
+    }),
+  ),
+});
+
+export type ServiceAccountConfig = Static<typeof ServiceAccountConfigSchema>;
+
+// ---------------------------------------------------------------------------
 // Root config
 // ---------------------------------------------------------------------------
 
@@ -427,6 +486,7 @@ export const AtelierConfigSchema = Type.Object({
   sandbox: SandboxDefaultsSchema,
   ports: PortsConfigSchema,
   imageBuilder: ImageBuilderConfigSchema,
+  serviceAccounts: Type.Array(ServiceAccountConfigSchema, { default: [] }),
 });
 
 export type AtelierConfig = Static<typeof AtelierConfigSchema>;

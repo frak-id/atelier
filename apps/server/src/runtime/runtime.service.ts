@@ -818,6 +818,18 @@ export class RuntimeService {
     return writePatchFiles(this.agent, id, files);
   }
 
+  /** `patchFiles` for server-side housekeeping (rotating a credential file):
+   * the write is not user activity, so it does not touch the activity
+   * clocks, which would keep an idle sandbox awake forever. Running
+   * sandboxes only. */
+  async writeFilesQuietly(
+    id: string,
+    files: PatchFilesRequest,
+  ): Promise<WriteFilesResult> {
+    this.requireRunning(id);
+    return writePatchFiles(this.agent, id, files);
+  }
+
   async exec(id: string, req: ExecRequest) {
     this.require(id);
     this.activity.touch(id, "api");

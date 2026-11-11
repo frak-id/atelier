@@ -25,6 +25,7 @@ import { z } from "zod";
 import type { AuthUser } from "../../../control/index.ts";
 import { NotFoundError, ValidationError } from "../../../shared/errors.ts";
 import type { ServerContainer } from "../../container.ts";
+import { refuseServiceAccount } from "../../refuse-service-account.ts";
 import { readableOrgIds, resolveToolboxOrg } from "../../toolbox-access.ts";
 import {
   activeRefreshJob,
@@ -499,6 +500,15 @@ export function registerAdminTools(
           );
         }
 
+        // A toolbox runs in every member's sandbox: not for a service account.
+        if (
+          ["create", "update", "delete", "publish", "pin_version"].includes(
+            action,
+          )
+        ) {
+          refuseServiceAccount(user, "toolboxes");
+        }
+
         if (action === "create") {
           if (!config) {
             throw new ValidationError("action=create requires `config`");
@@ -661,6 +671,7 @@ export function registerAdminTools(
             })),
           });
         case "rebuild": {
+          refuseServiceAccount(user, "base images");
           if (!name)
             throw new ValidationError("action=rebuild requires `name`");
           const record = await images.buildSeed(name, { force });

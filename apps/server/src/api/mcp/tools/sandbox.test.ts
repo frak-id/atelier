@@ -273,12 +273,40 @@ function newUser(): AuthUser {
     `sbxuser${userSeq}@example.test`,
     "",
   );
-  return { id: u.id, username: u.username, email: u.email, avatarUrl: "" };
+  return {
+    id: u.id,
+    username: u.username,
+    email: u.email,
+    avatarUrl: "",
+    kind: "human",
+    scope: "full",
+  };
 }
 
-async function setup() {
+/** A service account (member of its own team org), as `/mcp` resolves it. */
+function newServiceAccount() {
+  userSeq++;
+  const org = control.organizationService.create(
+    `Bots ${userSeq}`,
+    `mcp-bots-${userSeq}`,
+  );
+  const sa = control.serviceAccountService.create({
+    name: `mcp-bot-${userSeq}`,
+    orgId: org.id,
+  });
+  return {
+    id: sa.id,
+    username: sa.username,
+    email: `${sa.name}@service-accounts.invalid`,
+    avatarUrl: "",
+    kind: "service" as const,
+    scope: "mcp" as const,
+  };
+}
+
+async function setup(options: { serviceAccount?: boolean } = {}) {
   const fake = fakeRuntime();
-  const user = newUser();
+  const user = options.serviceAccount ? newServiceAccount() : newUser();
   // Ownerless sandboxes are closed to everyone (control/sandbox-access.ts):
   // every sandbox of the fake belongs to the caller.
   const owned = { "atelier.dev/owner-id": user.id };
@@ -765,7 +793,7 @@ describe("read tools", () => {
     expect(res.data.error).toBe("VALIDATION_ERROR");
   });
 
-  test("whoami has no email or user id, and names the default org", async () => {
+  test("whoami has no email, and names the default org", async () => {
     const { call, user } = await setup();
     const org = control.organizationService.create(
       `Org ${user.id}`,
@@ -777,6 +805,8 @@ describe("read tools", () => {
 
     const res = await call("whoami");
     expect(res.data).toEqual({
+      id: user.id,
+      kind: "human",
       username: user.username,
       orgs: [
         { orgId: org.id, name: `Org ${user.id}`, role: "owner", default: true },
@@ -788,6 +818,55 @@ describe("read tools", () => {
       prebuilds: [],
     });
     expect(res.raw).not.toContain("@example.test");
+  });
+
+  test("whoami tells a service account its id, kind and org", async () => {
+    const { call, user } = await setup({ serviceAccount: true });
+    const res = await call("whoami");
+    expect(res.data).toMatchObject({
+      id: user.id,
+      kind: "service",
+      username: user.username,
+      orgs: [
+        {
+          orgId: control.orgMemberService.getByUserId(user.id)[0]?.orgId,
+          role: "member",
+          default: true,
+        },
+      ],
+    });
+    const person = await setup();
+    expect((await person.call("whoami")).data).toMatchObject({
+      id: person.user.id,
+      kind: "human",
+    });
+  });
+
+  test("a service account's sandbox is stamped owner-kind: service, a person's is not", async () => {
+    const bot = await setup({ serviceAccount: true });
+    await bot.call("create_sandbox", {
+      spec: { source: { image: "dev-base" } },
+    });
+    await settle(bot.jobs);
+    expect(bot.fake.calls.created[0]?.annotations).toMatchObject({
+      "atelier.dev/owner": bot.user.username,
+      "atelier.dev/owner-kind": "service",
+    });
+    expect(bot.fake.calls.created[0]?.metadata).toMatchObject({
+      "atelier.dev/owner-id": bot.user.id,
+    });
+
+    const person = await setup();
+    await person.call("create_sandbox", {
+      spec: {
+        source: { image: "dev-base" },
+        annotations: { "atelier.dev/owner-kind": "service" },
+      },
+    });
+    await settle(person.jobs);
+    expect(
+      person.fake.calls.created[0]?.annotations?.["atelier.dev/owner-kind"],
+    ).toBeUndefined();
   });
 
   test("whoami summarizes the toolboxes and prebuilds a create can use", async () => {

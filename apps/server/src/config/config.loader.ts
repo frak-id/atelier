@@ -1,4 +1,4 @@
-import { existsSync, readFileSync } from "node:fs";
+import { accessSync, constants, existsSync, readFileSync } from "node:fs";
 import { Kind, type TSchema } from "@sinclair/typebox";
 import { Value } from "@sinclair/typebox/value";
 import {
@@ -6,6 +6,10 @@ import {
   AtelierConfigSchema,
   ENV_VAR_MAPPING,
 } from "./config.schema.ts";
+
+/** The shape of a service-account API key (`atl_` + 40 chars when minted). */
+export const API_KEY_PATTERN = /^atl_[A-Za-z0-9_-]{32,}$/;
+const SERVICE_ACCOUNT_NAME = /^[a-z0-9](?:[a-z0-9-]{0,37}[a-z0-9])?$/;
 
 function setNestedValue(
   obj: Record<string, unknown>,
@@ -303,5 +307,100 @@ export function validateConfig(
     }
   }
 
+  errors.push(...validateServiceAccounts(config, isProduction));
+
+  return errors;
+}
+
+function isReadable(path: string): boolean {
+  try {
+    accessSync(path, constants.R_OK);
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+/**
+ * The declared service accounts. Names and the shape of a declaration are
+ * errors everywhere; a secret that isn't there (env var unset, key file
+ * unreadable, malformed API key) is an error in production only: elsewhere
+ * the reconcile logs a warning and skips the account, so a laptop config
+ * without the secrets still boots.
+ */
+function validateServiceAccounts(
+  config: AtelierConfig,
+  isProduction: boolean,
+): ConfigValidationError[] {
+  const errors: ConfigValidationError[] = [];
+  const seen = new Set<string>();
+  const secretProblem = (field: string, message: string) => {
+    if (isProduction) errors.push({ field, message });
+  };
+  config.serviceAccounts.forEach((sa, i) => {
+    const at = `serviceAccounts[${i}]`;
+    if (!SERVICE_ACCOUNT_NAME.test(sa.name)) {
+      errors.push({
+        field: `${at}.name`,
+        message: `'${sa.name}' must be 1-39 lowercase letters, digits or hyphens, not starting or ending with a hyphen`,
+      });
+    } else if (seen.has(sa.name)) {
+      errors.push({
+        field: `${at}.name`,
+        message: `Service account '${sa.name}' is declared twice`,
+      });
+    }
+    seen.add(sa.name);
+
+    const github = sa.github;
+    if (github && "tokenEnv" in github) {
+      if (!process.env[github.tokenEnv]?.trim()) {
+        secretProblem(
+          `${at}.github.tokenEnv`,
+          `Env var ${github.tokenEnv} is not set`,
+        );
+      }
+    } else if (github) {
+      const { privateKeyEnv, privateKeyFile } = github;
+      if (github.repositories?.length === 0) {
+        // Dropping it would silently widen the token to every repository.
+        errors.push({
+          field: `${at}.github.repositories`,
+          message: "Must not be empty: omit it to allow every repository",
+        });
+      }
+      if (!privateKeyEnv === !privateKeyFile) {
+        errors.push({
+          field: `${at}.github`,
+          message: "Set exactly one of privateKeyEnv and privateKeyFile",
+        });
+      } else if (privateKeyEnv && !process.env[privateKeyEnv]?.trim()) {
+        secretProblem(
+          `${at}.github.privateKeyEnv`,
+          `Env var ${privateKeyEnv} is not set`,
+        );
+      } else if (privateKeyFile && !isReadable(privateKeyFile)) {
+        secretProblem(
+          `${at}.github.privateKeyFile`,
+          `Key file ${privateKeyFile} is not readable`,
+        );
+      }
+    }
+
+    if (sa.apiKey) {
+      const value = process.env[sa.apiKey.env]?.trim();
+      if (!value) {
+        secretProblem(
+          `${at}.apiKey.env`,
+          `Env var ${sa.apiKey.env} is not set`,
+        );
+      } else if (!API_KEY_PATTERN.test(value)) {
+        secretProblem(
+          `${at}.apiKey.env`,
+          `Env var ${sa.apiKey.env} must look like atl_ followed by 32+ letters, digits, - or _`,
+        );
+      }
+    }
+  });
   return errors;
 }

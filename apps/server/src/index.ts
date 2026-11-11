@@ -53,6 +53,10 @@ container.images.reconcileOnStartup();
 // AbortController, so any `running` row is a ghost — fail it "rebooted".
 container.jobs.reconcileOnStartup();
 
+// Declared service accounts exist before the first request (the scheduler
+// repeats this; an org that doesn't exist yet is picked up then).
+container.control.reconcileServiceAccounts();
+
 startScheduler(container);
 
 const app = createApp(container);
