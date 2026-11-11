@@ -21,7 +21,12 @@ Security and access:
   from it, including a bake of a private repo they cannot read. Only its
   creator or a server admin can change its dev servers, `env` values and file
   contents are masked for everyone else, and deleting one needs a server
-  admin.
+  admin. The same goes across the person and service-account boundary. A
+  person who asks for a repo boots the newest bake of it, whoever baked it,
+  with their own GitHub token written in. A service account's bake can so run
+  agent-chosen code with a person's token. Forking a service account's
+  sandbox, or booting one of its snapshots, does the same with the agent's
+  disk and spec. See `docs/service-accounts.md`.
 - **Agent WebSocket tokens travel in the URL** (`?token=`) because the
   server's relays dial bare URLs. Moving to a header means passing headers
   through `api/ws-relay.ts`, `sessions/acp/acp-stream.ts` and `runtime.attach`.

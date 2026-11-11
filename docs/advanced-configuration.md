@@ -101,6 +101,7 @@ the `atelier-v2-secrets` Secret, and override the file. The exact
 | `kubernetes.vsCodeIngressAnnotations` | none (file only) | `{}`; put on every Ingress whose port has `auth: "forward"` |
 | `kubernetes.wakeIngressAnnotations` | none (file only) | `{}`; put on public Ingresses without forward-auth (previews) so they resume a paused sandbox |
 | `imageBuilder.*` (`kind`, `image`, `endpoint`, `dockerHost`, `platform`, `cacheRepo`, `insecureRegistry`, `tls.secretName`, `tls.serverName`) | `ATELIER_IMAGE_BUILDER_*` | `kind=docker` |
+| `serviceAccounts` | none (file only; secrets from the env vars it names) | `[]`; see [Service accounts](service-accounts.md#declaring-service-accounts-in-the-config) |
 
 `auth.defaultOrg` is the slug of the team org. Every user who passes the
 GitHub gate joins it as `member` on first login, it is the default spawn org,
@@ -163,8 +164,14 @@ In production the server also writes `DATA_DIR/logs/server.log`, rotated at
 
 Agents authenticate to `/mcp` and `/mcp/admin` with `Authorization: Bearer`
 and an `atl_` API key (Settings > API Keys) or a session token. There is no
-shared MCP token. `/mcp/admin` admits server admins only. The tools are
-listed in the [README](../README.md#mcp).
+shared MCP token. `/mcp/admin` admits server admins only. A key with the `mcp`
+scope works on `/mcp` only. The tools are listed in the
+[README](../README.md#mcp).
+
+An agent shared by several people should use a
+[service account](service-accounts.md), not a person's key: it then owns its
+sandboxes and pushes with its own GitHub credential. Service accounts can be
+declared in the config file (`serviceAccounts`, secrets from env vars).
 
 ## Resulting URL patterns
 

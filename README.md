@@ -37,7 +37,9 @@ over MCP.
 
 Agents connect with `Authorization: Bearer <API key or token>` to two
 endpoints. Tool names and order are pinned by
-`apps/server/src/api/mcp/tools/surface.test.ts`.
+`apps/server/src/api/mcp/tools/surface.test.ts`. An agent shared by several
+people should use a [service account](docs/service-accounts.md): its own key,
+sandboxes and GitHub credential instead of a person's.
 
 ### `/mcp`: sandbox tools (13)
 
