@@ -91,7 +91,7 @@ function SandboxDetailPage() {
         <BootedFromCard bootedFrom={sandbox.bootedFrom} />
       ) : null}
       <UrlsSection sandboxId={sandbox.id} urls={sandbox.urls} />
-      <TerminalSection sandboxId={sandbox.id} />
+      <TerminalSection sandboxId={sandbox.id} status={sandbox.status} />
       <ProcessesSection sandboxId={sandbox.id} processes={sandbox.processes} />
       <SandboxActivitySection sandboxId={sandbox.id} />
       <SaveToolsetForToolboxSection sandboxId={sandbox.id} />

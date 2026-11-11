@@ -8,6 +8,7 @@ import { Terminal } from "@xterm/xterm";
 import "@xterm/xterm/css/xterm.css";
 import { forwardRef, useEffect, useImperativeHandle, useRef } from "react";
 import { wsUrl } from "@/lib/api-base";
+import { encodeModifiedEnter, trackKeyboardModes } from "@/lib/terminal-keys";
 import { createTerminalLinkHandler } from "@/lib/terminal-links";
 import { terminalTheme } from "@/lib/terminal-theme";
 import { cn } from "@/lib/utils";
@@ -58,6 +59,9 @@ const NO_PROGRESS: TerminalProgress = { state: 0, value: 0 };
  * `onProgress` reports OSC 9;4 progress (e.g. pi with
  * `terminal.showTerminalProgress`), deduplicated and reset to none when the
  * connection closes so a dead session never shows as busy.
+ *
+ * `onDisconnect` fires when an established connection closes: the shell
+ * exited, the session was deleted, or the link dropped.
  */
 export const TerminalView = forwardRef<
   TerminalViewHandle,
@@ -67,14 +71,24 @@ export const TerminalView = forwardRef<
     active?: boolean;
     className?: string;
     onProgress?: (progress: TerminalProgress) => void;
+    onDisconnect?: () => void;
   }
 >(function TerminalView(
-  { wsPath, readOnly = false, active = true, className, onProgress },
+  {
+    wsPath,
+    readOnly = false,
+    active = true,
+    className,
+    onProgress,
+    onDisconnect,
+  },
   handleRef,
 ) {
-  // Read through a ref so a new callback identity never reconnects.
+  // Read through refs so a new callback identity never reconnects.
   const onProgressRef = useRef(onProgress);
   onProgressRef.current = onProgress;
+  const onDisconnectRef = useRef(onDisconnect);
+  onDisconnectRef.current = onDisconnect;
   const containerRef = useRef<HTMLDivElement>(null);
   const terminalRef = useRef<Terminal | null>(null);
   const fitRef = useRef<FitAddon | null>(null);
@@ -125,6 +139,20 @@ export const TerminalView = forwardRef<
       allowProposedApi: true,
     });
     terminalRef.current = terminal;
+    // Shift/Ctrl+Enter: xterm.js sends a bare CR for both, which submits a
+    // TUI's prompt instead of inserting a newline (lib/terminal-keys.ts).
+    const keyboard = readOnly ? undefined : trackKeyboardModes(terminal);
+    if (keyboard) {
+      terminal.attachCustomKeyEventHandler((event) => {
+        if (event.type === "keyup" || event.isComposing) return true;
+        const data = encodeModifiedEnter(event, keyboard.modes);
+        if (data === undefined) return true;
+        // Cancelling the keydown also drops its keypress: send once.
+        event.preventDefault();
+        if (event.type === "keydown") terminal.input(data);
+        return false;
+      });
+    }
     const fitAddon = new FitAddon();
     fitRef.current = fitAddon;
     terminal.loadAddon(fitAddon);
@@ -201,6 +229,7 @@ export const TerminalView = forwardRef<
         // Nothing can clear a progress the app set before the link died.
         progressAddon.progress = NO_PROGRESS;
         writeMarker(terminal, "Connection closed");
+        onDisconnectRef.current?.();
       };
       socket.onerror = () => socket.close();
     }
@@ -235,6 +264,7 @@ export const TerminalView = forwardRef<
       dataDisposable?.dispose();
       resizeDisposable.dispose();
       progressDisposable.dispose();
+      keyboard?.dispose();
       wsRef.current?.close();
       wsRef.current = null;
       terminal.dispose();

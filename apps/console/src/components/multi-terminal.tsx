@@ -1,6 +1,8 @@
-import { useQuery } from "@tanstack/react-query";
-import { Bookmark, Loader2, Plus, X } from "lucide-react";
+import type { SandboxStatus } from "@atelier/spec";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
+import { Bookmark, Loader2, Plus, RotateCw, X } from "lucide-react";
 import { useCallback, useEffect, useRef, useState } from "react";
+import { queryKeys } from "@/api/queries/keys";
 import {
   terminalSessionsQuery,
   useCreateTerminalSession,
@@ -14,6 +16,11 @@ import {
 import { StatusDot } from "@/components/ui/status-dot";
 import { cn } from "@/lib/utils";
 
+/** Sandboxes that got a terminal opened when their boot finished. The inline
+ * panel and the immersive view can both be watching the same boot, and one
+ * terminal is enough. */
+const openedOnBoot = new Set<string>();
+
 /**
  * A tabbed terminal multiplexer for a sandbox: one tab per terminal session.
  * Every session's {@link TerminalView} stays mounted (inactive ones hidden),
@@ -21,20 +28,32 @@ import { cn } from "@/lib/utils";
  * scrollback. Creating selects the new tab; closing a session removes it.
  * A tab shows the progress its app reports (OSC 9;4), so a busy agent in a
  * background tab is visible at a glance.
+ *
+ * Sessions live in the sandbox's agent, so nothing is listed until the
+ * sandbox runs. A view that waits through a boot or a resume lists the
+ * sessions once the sandbox is up and opens a terminal if there is none.
+ * A session whose connection closes is listed again, so a shell that exited
+ * (`exit`, Ctrl+D) loses its tab.
  */
 export function MultiTerminal({
   sandboxId,
+  status,
   className,
 }: {
   sandboxId: string;
+  status: SandboxStatus;
   className?: string;
 }) {
+  const running = status === "running";
+  const queryClient = useQueryClient();
   const {
     data: sessions,
     isPending,
     isError,
+    isFetching,
     error,
-  } = useQuery(terminalSessionsQuery(sandboxId));
+    refetch,
+  } = useQuery({ ...terminalSessionsQuery(sandboxId), enabled: running });
   const create = useCreateTerminalSession(sandboxId);
   const remove = useDeleteTerminalSession(sandboxId);
   const [activeId, setActiveId] = useState<string | null>(null);
@@ -58,29 +77,61 @@ export function MultiTerminal({
     create.mutate({}, { onSuccess: (data) => data && setActiveId(data.id) });
   }, [create]);
 
+  const relist = useCallback(() => {
+    queryClient.invalidateQueries({
+      queryKey: queryKeys.terminal.all(sandboxId),
+    });
+  }, [queryClient, sandboxId]);
+
+  const waitedForBoot = useRef(!running);
+  useEffect(() => {
+    if (running) return;
+    waitedForBoot.current = true;
+    openedOnBoot.delete(sandboxId);
+    // Sessions die with the pod on pause: drop the cached list so a resume
+    // lists afresh instead of reattaching to dead sessions.
+    queryClient.resetQueries({ queryKey: queryKeys.terminal.all(sandboxId) });
+  }, [running, sandboxId, queryClient]);
+
+  useEffect(() => {
+    if (!running || !sessions || !waitedForBoot.current) return;
+    waitedForBoot.current = false;
+    if (sessions.length > 0 || openedOnBoot.has(sandboxId)) return;
+    openedOnBoot.add(sandboxId);
+    createSession();
+  }, [running, sessions, sandboxId, createSession]);
+
+  if (!running) {
+    return (
+      <TerminalPlaceholder className={className}>
+        <NotRunning status={status} />
+      </TerminalPlaceholder>
+    );
+  }
+
   if (isPending) {
     return (
-      <div
-        className={cn(
-          "flex h-96 items-center justify-center rounded-md border bg-card",
-          className,
-        )}
-      >
-        <Loader2 className="size-5 animate-spin text-muted-foreground" />
-      </div>
+      <TerminalPlaceholder className={className}>
+        <Loader2 className="size-5 animate-spin" />
+      </TerminalPlaceholder>
     );
   }
 
   if (isError) {
     return (
-      <div
-        className={cn(
-          "flex h-96 items-center justify-center rounded-md border bg-card px-4 text-center text-sm text-muted-foreground",
-          className,
-        )}
-      >
-        {error instanceof Error ? error.message : "Terminal unavailable"}
-      </div>
+      <TerminalPlaceholder className={className}>
+        <p className="text-sm">
+          {error instanceof Error ? error.message : "Terminal unavailable"}
+        </p>
+        <PlaceholderButton disabled={isFetching} onClick={() => refetch()}>
+          {isFetching ? (
+            <Loader2 className="size-4 animate-spin" />
+          ) : (
+            <RotateCw className="size-4" />
+          )}
+          Retry
+        </PlaceholderButton>
+      </TerminalPlaceholder>
     );
   }
 
@@ -166,10 +217,12 @@ export function MultiTerminal({
       <div className="relative min-h-0 flex-1">
         {list.length === 0 ? (
           <div className="absolute inset-0 flex flex-col items-center justify-center gap-3 text-muted-foreground">
-            <p className="text-sm">No terminal sessions</p>
-            <button
-              type="button"
-              className="inline-flex items-center gap-2 rounded-md border px-3 py-1.5 text-sm text-foreground hover:bg-elevated disabled:opacity-50"
+            <p className="text-sm">
+              {create.isPending
+                ? "Opening a terminal…"
+                : "No terminal sessions"}
+            </p>
+            <PlaceholderButton
               disabled={create.isPending}
               onClick={createSession}
             >
@@ -179,7 +232,7 @@ export function MultiTerminal({
                 <Plus className="size-4" />
               )}
               New terminal
-            </button>
+            </PlaceholderButton>
           </div>
         ) : (
           list.map((session) => (
@@ -197,6 +250,7 @@ export function MultiTerminal({
                 onProgress={(next) =>
                   setProgress((prev) => ({ ...prev, [session.id]: next }))
                 }
+                onDisconnect={relist}
                 className="h-full"
               />
             </div>
@@ -205,6 +259,70 @@ export function MultiTerminal({
       </div>
     </div>
   );
+}
+
+/** The pane shown instead of the tabs: same frame, centred content. */
+function TerminalPlaceholder({
+  className,
+  children,
+}: {
+  className?: string;
+  children: React.ReactNode;
+}) {
+  return (
+    <div
+      className={cn(
+        "flex h-96 flex-col items-center justify-center gap-3 rounded-md border bg-card px-4 text-center text-muted-foreground",
+        className,
+      )}
+    >
+      {children}
+    </div>
+  );
+}
+
+function PlaceholderButton(props: React.ComponentProps<"button">) {
+  return (
+    <button
+      type="button"
+      className="inline-flex items-center gap-2 rounded-md border px-3 py-1.5 text-sm text-foreground hover:bg-elevated disabled:opacity-50"
+      {...props}
+    />
+  );
+}
+
+/** Why there is no terminal yet. A boot is waited out with a spinner: the
+ * pane switches to the terminal by itself once the sandbox runs. */
+function NotRunning({ status }: { status: SandboxStatus }) {
+  switch (status) {
+    case "creating":
+      return (
+        <>
+          <Loader2 className="size-5 animate-spin" />
+          <p className="text-sm">
+            Starting the sandbox. The terminal opens once it is running.
+          </p>
+        </>
+      );
+    case "paused":
+      return (
+        <p className="text-sm">
+          The sandbox is paused. Resume it to use the terminal.
+        </p>
+      );
+    case "error":
+      return (
+        <p className="text-sm">
+          The sandbox failed, so there is no terminal to open.
+        </p>
+      );
+    default:
+      return (
+        <p className="text-sm">
+          The sandbox is not running, so there is no terminal to open.
+        </p>
+      );
+  }
 }
 
 /**

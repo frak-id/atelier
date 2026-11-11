@@ -1,3 +1,4 @@
+import type { SandboxStatus } from "@atelier/spec";
 import { Maximize2, Minimize2 } from "lucide-react";
 import { useState } from "react";
 import { MultiTerminal } from "@/components/multi-terminal";
@@ -7,7 +8,13 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 /** Expandable terminal panel embedded in the sandbox's main view. Toggles
  * between an inline height and a tall pane; the immersive view offers a
  * full-screen terminal on top of this. */
-export function TerminalSection({ sandboxId }: { sandboxId: string }) {
+export function TerminalSection({
+  sandboxId,
+  status,
+}: {
+  sandboxId: string;
+  status: SandboxStatus;
+}) {
   const [expanded, setExpanded] = useState(false);
 
   return (
@@ -26,6 +33,7 @@ export function TerminalSection({ sandboxId }: { sandboxId: string }) {
       <CardContent>
         <MultiTerminal
           sandboxId={sandboxId}
+          status={status}
           className={expanded ? "h-[70vh]" : undefined}
         />
       </CardContent>

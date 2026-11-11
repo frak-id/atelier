@@ -1,4 +1,4 @@
-import type { SandboxUrl } from "@atelier/spec";
+import type { SandboxStatus, SandboxUrl } from "@atelier/spec";
 import * as DialogPrimitive from "@radix-ui/react-dialog";
 import { Play, TerminalSquare, X } from "lucide-react";
 import { useState } from "react";
@@ -15,6 +15,7 @@ const TERMINAL_TAB = "__terminal__";
 
 type ImmersiveSandbox = {
   id: string;
+  status: SandboxStatus;
   urls: SandboxUrl[];
   annotations?: Record<string, string>;
 };
@@ -62,6 +63,16 @@ export function ImmersiveView({
         <DialogPrimitive.Content
           aria-describedby={undefined}
           onOpenAutoFocus={(event) => event.preventDefault()}
+          // Escape typed in a terminal belongs to the app running there (vim,
+          // pi, opencode...): only close when focus is outside the terminal.
+          onEscapeKeyDown={(event) => {
+            if (
+              event.target instanceof Element &&
+              event.target.closest(".xterm")
+            ) {
+              event.preventDefault();
+            }
+          }}
           className="fixed inset-0 z-50 flex flex-col bg-background pb-[env(safe-area-inset-bottom)] focus:outline-hidden"
         >
           <DialogPrimitive.Title className="sr-only">
@@ -129,6 +140,7 @@ export function ImmersiveView({
             >
               <MultiTerminal
                 sandboxId={sandbox.id}
+                status={sandbox.status}
                 className="h-full rounded-none border-0"
               />
             </div>
