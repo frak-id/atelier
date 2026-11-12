@@ -31,6 +31,7 @@ import {
 } from "../shared/lib/runtime-config.ts";
 import { SandboxOps } from "./app/sandbox-ops.ts";
 import { ToolboxOps } from "./app/toolbox-ops.ts";
+import { GitCredentialRefresher } from "./git-credential-refresh.ts";
 import { IdleReaper } from "./idle-reaper.ts";
 
 export function createServerContainer() {
@@ -138,6 +139,13 @@ export function createServerContainer() {
     },
   });
 
+  // Rewrites the git credential of running sandboxes when their owner's token
+  // changes: from the scheduler, and right after a login.
+  const gitCredentialRefresh = new GitCredentialRefresher({
+    runtime,
+    credentials: control.gitCredentials,
+  });
+
   const serverContainer: ServerContainer = {
     control,
     runtime,
@@ -151,6 +159,7 @@ export function createServerContainer() {
     idle,
     sandboxOps,
     toolboxOps,
+    gitCredentialRefresh,
   };
   return serverContainer;
 }
@@ -168,4 +177,5 @@ export interface ServerContainer {
   idle: IdleReaper;
   sandboxOps: SandboxOps;
   toolboxOps: ToolboxOps;
+  gitCredentialRefresh: GitCredentialRefresher;
 }

@@ -87,9 +87,24 @@ export class AuthService {
   constructor(
     private readonly deps: {
       apiKeyService: ApiKeyService;
-      userService: UserService;
+      userService: Pick<UserService, "getById">;
     },
   ) {}
+
+  /**
+   * The person behind a console session JWT, or null. A session lives only
+   * while Atelier holds the person's GitHub token: a login always stores one,
+   * and a token GitHub rejected is dropped (`GitHubTokenValidator`), which
+   * ends every session of theirs until they sign in again. A JWT whose
+   * subject is a service account is never a session.
+   */
+  async verifySession(token: string): Promise<AuthUser | null> {
+    const user = await verifyJwt(token);
+    if (!user || isAuthBypassed()) return user;
+    const stored = this.deps.userService.getById(user.id);
+    if (stored?.kind !== "human" || !stored.githubAccessToken) return null;
+    return user;
+  }
 
   /**
    * Resolve a token (JWT or `atl_`-prefixed API key) into an AuthUser.
@@ -122,11 +137,8 @@ export class AuthService {
       };
     }
 
-    const user = await verifyJwt(token);
+    const user = await this.verifySession(token);
     if (!user) throw new UnauthorizedError("Invalid or expired token");
-    if (this.deps.userService.getById(user.id)?.kind === "service") {
-      throw new UnauthorizedError("Invalid or expired token");
-    }
     return user;
   }
 }

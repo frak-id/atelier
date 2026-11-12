@@ -239,8 +239,16 @@ Org toolboxes build to `toolsets/tb/<toolboxId>`; see
   the sandbox's org, and git credentials are rebuilt from the owner's current
   GitHub token, at every boot (create, resume, fork). A rotated secret applies
   on the next boot, and a secret deleted after creation makes a resume fail.
+  Running sandboxes get the owner's new token too: every 5 minutes, and right
+  after the owner signs in (`api/git-credential-refresh.ts`).
   Secret values and the GitHub token are AES-256-GCM encrypted at rest with
   `SANDBOX_SECRETS_KEY`, which production requires at startup.
+- **Sessions.** A console session (the `sandbox_token` JWT, 7 days) lives only
+  while Atelier holds the person's GitHub token. `/auth/me` asks GitHub at
+  most every 5 minutes whether it still works, and a repo-browser call that
+  GitHub answers 401 counts too: a revoked token is dropped, the session ends
+  everywhere, and the console shows the login page with the reason
+  (`control/github-token-validator.ts`).
 - **Ownership transfer.** Secrets and toolboxes move between orgs by org id
   (`/api/transfers`).
 

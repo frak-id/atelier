@@ -19,7 +19,13 @@ const sandbox = (id: string, owner: string, status = "running"): Sandbox => ({
 
 function setup(initial: Sandbox[]) {
   let sandboxes = initial;
-  const tokens: Record<string, string | undefined> = { sa_a: "ghs_1" };
+  const tokens: Record<string, string | undefined> = {
+    sa_a: "ghs_1",
+    "1234": "gho_1",
+  };
+  /** Resolves of this owner read the credential, then wait for a
+   * `release()` before returning it (a slow resolve). */
+  let held: { owner: string; release: Array<() => void> } | undefined;
   /** Accounts with no credential at all (as opposed to a failed mint). */
   const uncredentialed = new Set<string>();
   const botNames: Record<string, string> = {};
@@ -35,19 +41,30 @@ function setup(initial: Sandbox[]) {
       },
     } as never,
     credentials: {
-      resolve: async (id: string) => ({
-        identity: {
-          name: botNames[id] ?? "app[bot]",
-          email: "1+app[bot]@users.noreply.github.com",
-        },
-        ...(tokens[id] ? { token: tokens[id] } : {}),
-        ...(uncredentialed.has(id) ? { noCredential: true as const } : {}),
-      }),
+      resolve: async (id: string) => {
+        const credential = credentialOf(id);
+        if (held?.owner === id) {
+          const gate = held;
+          await new Promise<void>((r) => gate.release.push(r));
+        }
+        return credential;
+      },
     },
-    isServiceAccount: (id) => id.startsWith("sa_"),
+  });
+  const credentialOf = (id: string) => ({
+    identity: {
+      name: botNames[id] ?? "app[bot]",
+      email: "1+app[bot]@users.noreply.github.com",
+    },
+    ...(tokens[id] ? { token: tokens[id] } : {}),
+    ...(uncredentialed.has(id) ? { noCredential: true as const } : {}),
   });
   return {
     refresher,
+    hold: (owner: string) => {
+      held = { owner, release: [] };
+      return held.release;
+    },
     writes,
     tokens,
     botNames,
@@ -72,7 +89,7 @@ describe("GitCredentialRefresher", () => {
     expect(writes).toHaveLength(2);
   });
 
-  test("writes the git files of running service-account sandboxes only", async () => {
+  test("writes the git files of running sandboxes that have an owner", async () => {
     const { refresher, writes } = setup([
       sandbox("s1", "sa_a"),
       sandbox("s2", "sa_a", "paused"),
@@ -80,8 +97,14 @@ describe("GitCredentialRefresher", () => {
       { id: "s4", status: "running" },
     ]);
     await refresher.tick();
-    expect(writes).toHaveLength(1);
-    expect(writes[0]?.id).toBe("s1");
+    expect(writes.map((w) => w.id).sort()).toEqual(["s1", "s3"]);
+    expect(writes.find((w) => w.id === "s3")?.files).toContainEqual({
+      path: GIT_CREDENTIALS_PATH,
+      content: "https://x-access-token:gho_1@github.com\n",
+      mode: "0600",
+      owner: "dev",
+    });
+    writes.sort((a, b) => a.id.localeCompare(b.id));
     expect(writes[0]?.files).toEqual([
       {
         path: GITCONFIG_PATH,
@@ -138,6 +161,58 @@ describe("GitCredentialRefresher", () => {
     setSandboxes([sandbox("s1", "sa_a")]);
     await refresher.tick();
     expect(writes).toHaveLength(2);
+  });
+
+  test("a person's new login token reaches their running sandboxes only", async () => {
+    const { refresher, writes, tokens } = setup([
+      sandbox("s1", "1234"),
+      sandbox("s2", "1234", "paused"),
+      sandbox("s3", "sa_a"),
+    ]);
+    await refresher.tick();
+    writes.length = 0;
+    tokens["1234"] = "gho_2";
+    await refresher.refreshOwner("1234");
+    expect(writes.map((w) => w.id)).toEqual(["s1"]);
+    expect(writes[0]?.files).toContainEqual(
+      expect.objectContaining({
+        content: "https://x-access-token:gho_2@github.com\n",
+      }),
+    );
+    // The next tick finds nothing new to write.
+    await refresher.tick();
+    expect(writes).toHaveLength(1);
+  });
+
+  test("a person whose token was dropped keeps the last one written", async () => {
+    const { refresher, writes, tokens } = setup([sandbox("s1", "1234")]);
+    await refresher.tick();
+    tokens["1234"] = undefined;
+    await refresher.tick();
+    expect(writes).toHaveLength(1);
+  });
+
+  test("writes to one sandbox run in order, the last with the newest token", async () => {
+    const { refresher, writes, tokens, hold } = setup([sandbox("s1", "1234")]);
+    const release = hold("1234");
+    // A tick starts first and stalls; a login lands meanwhile.
+    const tick = refresher.tick();
+    await Bun.sleep(0);
+    tokens["1234"] = "gho_2";
+    const login = refresher.refreshOwner("1234");
+    await Bun.sleep(0);
+    expect(release).toHaveLength(1); // the login waits for the tick
+    release.shift()?.();
+    await Bun.sleep(0);
+    release.shift()?.();
+    await Promise.all([tick, login]);
+    const contents = writes.map(
+      (w) => (w.files as Array<{ content: string }>)[1]?.content,
+    );
+    expect(contents).toEqual([
+      "https://x-access-token:gho_1@github.com\n",
+      "https://x-access-token:gho_2@github.com\n",
+    ]);
   });
 
   test("one sandbox failing does not stop the others, and is retried", async () => {

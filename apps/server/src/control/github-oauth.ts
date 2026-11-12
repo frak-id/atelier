@@ -1,6 +1,6 @@
 import { config, isAuthBypassed } from "../shared/lib/config.ts";
 import { createChildLogger } from "../shared/lib/logger.ts";
-import { githubApiGet } from "./github-api.ts";
+import { type FetchLike, githubApiGet } from "./github-api.ts";
 
 const log = createChildLogger("github");
 
@@ -88,6 +88,32 @@ export async function fetchGitHubUser(
   }
 
   return response.json() as Promise<GitHubUser>;
+}
+
+/** What GitHub says about a stored OAuth token. */
+export type GitHubTokenStatus = "valid" | "revoked" | "unknown";
+
+/**
+ * Whether GitHub still accepts `accessToken`. Only a 401 means `revoked`
+ * (the user revoked the app, the token expired or GitHub killed it); a rate
+ * limit, an SSO block, an outage or a timeout is `unknown`, never a reason to
+ * sign anyone out.
+ */
+export async function checkGitHubToken(
+  accessToken: string,
+  fetchImpl?: FetchLike,
+): Promise<GitHubTokenStatus> {
+  try {
+    const response = await githubApiGet(accessToken, "/user", fetchImpl);
+    if (response.status === 401) return "revoked";
+    return response.ok ? "valid" : "unknown";
+  } catch (err) {
+    log.warn(
+      { err: err instanceof Error ? err.message : "unknown" },
+      "could not check a GitHub token",
+    );
+    return "unknown";
+  }
 }
 
 export function buildOAuthRedirectUrl(

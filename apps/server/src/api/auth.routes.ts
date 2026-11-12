@@ -55,6 +55,19 @@ const JWT_EXPIRY_SECONDS = 7 * 24 * 60 * 60;
  * screen for the added scope). */
 const GITHUB_OAUTH_SCOPES = "repo workflow read:user read:org";
 
+/** The `sandbox_token` cookie options that delete the session cookie. */
+function expiredSessionCookie() {
+  return {
+    value: "",
+    httpOnly: true,
+    secure: isProduction(),
+    sameSite: isProduction() ? ("none" as const) : ("lax" as const),
+    path: "/",
+    domain: `.${config.domain.baseDomain}`,
+    maxAge: 0,
+  };
+}
+
 /** A post-login destination under the base domain (a sandbox tool URL the
  * forward-auth check sent to the login), or `undefined`. */
 function returnUrlOf(url: string | undefined): string | undefined {
@@ -72,8 +85,13 @@ const MOCK_USER = {
 };
 
 export function createAuthRoutes(container: ServerContainer) {
-  const { userService, organizationService, orgMemberService } =
-    container.control;
+  const {
+    userService,
+    organizationService,
+    orgMemberService,
+    authService,
+    gitHubTokens,
+  } = container.control;
 
   /** Bootstrap a personal org + owner membership on a user's first login;
    * a new user also joins the team org (`auth.defaultOrg`) as a member. */
@@ -264,6 +282,13 @@ export function createAuthRoutes(container: ServerContainer) {
             accessToken,
           );
           bootstrapOrgs(String(ghUser.id), ghUser.login);
+          // The person's running sandboxes still hold the token of an earlier
+          // login (GitHub may have revoked it): hand them the new one now.
+          void container.gitCredentialRefresh
+            .refreshOwner(String(ghUser.id))
+            .catch((err) =>
+              log.warn({ err }, "post-login git credential refresh failed"),
+            );
 
           const token = await signJwt({
             id: String(ghUser.id),
@@ -316,15 +341,31 @@ export function createAuthRoutes(container: ServerContainer) {
     // Public: lets the console detect an auth-bypassed (local) server so
     // it can drop the user straight in instead of showing a GitHub button.
     .get("/mode", () => ({ bypassed: isAuthBypassed() }))
+    // The console's session check (on load, on focus, every few minutes).
+    // It also asks GitHub, at most every few minutes, whether the person's
+    // token still works: a revoked one ends the session here.
     .get("/me", async ({ cookie, set }) => {
       const token = cookie.sandbox_token?.value as string | undefined;
       if (!token) {
         set.status = 401;
         return { error: "UNAUTHORIZED", message: "Missing authentication" };
       }
-      const user = await verifyJwt(token);
+      const session = await authService.verifySession(token);
+      const user =
+        session && (await gitHubTokens.ensureValid(session.id))
+          ? session
+          : null;
       if (!user) {
         set.status = 401;
+        cookie.sandbox_token?.set(expiredSessionCookie());
+        // A well-formed JWT refused here: GitHub no longer accepts the
+        // person's token. The console tells them why they are signed out.
+        if (await verifyJwt(token)) {
+          return {
+            error: "GITHUB_SESSION_EXPIRED",
+            message: "Your GitHub authorization expired or was revoked",
+          };
+        }
         return { error: "UNAUTHORIZED", message: "Invalid or expired token" };
       }
       return {
@@ -341,7 +382,7 @@ export function createAuthRoutes(container: ServerContainer) {
     // load without a session is sent to the login, the rest gets 401.
     .get("/forward", async ({ cookie, headers, set, redirect }) => {
       const token = cookie.sandbox_token?.value as string | undefined;
-      const user = token ? await verifyJwt(token) : null;
+      const user = token ? await authService.verifySession(token) : null;
       const signedIn = isAuthBypassed() || user !== null;
       const forwarded = forwardedOf(headers);
       const decision = decideForwardAuth({
@@ -405,7 +446,7 @@ export function createAuthRoutes(container: ServerContainer) {
         set.status = 401;
         return { error: "UNAUTHORIZED", message: "No token provided" };
       }
-      const user = await verifyJwt(token);
+      const user = await authService.verifySession(token);
       if (!user) {
         set.status = 401;
         return { error: "UNAUTHORIZED", message: "Invalid or expired token" };
@@ -413,15 +454,7 @@ export function createAuthRoutes(container: ServerContainer) {
       return { ok: true, user: user.username };
     })
     .post("/logout", ({ cookie }) => {
-      cookie.sandbox_token?.set({
-        value: "",
-        httpOnly: true,
-        secure: isProduction(),
-        sameSite: isProduction() ? "none" : "lax",
-        path: "/",
-        domain: `.${config.domain.baseDomain}`,
-        maxAge: 0,
-      });
+      cookie.sandbox_token?.set(expiredSessionCookie());
       return { ok: true };
     });
   return authRoutes;

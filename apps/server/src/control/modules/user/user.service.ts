@@ -57,6 +57,20 @@ export class UserService {
     return user;
   }
 
+  /**
+   * Forget `token` because GitHub rejected it, which ends the person's
+   * console sessions (`AuthService.verifySession`). Only while it is still
+   * the stored token: a login that replaced it in the meantime wins. Returns
+   * whether it was dropped.
+   */
+  dropGitHubToken(userId: string, token: string): boolean {
+    const user = this.userRepository.getById(userId);
+    if (!user || user.githubAccessToken !== token) return false;
+    this.userRepository.clearGitHubToken(userId);
+    log.info({ userId }, "GitHub token rejected by GitHub; dropped");
+    return true;
+  }
+
   setPersonalOrg(userId: string, orgId: string): void {
     this.userRepository.updatePersonalOrgId(userId, orgId);
   }

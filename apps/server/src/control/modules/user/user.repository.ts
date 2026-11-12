@@ -154,6 +154,14 @@ export class UserRepository {
     return user;
   }
 
+  clearGitHubToken(userId: string): void {
+    getDatabase()
+      .update(users)
+      .set({ githubAccessToken: null })
+      .where(eq(users.id, userId))
+      .run();
+  }
+
   updatePersonalOrgId(userId: string, orgId: string): void {
     getDatabase()
       .update(users)

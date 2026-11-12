@@ -1,4 +1,5 @@
 import { useEffect, useState } from "react";
+import { GITHUB_SESSION_EXPIRED_KEY } from "@/api/queries/auth";
 import { Button } from "@/components/ui/button";
 import {
   Card,
@@ -41,6 +42,13 @@ export function LoginPage() {
       // manual button so the user can retry / read the error.
       setCheckingMode(false);
       return;
+    }
+    // The server signed the person out: GitHub rejected their token.
+    if (sessionStorage.getItem(GITHUB_SESSION_EXPIRED_KEY)) {
+      sessionStorage.removeItem(GITHUB_SESSION_EXPIRED_KEY);
+      setErrorMessage(
+        "Your GitHub authorization expired or was revoked. Sign in again.",
+      );
     }
 
     // Auth-bypassed servers (local/mock) have no real GitHub login: hitting

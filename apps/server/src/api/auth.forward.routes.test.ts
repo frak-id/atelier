@@ -36,7 +36,7 @@ beforeAll(async () => {
   previousBase = config.domain.baseDomain;
   config.server.mode = "production";
   config.domain.baseDomain = BASE;
-  const { signJwt } = await import("../control/index.ts");
+  const { signJwt, verifyJwt } = await import("../control/index.ts");
   cookies = {
     alice: `sandbox_token=${await signJwt(alice)}`,
     bob: `sandbox_token=${await signJwt(bob)}`,
@@ -61,6 +61,7 @@ beforeAll(async () => {
       },
     },
     control: {
+      authService: { verifySession: verifyJwt },
       canAccessSandbox: (userId: string, l: { metadata?: object }) =>
         (l.metadata as Record<string, string>)[OWNER] === userId,
       defaultOrg: { isServerAdmin: () => false },

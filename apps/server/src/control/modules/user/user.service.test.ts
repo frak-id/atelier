@@ -47,6 +47,21 @@ describe("UserService.resolveGitHubToken", () => {
     expect(service.resolveGitHubToken("nobody")).toBeUndefined();
   });
 
+  test("dropGitHubToken clears only the token it was given", () => {
+    const stored: Record<string, User> = { carol: mkUser("carol", "gho_new") };
+    const cleared: string[] = [];
+    const users = new UserService({
+      getById: (id: string) => stored[id],
+      clearGitHubToken: (id: string) => cleared.push(id),
+    } as unknown as UserRepository);
+    // A check of an older token never drops a newer login's.
+    expect(users.dropGitHubToken("carol", "gho_old")).toBe(false);
+    expect(users.dropGitHubToken("nobody", "gho_new")).toBe(false);
+    expect(cleared).toEqual([]);
+    expect(users.dropGitHubToken("carol", "gho_new")).toBe(true);
+    expect(cleared).toEqual(["carol"]);
+  });
+
   test("auth bypass uses the host token, never a stored one", () => {
     config.server.mode = "local";
     expect(service.resolveGitHubToken("alice")).toBeUndefined();

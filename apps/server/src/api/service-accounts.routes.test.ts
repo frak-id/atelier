@@ -51,7 +51,8 @@ beforeAll(async () => {
   control = createControlContainer();
 
   const person = async (id: string) => {
-    control.userService.upsertFromLogin(id, id, `${id}@x.test`, "");
+    // A console session needs a stored GitHub token.
+    control.userService.upsertFromLogin(id, id, `${id}@x.test`, "", "gho_x");
     control.defaultOrg.joinDefaultOrg(id);
     return signJwt({ id, username: id, avatarUrl: "", email: `${id}@x.test` });
   };

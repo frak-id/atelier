@@ -8,7 +8,6 @@
 import { prebuildJobTarget } from "@atelier/spec";
 import { logger, rotateLogFile } from "../shared/lib/logger.ts";
 import type { ServerContainer } from "./container.ts";
-import { GitCredentialRefresher } from "./git-credential-refresh.ts";
 import { runDueToolboxRefreshes } from "./toolbox-refresh.ts";
 
 /** The `jobs` table is append-only (one row per long op forever), so keep a
@@ -135,17 +134,13 @@ export function startScheduler(container: ServerContainer): void {
     ),
   );
 
-  // Service-account sandboxes: an App token lasts an hour, so keep the
-  // credential file of running ones current.
-  const credentialRefresh = new GitCredentialRefresher({
-    runtime: container.runtime,
-    credentials: container.control.gitCredentials,
-    isServiceAccount: (id) =>
-      container.control.userService.getById(id)?.kind === "service",
-  });
+  // Running sandboxes: an App token lasts an hour and a person's token
+  // changes at each login, so keep their credential file current.
   Bun.cron(
     "*/5 * * * *",
-    guarded("git credential refresh", () => credentialRefresh.tick()),
+    guarded("git credential refresh", () =>
+      container.gitCredentialRefresh.tick(),
+    ),
   );
 
   // The server log file (production) rotates by size.

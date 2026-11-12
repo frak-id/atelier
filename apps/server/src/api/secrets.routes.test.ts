@@ -55,7 +55,8 @@ afterAll(async () => {
 let seq = 0;
 function makeUser(memberships: [orgId: string, role: string][] = []) {
   const id = `sec-u${++seq}`;
-  control.userService.upsertFromLogin(id, id, `${id}@x.test`, "");
+  // A console session needs a stored GitHub token.
+  control.userService.upsertFromLogin(id, id, `${id}@x.test`, "", "gho_x");
   for (const [orgId, role] of memberships) {
     control.orgMemberService.addMember(
       orgId,

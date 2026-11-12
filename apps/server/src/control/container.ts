@@ -17,6 +17,7 @@ import {
 import { GitCredentialService } from "./git-credentials.ts";
 import { GitHubAppClient } from "./github-app.ts";
 import { GitHubRepoService } from "./github-repos.ts";
+import { GitHubTokenValidator } from "./github-token-validator.ts";
 import { ApiKeyRepository, ApiKeyService } from "./modules/api-key/index.ts";
 import { IdlePolicyService } from "./modules/idle-policy/index.ts";
 import {
@@ -110,7 +111,11 @@ export function createControlContainer() {
     apiKeys: apiKeyService,
   });
   const authService = new AuthService({ apiKeyService, userService });
-  const gitHubRepoService = new GitHubRepoService({ userService });
+  const gitHubTokens = new GitHubTokenValidator({ users: userService });
+  const gitHubRepoService = new GitHubRepoService({
+    userService,
+    onTokenRejected: (userId, token) => gitHubTokens.rejected(userId, token),
+  });
 
   const isServiceAccount = (userId: string) =>
     userService.getById(userId)?.kind === "service";
@@ -144,6 +149,9 @@ export function createControlContainer() {
     toolboxService,
     toolboxVersionService,
     authService,
+    /** Whether GitHub still accepts a person's stored token (a rejected one
+     * is dropped, which ends their console sessions). */
+    gitHubTokens,
     gitHubRepoService,
     ownershipTransferService,
     /** Git identity and GitHub token of a sandbox owner (people and

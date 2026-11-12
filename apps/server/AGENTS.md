@@ -115,6 +115,16 @@ an explicit `requireSandboxAccess`. Tool URLs apply the same rule
 a caller sees a job they own (`metadata.owner`), one on a sandbox they can
 access, or every job as a server admin; cancel is owner or admin.
 
+## Console sessions
+
+A person's session JWT is valid only while their GitHub token is stored
+(`AuthService.verifySession`, used by the auth plugin, `/auth/me`,
+`/auth/forward` and `/auth/verify`). `GitHubTokenValidator`
+(`control/github-token-validator.ts`) drops a token GitHub answers 401 to:
+from `/auth/me` (checked at most every 5 minutes) or from the repo browser.
+A test that signs a JWT for a person must store a token for them
+(`upsertFromLogin(..., "gho_x")`).
+
 ## Server admins
 
 A server admin is an owner of the org named by `auth.defaultOrg`
@@ -150,7 +160,8 @@ API key and own sandboxes. Rules:
   is the one place that turns an owner id into a token and git identity:
   boot (`resolveBootSpec`), prebuild bakes and the staleness check all go
   through it. `api/git-credential-refresh.ts` rewrites the git files of
-  running SA sandboxes every 5 minutes (App tokens last an hour) with
+  running sandboxes (people's and SAs') every 5 minutes (App tokens last an
+  hour), and a person's right after they sign in, with
   `runtime.writeFilesQuietly`, which doesn't count as activity.
 - `sandbox.config.json` `serviceAccounts` declares accounts
   (`control/service-account-config.ts`, reconciled at startup and every 5

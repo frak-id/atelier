@@ -13,6 +13,7 @@ import { detectSetupSteps } from "@atelier/spec/repo-prebuild";
 import {
   NotFoundError,
   SandboxError,
+  UnauthorizedError,
   ValidationError,
 } from "../shared/errors.ts";
 import { isAuthBypassed } from "../shared/lib/config.ts";
@@ -134,6 +135,8 @@ export class GitHubRepoService {
   constructor(
     private readonly deps: {
       userService: Pick<UserService, "getById">;
+      /** GitHub answered 401 to a person's token (it was revoked). */
+      onTokenRejected?: (userId: string, token: string) => void;
       fetch?: Fetch;
       now?: () => number;
       /** Test seam; defaults to the server mode. */
@@ -186,7 +189,7 @@ export class GitHubRepoService {
     let truncated = false;
     for (let page = 1; page <= MAX_PAGES; page++) {
       const batch = await this.get<RawRepo[]>(
-        token,
+        { userId, token },
         `/user/repos?affiliation=owner,collaborator,organization_member` +
           `&sort=pushed&direction=desc&per_page=${PER_PAGE}&page=${page}`,
       );
@@ -228,13 +231,12 @@ export class GitHubRepoService {
     if (cached && cached.expiresAt > this.now()) return cached.value;
 
     const base = `/repos/${owner}/${name}`;
-    const repo = toRepo(
-      await this.get<RawRepo>(token, base, `${owner}/${name}`),
-    );
+    const as = { userId, token };
+    const repo = toRepo(await this.get<RawRepo>(as, base, `${owner}/${name}`));
     const at = ref?.trim() || repo.defaultBranch;
     const [branches, contents] = await Promise.all([
       this.get<{ name: string }[]>(
-        token,
+        as,
         `${base}/branches?per_page=${MAX_BRANCHES}`,
       ).catch((err) => {
         log.warn({ err, repo: repo.fullName }, "branch listing failed");
@@ -243,7 +245,7 @@ export class GitHubRepoService {
       // An empty repo 404s its contents, and a missing ref 404s too. Both
       // just mean "nothing to suggest", not a failed inspection.
       this.get<{ name: string; type: string }[]>(
-        token,
+        as,
         `${base}/contents/?ref=${encodeURIComponent(at)}`,
       ).catch(() => [] as { name: string; type: string }[]),
     ]);
@@ -281,10 +283,10 @@ export class GitHubRepoService {
     }
   }
 
-  /** GET a GitHub API path. `resource` names the thing for a 404 message
-   * (e.g. `owner/name`), never the raw API path. */
+  /** GET a GitHub API path as `userId`'s `token`. `resource` names the thing
+   * for a 404 message (e.g. `owner/name`), never the raw API path. */
   private async get<T>(
-    token: string,
+    { userId, token }: { userId: string; token: string },
     path: string,
     resource = "resource",
   ): Promise<T> {
@@ -303,6 +305,14 @@ export class GitHubRepoService {
         response.status === 403 &&
         response.headers.get("x-ratelimit-remaining") === "0";
       log.warn({ status: response.status, path }, "GitHub API error");
+      // A person's token GitHub rejects is dropped, which ends their session:
+      // a 401 sends the console to its session check (and the login page).
+      if (response.status === 401 && this.mode() === "real") {
+        this.deps.onTokenRejected?.(userId, token);
+        throw new UnauthorizedError(
+          "GitHub rejected your token: sign in with GitHub again",
+        );
+      }
       throw new GitHubUpstreamError(
         rateLimited
           ? "GitHub API rate limit reached; try again in a few minutes"

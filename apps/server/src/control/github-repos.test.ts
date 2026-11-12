@@ -168,9 +168,34 @@ describe("GitHubRepoService.listRepos", () => {
     expect(err.statusCode).toBe(502);
     expect(err.message).toContain("rate limit");
 
+    // A revoked token is the session ending, not an outage.
     const revoked = setup(() => json({}, 401));
     const err2 = await revoked.service.listRepos("1").catch((e) => e);
+    expect(err2.statusCode).toBe(401);
     expect(err2.message).toContain("sign in with GitHub again");
+  });
+
+  test("reports a token GitHub rejects, and only that", async () => {
+    // [mode, GitHub status, reports per call]
+    for (const [mode, status, reports] of [
+      ["real", 401, 1],
+      ["real", 403, 0],
+      ["bypassed", 401, 0],
+    ] as const) {
+      const rejected: string[][] = [];
+      process.env.ATELIER_GITHUB_TOKEN = "tok-1";
+      const service = new GitHubRepoService({
+        userService: { getById: () => user("1", "tok-1") },
+        onTokenRejected: (userId, token) => rejected.push([userId, token]),
+        mode: () => mode,
+        fetch: async () => json({}, status),
+      });
+      await service.listRepos("1").catch(() => undefined);
+      await service.inspectRepo("1", "org", "app").catch(() => undefined);
+      delete process.env.ATELIER_GITHUB_TOKEN;
+      // listRepos, then inspectRepo's first call (the repo itself).
+      expect(rejected).toEqual(Array(2 * reports).fill(["1", "tok-1"]));
+    }
   });
 });
 
