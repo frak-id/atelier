@@ -101,17 +101,20 @@ RUN curl -fsSL -o /tmp/oras.tar.gz "https://github.com/oras-project/oras/release
 # GitHub CLI, pinned like oras. The binary sits in /usr/local/libexec/gh;
 # /usr/local/bin/gh (copied below) is a wrapper that hands it the GitHub
 # token Atelier writes for git, since gh ignores git's credential store.
+# Both version checks below run with a throwaway HOME: gh writes
+# ~/.local/state/gh/device-id and mise a cache file, and /home/dev must not
+# exist before the usermod below (nor carry one device id into every
+# sandbox through /home/skel).
 RUN curl -fsSL -o /tmp/gh.tar.gz "https://github.com/cli/cli/releases/download/v${GH_VERSION}/gh_${GH_VERSION}_linux_amd64.tar.gz" \
     && mkdir -p /usr/local/libexec/gh \
     && tar -xzf /tmp/gh.tar.gz -C /usr/local/libexec/gh --strip-components=2 "gh_${GH_VERSION}_linux_amd64/bin/gh" \
     && rm -f /tmp/gh.tar.gz \
-    && /usr/local/libexec/gh/gh --version
+    && HOME=/tmp/gh-check /usr/local/libexec/gh/gh --version \
+    && rm -rf /tmp/gh-check
 
 # mise (per-project tool versions), a single binary in /usr/local/bin.
 # Tools it installs land in ~/.local/share/mise, on the workspace volume, so
-# they survive pause/resume and are captured in prebuild snapshots. The
-# version check runs with a throwaway HOME: `mise --version` writes a cache
-# file under $HOME, and /home/dev must not exist before the usermod below.
+# they survive pause/resume and are captured in prebuild snapshots.
 RUN curl -fsSL -o /usr/local/bin/mise "https://github.com/jdx/mise/releases/download/v${MISE_VERSION}/mise-v${MISE_VERSION}-linux-x64" \
     && chmod +x /usr/local/bin/mise \
     && HOME=/tmp/mise-check mise --version \
