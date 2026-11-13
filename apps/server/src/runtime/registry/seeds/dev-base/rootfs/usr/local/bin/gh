@@ -1,0 +1,33 @@
+#!/bin/sh
+# gh wrapper; the real binary is GH_BIN. gh ignores git's credential store, so
+# this hands it the GitHub token Atelier writes for git. The server rewrites
+# that file every 5 minutes (an App token lasts an hour) and it is read on
+# every call, so a long-lived shell never runs gh with a stale token.
+# A token the caller set (GH_TOKEN, GITHUB_TOKEN) or a `gh auth login` for
+# github.com wins. Path and line format come from
+# apps/server/src/shared/lib/git-attribution.ts (buildGitAttributionFiles).
+GH_BIN=/usr/local/libexec/gh/gh
+CREDENTIALS=/etc/sandbox/secrets/git-credentials
+
+# gh refuses to log in, log out, refresh or switch accounts while GH_TOKEN is
+# set, so those never get the token.
+case "${1:-} ${2:-}" in
+    "auth login" | "auth logout" | "auth refresh" | "auth switch")
+        exec "$GH_BIN" "$@"
+        ;;
+esac
+
+if [ -z "${GH_TOKEN:-}" ] && [ -z "${GITHUB_TOKEN:-}" ] &&
+    [ -r "$CREDENTIALS" ]; then
+    hosts="${GH_CONFIG_DIR:-${XDG_CONFIG_HOME:-$HOME/.config}/gh}/hosts.yml"
+    if ! grep -qs '^github\.com:' "$hosts"; then
+        token=$(sed -n 's#^https://[^:@/]*:\([^@]*\)@github\.com/\{0,1\}$#\1#p' \
+            "$CREDENTIALS" | head -n 1)
+        if [ -n "$token" ]; then
+            GH_TOKEN=$token
+            export GH_TOKEN
+        fi
+    fi
+fi
+
+exec "$GH_BIN" "$@"

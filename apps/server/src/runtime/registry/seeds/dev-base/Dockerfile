@@ -1,7 +1,7 @@
 # Atelier - dev-base image
-# Minimal development environment with Bun and Git. No agent harness is baked
-# in: opencode, pi and tools like code-server come from toolboxes, whose
-# toolset artifacts materialize into ~/.local
+# Minimal development environment with Bun, Git, gh and mise. No agent
+# harness is baked in: opencode, pi and tools like code-server come from
+# toolboxes, whose toolset artifacts materialize into ~/.local
 # (docs/archive/proposals/composed-prebuild-volumes.md), not /opt/shared.
 #
 # Build: docker build -t atelier/dev-base .
@@ -21,6 +21,8 @@ FROM node:26-trixie-slim
 
 
 ARG ORAS_VERSION=1.3.6
+ARG GH_VERSION=2.104.0
+ARG MISE_VERSION=2026.11.7
 ENV DEBIAN_FRONTEND=noninteractive
 ENV HOME=/home/dev
 ENV USER=dev
@@ -96,6 +98,25 @@ RUN curl -fsSL -o /tmp/oras.tar.gz "https://github.com/oras-project/oras/release
     && rm -f /tmp/oras.tar.gz \
     && oras version
 
+# GitHub CLI, pinned like oras. The binary sits in /usr/local/libexec/gh;
+# /usr/local/bin/gh (copied below) is a wrapper that hands it the GitHub
+# token Atelier writes for git, since gh ignores git's credential store.
+RUN curl -fsSL -o /tmp/gh.tar.gz "https://github.com/cli/cli/releases/download/v${GH_VERSION}/gh_${GH_VERSION}_linux_amd64.tar.gz" \
+    && mkdir -p /usr/local/libexec/gh \
+    && tar -xzf /tmp/gh.tar.gz -C /usr/local/libexec/gh --strip-components=2 "gh_${GH_VERSION}_linux_amd64/bin/gh" \
+    && rm -f /tmp/gh.tar.gz \
+    && /usr/local/libexec/gh/gh --version
+
+# mise (per-project tool versions), a single binary in /usr/local/bin.
+# Tools it installs land in ~/.local/share/mise, on the workspace volume, so
+# they survive pause/resume and are captured in prebuild snapshots. The
+# version check runs with a throwaway HOME: `mise --version` writes a cache
+# file under $HOME, and /home/dev must not exist before the usermod below.
+RUN curl -fsSL -o /usr/local/bin/mise "https://github.com/jdx/mise/releases/download/v${MISE_VERSION}/mise-v${MISE_VERSION}-linux-x64" \
+    && chmod +x /usr/local/bin/mise \
+    && HOME=/tmp/mise-check mise --version \
+    && rm -rf /tmp/mise-check
+
 # Layer 3: Locale + user setup + SSH config (rarely changes)
 # Deliberately NO `ssh-keygen -A` here: baking host keys into the image would
 # ship every sandbox's PRIVATE key inside the public dev-base image (anyone
@@ -138,10 +159,14 @@ RUN echo 'export PATH="$HOME/.local/bin:$PATH"' > /etc/profile.d/local-bin.sh \
     && printf '[ "$(id -u)" = "1000" ] && [ -r /etc/sandbox/secrets/.env ] && . /etc/sandbox/secrets/.env\n' > /etc/profile.d/99-sandbox-secrets.sh
 COPY --chown=dev:dev rootfs/etc/sandbox/ /etc/sandbox/
 COPY rootfs/etc/chrony/chrony.conf /etc/chrony/chrony.conf
+COPY rootfs/etc/profile.d/mise.sh /etc/profile.d/mise.sh
+COPY rootfs/etc/mise/config.toml /etc/mise/config.toml
+COPY rootfs/usr/local/bin/gh /usr/local/bin/gh
 RUN mkdir -p /var/lib/chrony && chown _chrony:_chrony /var/lib/chrony \
     && echo 'dev ALL=(root) NOPASSWD: /usr/sbin/chronyd, /usr/bin/chronyc' > /etc/sudoers.d/chrony \
     && chmod 440 /etc/sudoers.d/chrony
 RUN chmod +x /etc/sandbox/*.sh 2>/dev/null || true
+RUN chmod 755 /usr/local/bin/gh
 # Agent binary from the `agent` stage above (apps/agent ships it at
 # /atelier-agent). The in-pod path stays /usr/local/bin/sandbox-agent so
 # sandbox-boot.sh is unchanged.

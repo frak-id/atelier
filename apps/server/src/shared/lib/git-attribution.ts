@@ -35,7 +35,10 @@ export const OWNER_KIND_ANNOTATION = "atelier.dev/owner-kind";
  * regardless of who triggers the resume. */
 export const OWNER_ID_METADATA = "atelier.dev/owner-id";
 
-/** Credential store file — the ONLY token-bearing file; scrubbed pre-snapshot. */
+/** Credential store file — the ONLY token-bearing file; scrubbed pre-snapshot.
+ * dev-base's gh wrapper (seeds/dev-base/rootfs/usr/local/bin/gh) reads the
+ * token from it, so its path and line format are a contract with the image
+ * (pinned by git-attribution.test.ts). */
 export const GIT_CREDENTIALS_PATH = "/etc/sandbox/secrets/git-credentials";
 export const GITCONFIG_PATH = "/etc/gitconfig";
 

@@ -153,7 +153,9 @@ file.
 ### What the sandbox can do with it
 
 The credential file is readable by `dev`, the user the coding agent runs as,
-and sandbox egress is open. Anything the agent runs can read the token and
+and sandbox egress is open. The `gh` CLI in the base images reads its token
+from this file too, so the agent can call the GitHub API with it as well as
+push. Anything the agent runs can read the token and
 send it out. Keep the App's installation and permissions as narrow as the work
 needs: an installation token expires within the hour, a static token does not.
 

@@ -1,0 +1,6 @@
+# System-wide mise config. A sandbox only clones its owner's repos, so a
+# mise.toml under the home is trusted up front: without this, a
+# non-interactive shell (every agent command) fails on an untrusted config
+# until someone runs `mise trust`.
+[settings]
+trusted_config_paths = ["/home/dev"]
