@@ -63,6 +63,7 @@ import {
 import type { HookPhase, WriteFilesResult } from "./agent/index.ts";
 import { AgentClient } from "./agent/index.ts";
 import { createSandboxBackend, type SandboxBackend } from "./backend/index.ts";
+import { provisionAgent } from "./boot-agent.ts";
 import { BuildPods, type OnLog } from "./build-pod.ts";
 import { getRemoteCommitHash } from "./git-remote.ts";
 import { OpLock } from "./op-lock.ts";
@@ -801,6 +802,84 @@ export class RuntimeService {
         log.error({ id: record.id, err }, "startup reconciliation failed");
       }
     }
+  }
+
+  // ── compute restarted outside the runtime ──────────────────────────
+
+  /**
+   * Re-provision every `running` sandbox whose agent came back without
+   * config: its compute restarted while the runtime drove nothing (a node or
+   * host reboot, the kubelet recreating the container). The config lives on
+   * the guest's tmpfs (pushed, never mounted: its env holds resolved
+   * secrets), so such an agent runs no process, forwards no port and serves a
+   * freshly generated sshd host key the SSH gateway no longer pins. A record
+   * only turns `running` once its config was pushed, so `configured: false`
+   * from a running sandbox's agent means exactly that restart.
+   *
+   * Resume's tail, against the compute that is already there: provision
+   * (materialize, config, files, host keys), `onResume`, processes. Never
+   * throws: a failure is logged and the sandbox stays `running`. The next
+   * pass retries only while the agent still has no config, so a failed hook
+   * is not re-run every minute. Housekeeping, not activity: the idle clock
+   * is left alone. Returns the ids re-provisioned.
+   */
+  async recoverRestarted(): Promise<string[]> {
+    const running = this.sandboxes
+      .list()
+      .filter((r) => r.status === "running" && !this.opLock.has(r.id));
+    const recovered: string[] = [];
+    await Promise.all(
+      running.map(async ({ id }) => {
+        if (!(await this.lostConfig(id))) return;
+        try {
+          if (await this.reprovision(id)) recovered.push(id);
+        } catch (err) {
+          log.error({ id, err }, "re-provisioning a restarted sandbox failed");
+        }
+      }),
+    );
+    return recovered;
+  }
+
+  /** Whether the sandbox's agent answers and reports no config. One that
+   * does not answer may still be restarting, or be back on a new address (a
+   * new pod IP, a new Docker host port): its cached endpoint is dropped so
+   * the next call resolves it again. */
+  private async lostConfig(id: string): Promise<boolean> {
+    try {
+      return (await this.agent.health(id)).configured === false;
+    } catch {
+      this.agent.invalidatePodIp(id);
+      return false;
+    }
+  }
+
+  private reprovision(id: string): Promise<boolean> {
+    return this.opLock.run(id, async () => {
+      // Checked again under the lock: a pause, destroy or resume may have
+      // run since the probe.
+      const record = this.sandboxes.get(id);
+      if (record?.status !== "running" || !(await this.lostConfig(id))) {
+        return false;
+      }
+      log.warn({ id }, "agent restarted without config; re-provisioning");
+      const { podIp, sshHostKeys } = await provisionAgent(
+        id,
+        await this.toBootSpec(record.spec),
+        { toolsets: resolveSpecToolsets(record.spec) },
+        this.agent,
+      );
+      // Pin the regenerated sshd host key now, so SSH works again even if a
+      // hook below fails.
+      this.sandboxes.update(id, {
+        generated: { ...record.generated, podIp, sshHostKeys },
+      });
+      await this.runPhase(id, "onResume");
+      await this.agent.reconcile(id);
+      await this.gateOnPrimary(id);
+      log.info({ id }, "restarted sandbox re-provisioned");
+      return true;
+    });
   }
 
   // ── live mutations ─────────────────────────────────────────────────────

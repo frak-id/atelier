@@ -38,11 +38,15 @@ export interface ProvisionAgentResult {
  *      see BootInput.toolsets), push config, and fetch the sshd host key(s),
  *      all concurrently;
  *   2. write spec files last, after the overlay is assembled.
+ *
+ * Also the whole recovery of a guest that restarted without the runtime
+ * (`RuntimeService.recoverRestarted`): the compute is already there, only
+ * the agent's state is gone.
  */
 export async function provisionAgent(
   sandboxId: string,
   spec: SandboxSpec,
-  input: BootInput,
+  input: Pick<BootInput, "toolsets">,
   agent: AgentClient,
 ): Promise<ProvisionAgentResult> {
   const { ready, podIp } = await agent.waitForAgent(sandboxId, {

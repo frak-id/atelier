@@ -106,6 +106,16 @@ export function startScheduler(container: ServerContainer): void {
     guarded("idle reaper tick", () => container.idle.tick()),
   );
 
+  // A sandbox whose compute restarted without the runtime (a node or host
+  // reboot) comes back with an agent that has no config: push it again and
+  // restart the processes. Every minute, so a reboot heals within one.
+  Bun.cron(
+    "* * * * *",
+    guarded("restarted sandbox recovery", async () => {
+      await container.runtime.recoverRestarted();
+    }),
+  );
+
   // Scheduled toolbox refreshes (docs/toolbox-versions.md section 10): start
   // a refresh job for every toolbox whose cron schedule is due. The tick only
   // dispatches (the jobs pool runs the pods), so it stays short.

@@ -143,7 +143,9 @@ impl Hooks {
 /// The full guest config, pushed by the runtime (never ConfigMap-mounted:
 /// per-process `env` may hold resolved secrets, which must not persist in
 /// etcd). Persisted to tmpfs only, so it survives an agent crash-restart but
-/// dies with the pod — resume re-pushes it.
+/// dies with the pod — resume re-pushes it, and so does the server's
+/// recovery pass when the pod restarted on its own (`/health` reports
+/// `configured: false`).
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct AgentConfig {

@@ -103,6 +103,15 @@ is refused (409) while a prebuild is chained on one of its snapshots.
 sandbox and runs under the per-sandbox operation lock. `reconcileOnStartup()`
 marks zombie `creating` and pod-less `running` records as `error` at boot.
 
+**Restarted compute.** The guest keeps its config on tmpfs, so a sandbox
+whose pod or container restarted without the runtime (a node or host reboot)
+comes back with an agent that reports `configured: false` and runs nothing.
+Every minute the scheduler probes running sandboxes and gives such a one
+resume's tail on the compute that is there: materialize, config, files, a
+freshly pinned sshd host key, `onResume`, processes
+(`RuntimeService.recoverRestarted`). A failure is logged and the sandbox
+stays `running`.
+
 ### Auto-resume on access
 
 A paused sandbox wakes when something uses it:
