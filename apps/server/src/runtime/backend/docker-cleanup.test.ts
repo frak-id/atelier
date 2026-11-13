@@ -2,7 +2,8 @@
  * The Docker backend's volume bookkeeping against a scripted fake `docker`
  * binary (no daemon): snapshots carry their owner label, cleanup removes the
  * sandbox's labelled snapshot volumes, and a failing `docker rm` / `docker
- * volume rm` makes cleanup report failure instead of success.
+ * volume rm` makes cleanup report failure instead of success. Boot first
+ * clears a stopped container left holding the sandbox's name.
  */
 import {
   afterAll,
@@ -15,6 +16,7 @@ import {
 import { chmod, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import { FakeAgentClient } from "../runtime.test-support.ts";
 import { DockerBackend } from "./docker.backend.ts";
 import { DockerVolumeBackend } from "./docker-volume.backend.ts";
 
@@ -34,6 +36,8 @@ case "$1 $2" in
   "volume ls") printf 'snap-a\\nsnap-b\\n';;
   "rm -f")
     if [ -n "$FAKE_DOCKER_RM_FAIL" ]; then echo "$FAKE_DOCKER_RM_FAIL" >&2; exit 1; fi;;
+  "rm "*)
+    if [ -n "$FAKE_DOCKER_RM_STOPPED_FAIL" ]; then echo "$FAKE_DOCKER_RM_STOPPED_FAIL" >&2; exit 1; fi;;
   "volume rm")
     if [ -n "$FAKE_DOCKER_VOLUME_RM_FAIL" ]; then echo "in use" >&2; exit 1; fi;;
 esac
@@ -51,6 +55,7 @@ beforeEach(async () => {
   await writeFile(log, "");
   process.env.FAKE_DOCKER_LOG = log;
   delete process.env.FAKE_DOCKER_RM_FAIL;
+  delete process.env.FAKE_DOCKER_RM_STOPPED_FAIL;
   delete process.env.FAKE_DOCKER_VOLUME_RM_FAIL;
 });
 
@@ -102,6 +107,43 @@ describe("DockerBackend.cleanup", () => {
   test("a failing `docker volume rm` is reported", async () => {
     process.env.FAKE_DOCKER_VOLUME_RM_FAIL = "1";
     expect(await makeBackend().cleanup("sb1")).toBe(false);
+  });
+});
+
+describe("DockerBackend.boot", () => {
+  const spec = {
+    source: { image: "registry.test/base:1" },
+    resources: { vcpus: 1, memoryMb: 512 },
+  };
+
+  test("removes a stopped container holding the name before docker run", async () => {
+    await makeBackend().boot(
+      "sb1",
+      spec,
+      { image: "registry.test/base:1", reusePvc: true },
+      new FakeAgentClient(),
+    );
+    const seen = await calls();
+    const rm = seen.indexOf("rm sandbox-sb1");
+    const run = seen.findIndex((c) =>
+      c.startsWith("run -d --name sandbox-sb1"),
+    );
+    expect(rm).toBeGreaterThanOrEqual(0);
+    expect(run).toBeGreaterThan(rm);
+    // Never forced: a running container keeps its name.
+    expect(seen).not.toContain("rm -f sandbox-sb1");
+  });
+
+  test("no container to remove is fine", async () => {
+    process.env.FAKE_DOCKER_RM_STOPPED_FAIL =
+      "Error: No such container: sandbox-sb1";
+    const out = await makeBackend().boot(
+      "sb1",
+      spec,
+      { image: "registry.test/base:1", reusePvc: true },
+      new FakeAgentClient(),
+    );
+    expect(out.agentPassword).toHaveLength(32);
   });
 });
 

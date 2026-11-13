@@ -98,6 +98,12 @@ export class DockerBackend implements SandboxBackend {
         pvcName,
         input.reusePvc ? undefined : input.snapshotName,
       );
+      // The name is fixed per sandbox and a stopped container keeps it: the
+      // containers have no restart policy, so after a host reboot they sit
+      // `Exited` while `reconcileOnStartup` parks their records in `error`.
+      // Without this, the resume's `docker run` fails on the name and only
+      // the retry after its rollback works.
+      await this.removeStoppedContainer(id);
 
       const runArgs = ["run", "-d", "--name", containerName];
       // --privileged + --user 0: the agent loop-mounts squashfs/erofs toolset
@@ -154,6 +160,13 @@ export class DockerBackend implements SandboxBackend {
   async deleteRestartable(id: string): Promise<void> {
     // Remove the container, keep the volume dir (pause / resume-rollback).
     await this.removeContainer(id);
+  }
+
+  /** Remove the sandbox's container if it is stopped. Best effort: `docker
+   * rm` without `-f` refuses a running one (then `docker run` reports the
+   * name conflict), so a boot never kills a live container. */
+  private async removeStoppedContainer(id: string): Promise<void> {
+    await this.docker(["rm", this.containerName(id)]);
   }
 
   /** `docker rm -f` the sandbox's container; one that is already gone is
