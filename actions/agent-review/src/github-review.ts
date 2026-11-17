@@ -6,7 +6,8 @@
  * the diff doesn't show (GitHub refuses the whole review for one such comment)
  * goes into the summary instead. Minor findings are never comments: they're
  * listed at the end of the summary, collapsed, so that they don't bury the ones
- * that matter.
+ * that matter. A finding's evidence (how the agent confirmed it) is collapsed
+ * under it.
  *
  * Each finding has an id (F1, F2…, per PR) that later reviews keep: the next
  * one says what became of it (fixed, still open, dismissed), from what
@@ -34,6 +35,9 @@ export interface Finding {
   /** Replacement for lines `startLine`..`line`: a GitHub suggestion, only on an
    * inline comment. */
   suggestion?: string;
+  /** How the agent confirmed it (the code path, the case that triggers it):
+   * shown collapsed, for whoever doubts it. */
+  evidence?: string;
   /** The id of the earlier review's finding this one is, still open: it keeps
    * that id. */
   previous?: string;
@@ -141,7 +145,17 @@ function parseFinding(
   // Models write `null` for a field that doesn't apply: it's absent.
   const field = (name: string) =>
     ((raw as Record<string, unknown>)[name] ?? undefined) as unknown;
-  const [severity, title, body, path, line, startLine, suggestion, previous] = [
+  const [
+    severity,
+    title,
+    body,
+    path,
+    line,
+    startLine,
+    suggestion,
+    evidence,
+    previous,
+  ] = [
     "severity",
     "title",
     "body",
@@ -149,6 +163,7 @@ function parseFinding(
     "line",
     "startLine",
     "suggestion",
+    "evidence",
     "previous",
   ].map(field);
   if (!SEVERITIES.includes(severity as Severity))
@@ -171,6 +186,8 @@ function parseFinding(
     throw new Error(`${where}: lines are positive integers`);
   if (suggestion !== undefined && typeof suggestion !== "string")
     throw new Error(`${where}.suggestion is invalid`);
+  if (evidence !== undefined && typeof evidence !== "string")
+    throw new Error(`${where}.evidence must be a string`);
   if (
     previous !== undefined &&
     (typeof previous !== "string" || !earlier.has(previous))
@@ -202,6 +219,9 @@ function parseFinding(
       : {}),
     ...(suggestion !== undefined && !backwards
       ? { suggestion: suggestion as string }
+      : {}),
+    ...((evidence as string | undefined)?.trim()
+      ? { evidence: (evidence as string).trim() }
       : {}),
     ...(previous !== undefined ? { previous: previous as string } : {}),
   };
@@ -409,13 +429,25 @@ function codeBlock(code: string, info: string): string {
   return `${fence}${info}\n${code}\n${fence}`;
 }
 
+/** The finding's evidence, collapsed under it: our own `<details>`, since
+ * quiet() turns any the agent wrote into text, and closes its fences so that
+ * none swallows the `</details>`. */
+function evidence(finding: PostedFinding): string {
+  return finding.evidence
+    ? `\n\n<details><summary>Evidence</summary>\n\n${quiet(finding.evidence)}\n\n</details>`
+    : "";
+}
+
 function inlineBody(finding: PostedFinding, withSuggestion: boolean): string {
   const heading = `${headline(finding)}\n\n${quiet(finding.body)}`;
   const text =
     !withSuggestion || finding.suggestion === undefined
       ? heading
       : `${heading}\n\n${codeBlock(finding.suggestion, "suggestion")}`;
-  return finding.id ? `${text}\n\n${findingMarker(finding.id)}` : text;
+  const withEvidence = `${text}${evidence(finding)}`;
+  return finding.id
+    ? `${withEvidence}\n\n${findingMarker(finding.id)}`
+    : withEvidence;
 }
 
 function location(finding: PostedFinding): string {
@@ -542,7 +574,7 @@ export function buildReview(
       finding.suggestion === undefined
         ? ""
         : `\n\nSuggested change:\n\n${codeBlock(finding.suggestion, "")}`;
-    const text = `${quiet(finding.body)}${suggestion}`;
+    const text = `${quiet(finding.body)}${suggestion}${evidence(finding)}`;
     return `- ${headline(finding)}${location(finding)}\n\n  ${text.replaceAll("\n", "\n  ")}`;
   };
   let body = [
@@ -566,13 +598,10 @@ export function buildReview(
   const room = MAX_BODY - (review.state?.length ?? 0);
   if (body.length > room) {
     const cut = closeFences(body.slice(0, room));
-    // Cut inside the minor findings: closed, or the footer would be hidden with
-    // them.
-    const open =
-      cut.includes("<details>") && !cut.includes("</details>")
-        ? "\n\n</details>"
-        : "";
-    body = `${cut}${open}\n\n… (cut: too long for GitHub)`;
+    // Cut inside the minor findings, or a finding's evidence: closed, or the
+    // footer would be hidden with them. Every `<details>` is ours (quiet()).
+    const open = cut.split("<details>").length - cut.split("</details>").length;
+    body = `${cut}${"\n\n</details>".repeat(Math.max(0, open))}\n\n… (cut: too long for GitHub)`;
   }
   return {
     body: `${body}\n\n<sub>${footer}</sub>${review.state ? `\n\n${review.state}` : ""}`,

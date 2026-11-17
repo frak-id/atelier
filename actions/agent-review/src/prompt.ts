@@ -203,8 +203,12 @@ export function reviewPrompt(pr: {
      callers and callees a change affects.
    - Look at the diff as a whole, then once for each concern: ${concerns}.`,
     `Check every candidate finding yourself against the code at the head before keeping it: read the code around it,
-   follow its callers and callees. Drop what you can't confirm, duplicates, matters of taste, and what the tooling
-   already enforces (formatting, lint, types).
+   follow its callers and callees, and write down how you confirmed it (its \`evidence\`). Drop what you can't
+   confirm, duplicates, matters of taste, and what the tooling already enforces (formatting, lint, types).
+   A problem already there at the merge base is not the PR's: drop it unless the PR makes it worse or newly reachable
+   (\`git show ${pr.mergeBase}:<path>\` has the file as it was).
+   One that is critical goes in the summary, in a line that says it's pre-existing, so that it isn't taken for the
+   author's.
    ${
      earlier
        ? `Keep the critical and major findings you confirm, and no new minor one, however sure: earlier
@@ -330,6 +334,7 @@ Write your review as JSON to ${pr.output}, and nothing else in that file:
       "line": 42,
       "startLine": 40,
       "suggestion": "replacement text for lines startLine..line",
+      "evidence": "Markdown: how you confirmed it, in a few lines",
       "previous": "F3"
     }
   ]
@@ -349,6 +354,8 @@ Write your review as JSON to ${pr.output}, and nothing else in that file:
   shows as context: the review comments on it there. Omit both for a finding about the PR as a whole.
 - \`startLine\`: only for a range ending at \`line\`, within the same diff hunk.
 - \`suggestion\`: only when the fix is that local and certain: the exact text replacing lines startLine..line (or line).
+- \`evidence\`: the code path you followed (\`path:line\` to \`path:line\`) and the input or sequence that triggers the
+  problem, or the rule it breaks, quoted. Shown collapsed under the finding, for whoever doubts it.
 - A finding's \`previous\`: only for an earlier finding still open, written again for the head (its line moves with the
   code): it keeps its id. A new finding has none.
 - No finding: \`"findings": []\`.

@@ -125,7 +125,8 @@ finding, ✅ *Not blocking* with only minor ones, or LGTM, with the counts per
 severity. Each critical or major finding is a comment on its line of the diff.
 A finding on a line the diff doesn't show is listed in the review's body. Minor
 findings are listed collapsed at its end, never as comments: they're the
-author's to take or leave.
+author's to take or leave. Under each finding, collapsed, is its evidence: how
+the agent confirmed it, for whoever doubts it.
 
 - **What it reports.** The first review reports the critical and major
   findings, and at most five minor ones, the most worth fixing. Each later
@@ -134,7 +135,8 @@ author's to take or leave.
   told to weigh a fix against its cost, and to suggest a follow-up rather than
   new machinery for an unlikely case. The job drops the minor findings past
   these rules (`resolve` in `src/memory.ts`). The job's log keeps them, in the
-  review file.
+  review file. A problem the PR didn't bring is left out unless the PR makes it
+  worse: a critical one is named in the summary, as pre-existing.
 - **While it runs**, a comment on the PR links to the sandbox's agent session
   on Atelier. The review replaces it. A review that fails, or is cancelled or
   times out with no newer push, leaves the comment saying so, as does one
@@ -187,6 +189,24 @@ author's to take or leave.
   `toolboxes`. A toolbox listed there comes after the org's auto-included ones,
   so its file at the same path wins. Toolboxes are applied at boot and don't
   change which prebuild the sandbox boots from.
+
+## Measure
+
+`src/stats.ts` counts what became of the findings on a repository's merged
+PRs, per severity: fixed, dismissed, or still open at merge, and how many
+reviews each PR took. It reads the state each review hides, nothing else, so it
+counts PRs merged before it was run too:
+
+```sh
+GITHUB_TOKEN=$(gh auth token) bun actions/agent-review/src/stats.ts owner/repo 200
+```
+
+The number is how many closed PRs to read (100 by default). It prints a
+markdown table, which a scheduled workflow can append to
+`$GITHUB_STEP_SUMMARY`. *Fixed* is the agent's ruling at the review after the
+fix, not a person's. Many findings dismissed is noise, worth a line in
+`REVIEW.md`. A share fixed that drops after a change to the prompt, the models
+or `subagents` says the change made reviews worse.
 
 ## Security
 

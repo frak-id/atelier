@@ -95,6 +95,28 @@ describe("what a review reports", () => {
   });
 });
 
+test("leaves out what was there before the PR, unless it makes it worse; a critical one goes in the summary as pre-existing", () => {
+  for (const subagents of [{}, false] as const) {
+    const text = prompt(undefined, { subagents });
+    expect(text).toContain(
+      "A problem already there at the merge base is not the PR's: drop it unless the PR makes it worse or newly reachable",
+    );
+    expect(text).toContain(
+      "`git show 2222222222222222222222222222222222222222:<path>`",
+    );
+    expect(text).toContain(
+      "goes in the summary, in a line that says it's pre-existing",
+    );
+  }
+});
+
+test("asks for each finding's evidence: how it was confirmed", () => {
+  const text = prompt();
+  expect(text).toContain("write down how you confirmed it (its `evidence`)");
+  expect(text).toContain('"evidence": "Markdown: how you confirmed it');
+  expect(text).toContain("- `evidence`: the code path you followed");
+});
+
 test("says where each file's patch is: its directories carry a `.d`, as diff-files.sh writes them", () => {
   expect(prompt("written")).toContain(
     "`/home/dev/diff/diff/src.d/app.d/x.ts.patch`",

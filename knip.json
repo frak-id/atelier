@@ -10,7 +10,7 @@
     },
     "actions/agent-review": {
       "project": ["src/**/*.ts"],
-      "entry": ["src/main.ts", "src/**/*.test.ts"]
+      "entry": ["src/main.ts", "src/stats.ts", "src/**/*.test.ts"]
     },
     "packages/spec": {
       "project": ["src/**/*.ts"],

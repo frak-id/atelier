@@ -187,6 +187,57 @@ describe("review", () => {
     );
   });
 
+  test("a finding's evidence is collapsed under it, after its suggestion, on a comment or in the body", () => {
+    const posted = buildReview(
+      {
+        summary: "s",
+        findings: [
+          {
+            ...finding({
+              path: "src/a.ts",
+              line: 12,
+              suggestion: "const y = 2;",
+              evidence: "`a()` calls it: <b>\n```",
+            }),
+            id: "F1",
+          },
+          finding({ title: "Elsewhere", evidence: "Seen in b.ts:3." }),
+        ],
+      },
+      commentable,
+      "footer",
+    );
+    expect(posted.comments[0]?.body).toEndWith(
+      [
+        "```suggestion\nconst y = 2;\n```",
+        "<details><summary>Evidence</summary>",
+        "`a()` calls it: <\u200bb>\n```\n```",
+        "</details>",
+        findingMarker("F1"),
+      ].join("\n\n"),
+    );
+    expect(posted.body).toContain(
+      "**Major: Elsewhere**\n\n  The loop skips the last item.\n  \n  <details><summary>Evidence</summary>\n  \n  Seen in b.ts:3.\n  \n  </details>",
+    );
+  });
+
+  test("cut inside a minor finding's evidence, closes it and the minor findings", () => {
+    const posted = buildReview(
+      {
+        summary: "s",
+        findings: [
+          finding({ title: "Elsewhere", evidence: "closed before the cut" }),
+          finding({ severity: "minor", evidence: "x".repeat(70_000) }),
+        ],
+      },
+      commentable,
+      "footer",
+    );
+    expect(posted.body).toEndWith(
+      "x\n\n</details>\n\n</details>\n\n… (cut: too long for GitHub)\n\n<sub>footer</sub>",
+    );
+  });
+
   test("a finding with an id shows it, and its comment ends with the marker the next review finds it by", () => {
     const posted = buildReview(
       {
@@ -312,6 +363,15 @@ describe("the agent's file", () => {
         ROOT,
       ),
     ).toThrow("findings[0].path");
+    expect(() =>
+      parseReviewFile(
+        JSON.stringify({
+          summary: "s",
+          findings: [{ severity: "minor", title: "t", body: "", evidence: 3 }],
+        }),
+        ROOT,
+      ),
+    ).toThrow("findings[0].evidence");
   });
 
   test("takes null as absent, and an absolute path in the sandbox as relative", () => {
@@ -327,6 +387,7 @@ describe("the agent's file", () => {
             line: null,
             startLine: null,
             suggestion: null,
+            evidence: "  ",
           },
           {
             severity: "minor",
@@ -334,6 +395,7 @@ describe("the agent's file", () => {
             body: "b",
             path: "/home/dev/r/src/a.ts",
             line: 3,
+            evidence: " seen \n",
           },
         ],
       }),
@@ -341,7 +403,14 @@ describe("the agent's file", () => {
     );
     expect(findings).toEqual([
       { severity: "minor", title: "t", body: "b" },
-      { severity: "minor", title: "t", body: "b", path: "src/a.ts", line: 3 },
+      {
+        severity: "minor",
+        title: "t",
+        body: "b",
+        path: "src/a.ts",
+        line: 3,
+        evidence: "seen",
+      },
     ]);
   });
 
