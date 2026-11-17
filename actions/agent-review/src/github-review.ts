@@ -310,6 +310,8 @@ export interface PostedComment {
   in_reply_to_id?: number;
   body?: string;
   user?: { login: string } | null;
+  /** The author's role in the repository, as GitHub tells. */
+  author_association?: string;
 }
 
 /** Ends a finding's comment: how the next review finds the replies to finding

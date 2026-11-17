@@ -7,7 +7,8 @@
  *
  * The next review rules on each open finding (fixed, open, dismissed), reviews
  * what changed since that head first, and the people's replies on a finding's
- * thread reach it with the finding.
+ * thread reach it with the finding: only those of people the repository trusts
+ * (`trusted`), since one can dismiss a finding.
  */
 import { gunzipSync, gzipSync } from "node:zlib";
 import {
@@ -172,6 +173,26 @@ export function earlierReview(
   return undefined;
 }
 
+/** The roles GitHub gives the repository's owners, its organization's members
+ * and its collaborators (`author_association`). */
+const TRUSTED_ROLES = new Set(["OWNER", "MEMBER", "COLLABORATOR"]);
+
+/**
+ * Whether a comment reaches the next review: the PR's author's (`author`), and
+ * those of the repository's owners, members and collaborators. A comment can
+ * dismiss a finding (prompt.ts), and its text goes to the agent: anyone else's
+ * (a stranger's on a public repository, another bot's) is left out.
+ */
+function trusted(
+  comment: { user?: { login: string } | null; author_association?: string },
+  author: string,
+): boolean {
+  return (
+    (author !== "" && comment.user?.login === author) ||
+    TRUSTED_ROLES.has(comment.author_association ?? "")
+  );
+}
+
 const reply = (
   author: string | undefined,
   body: string | null | undefined,
@@ -181,10 +202,12 @@ const reply = (
 });
 
 /** People's replies on the threads of the job's finding comments, per finding
- * id, across every review that posted it. */
+ * id, across every review that posted it: the trusted ones (`trusted`, with the
+ * PR's `author`). */
 export function threadReplies(
   comments: PostedComment[],
   account: string,
+  author: string,
 ): Map<string, Reply[]> {
   const findings = new Map<number, string>();
   for (const comment of comments) {
@@ -202,7 +225,8 @@ export function threadReplies(
       comment.in_reply_to_id === undefined
         ? undefined
         : findings.get(comment.in_reply_to_id);
-    if (!id || comment.user?.login === account) continue;
+    if (!id || comment.user?.login === account || !trusted(comment, author))
+      continue;
     replies.set(id, [
       ...(replies.get(id) ?? []),
       reply(comment.user?.login, comment.body),
@@ -216,13 +240,15 @@ export function threadReplies(
  * last 20 since `since` (ISO time), and every one naming an open finding
  * (`open`, their ids) whatever its date. A minor finding has no thread
  * (github-review.ts), so a comment is the only way to answer it, and one
- * written while a review ran is older than that review.
+ * written while a review ran is older than that review. Only the trusted ones
+ * (`trusted`, with the PR's `author`).
  */
 export function conversationSince(
   comments: IssueComment[],
   since: string | undefined,
   open: readonly string[],
   account: string,
+  author: string,
 ): Reply[] {
   // Ids are `F<n>` (decodeState checks them): nothing to escape, and `\b` keeps
   // F1 from matching F12.
@@ -230,7 +256,9 @@ export function conversationSince(
     open.length > 0 ? new RegExp(`\\b(?:${open.join("|")})\\b`) : undefined;
   const people = comments.filter(
     (comment) =>
-      comment.user?.login !== account && comment.created_at !== undefined,
+      comment.user?.login !== account &&
+      comment.created_at !== undefined &&
+      trusted(comment, author),
   );
   const recent = new Set(
     people

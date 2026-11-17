@@ -62,10 +62,39 @@ import {
   progressCommentId,
 } from "./progress.ts";
 import { type EarlierReview, reviewPrompt } from "./prompt.ts";
+import { MAX_RATE_LIMIT_WAIT_MS, rateLimitWait } from "./rate-limit.ts";
 
-function env(name: string): string {
+/** `text` on one line: messages carry the agent's text and servers', and the
+ * job reads a line starting with `::` as a command. */
+function oneLine(text: string): string {
+  return text.replaceAll(/\s+/g, " ");
+}
+
+const log = (message: string) =>
+  console.log(`[agent-review] ${oneLine(message)}`);
+
+/** An annotation on the run (a workflow command), on one line. `%` is the
+ * commands' escape character. */
+function annotate(kind: "error" | "warning" | "notice", message: string) {
+  console.log(
+    `::${kind} title=Agent review::${oneLine(message).replaceAll("%", "%25")}`,
+  );
+}
+
+/** A warning on the run, not a red check: for what goes wrong around the
+ * review, not in it. */
+const warn = (message: string) => annotate("warning", message);
+const notice = (message: string) => annotate("notice", message);
+
+/** Ends the run red, with `message` on its summary. */
+function fail(message: string): never {
+  annotate("error", message);
+  process.exit(1);
+}
+
+function env(name: string, unset = `${name} is not set`): string {
   const value = process.env[name];
-  if (!value) throw new Error(`${name} is not set`);
+  if (!value) fail(unset);
   return value;
 }
 
@@ -75,8 +104,21 @@ function minutes(name: string, fallback: number): number {
   if (!value) return fallback;
   const parsed = Number(value);
   if (!Number.isInteger(parsed) || parsed < 1)
-    throw new Error(`${name} must be a whole number of minutes`);
+    fail(`${name} must be a whole number of minutes`);
   return parsed;
+}
+
+const sleep = (ms: number) =>
+  new Promise<void>((resolve) => setTimeout(resolve, ms));
+
+// Dependabot's runs get no secret, like a fork's PR: its PRs aren't reviewed,
+// and that's no failure. Any other run without the key is misconfigured.
+if (
+  !process.env.ATELIER_API_KEY &&
+  process.env.GITHUB_ACTOR === "dependabot[bot]"
+) {
+  notice("Dependabot's runs get no secret: its pull requests aren't reviewed.");
+  process.exit(0);
 }
 
 const ATELIER = env("ATELIER_URL").replace(/\/+$/, "");
@@ -96,15 +138,28 @@ const DIFF_DIR = `${HOME}/agent-review-diff`;
 const TASK_MINUTES = minutes("AGENT_TIMEOUT_MINUTES", 40);
 const TASK_TIMEOUT_MS = TASK_MINUTES * 60_000;
 const BOOT_TIMEOUT_MS = 10 * 60_000;
+/** How long a destroy waits for a sandbox whose create job hasn't landed its
+ * record yet (`destroySandbox`). */
+const DESTROY_WAIT_MS = 5 * 60_000;
+/** Atelier's limit on a sandbox's name (`SANDBOX_NAME_MAX_LENGTH`). */
+const SANDBOX_NAME_MAX = 64;
 
 const repository = env("GITHUB_REPOSITORY"); // owner/name
 const repositoryName = repository.split("/")[1] ?? repository;
-if (!process.env.PR_NUMBER)
-  throw new Error(
+const number = Number(
+  env(
+    "PR_NUMBER",
     "PR_NUMBER is not set: the action runs on pull_request events",
-  );
-const number = Number(process.env.PR_NUMBER);
-const atelier = new Atelier(ATELIER_MCP, env("ATELIER_API_KEY"));
+  ),
+);
+const atelier = new Atelier(
+  ATELIER_MCP,
+  env(
+    "ATELIER_API_KEY",
+    "ATELIER_API_KEY is empty: the `api-key` secret isn't set, or doesn't reach this workflow " +
+      "(on GitHub's free plan, an organization secret doesn't reach a private repository)",
+  ),
+);
 const githubToken = env("GITHUB_TOKEN");
 // A closed PR's run only cleans up after its reviews.
 const mode =
@@ -112,7 +167,7 @@ const mode =
   process.env.MODE ||
   (process.env.EVENT_ACTION === "closed" ? "cleanup" : "review");
 if (!["review", "dry-run", "cleanup", "cleanup-head"].includes(mode))
-  throw new Error(`unknown mode: ${mode}`);
+  fail(`unknown mode: ${mode}`);
 /**
  * Every sandbox of this PR's reviews carries it: how a later run finds the ones
  * a dead job left. The repository's owner is in it, since one account may
@@ -123,9 +178,34 @@ const marker = {
   "agent-review": `${repository}#${number}${mode === "dry-run" ? "-dry-run" : ""}`,
 };
 const headMarker = (head: string) => ({ ...marker, "agent-review-head": head });
+/**
+ * Where the review step leaves its sandbox's id, for the `cleanup-head` step of
+ * a cancelled job (same job, same runner): a sandbox whose create job hasn't
+ * landed its record isn't in Atelier's list yet. Not in a dry run.
+ */
+const sandboxIdFile =
+  process.env.RUNNER_TEMP && mode !== "dry-run"
+    ? `${process.env.RUNNER_TEMP}/agent-review-sandbox`
+    : undefined;
+
+/**
+ * The name of the review sandbox of `head`. Atelier takes it as the create's
+ * idempotency key (a retry gets the sandbox it made), so a dry run's differs:
+ * it would get the CI's sandbox otherwise, and destroy it. The repository's
+ * name is cut to fit.
+ */
+function sandboxName(head: string): string {
+  const prefix = "review-";
+  const suffix = `-${number}-${head.slice(0, 7)}${mode === "dry-run" ? "-dry" : ""}`;
+  const room = SANDBOX_NAME_MAX - prefix.length - suffix.length;
+  return `${prefix}${repositoryName.slice(0, room)}${suffix}`;
+}
+
 /** GitHub's GETs are sent again after a network or server error, like Atelier's
  * read-only calls. */
 const RETRY_DELAYS_MS = [5_000, 15_000];
+/** How many times one request waits out a rate limit before the run fails. */
+const RATE_LIMIT_RETRIES = 3;
 const runUrl = runLink(
   `${process.env.GITHUB_SERVER_URL}`,
   repository,
@@ -133,38 +213,67 @@ const runUrl = runLink(
   process.env.GITHUB_RUN_ATTEMPT ?? "1",
 );
 
-/** One line per message: messages carry the agent's text, and the job reads a
- * line starting with `::` as a command. */
-const log = (message: string) =>
-  console.log(`[agent-review] ${message.replaceAll(/\s+/g, " ")}`);
-/** A warning on the run, not a red check: for what goes wrong around the
- * review, not in it. */
-const warn = (message: string) =>
-  console.log(
-    `::warning title=Agent review::${message.replaceAll(/\s+/g, " ")}`,
-  );
-const notice = (message: string) =>
-  console.log(
-    `::notice title=Agent review::${message.replaceAll(/\s+/g, " ")}`,
-  );
+/** A GitHub request that failed: its status, if GitHub answered, and the wait
+ * a rate limit asks for. */
+class GitHubError extends Error {
+  constructor(
+    message: string,
+    readonly status?: number,
+    readonly retryAfterMs?: number,
+  ) {
+    super(message);
+  }
+}
 
-async function github<T>(path: string, init: RequestInit = {}): Promise<T> {
-  const delays = init.method === undefined ? RETRY_DELAYS_MS : [];
-  for (let attempt = 0; ; attempt++) {
+/**
+ * Sends a GitHub request (`send`, called again for each attempt). A rate limit
+ * is waited out, up to RATE_LIMIT_RETRIES times and MAX_RATE_LIMIT_WAIT_MS each:
+ * the refused request did nothing, so any request is sent again, a POST too.
+ * After a network or server error, it's sent again after each of `delays`: only
+ * a GET's are given, since anything else may have been done.
+ */
+async function sendWithRetries<T>(
+  label: string,
+  send: () => Promise<T>,
+  delays: readonly number[],
+): Promise<T> {
+  let failures = 0;
+  let limited = 0;
+  for (;;) {
     try {
-      return await githubOnce<T>(path, init);
+      return await send();
     } catch (error) {
-      const delay = delays[attempt];
+      const { status, retryAfterMs } = error as Partial<GitHubError>;
+      if (
+        retryAfterMs !== undefined &&
+        retryAfterMs <= MAX_RATE_LIMIT_WAIT_MS &&
+        limited < RATE_LIMIT_RETRIES
+      ) {
+        limited++;
+        log(
+          `GitHub rate limit on ${label}: sending it again in ${Math.ceil(retryAfterMs / 1000)} s`,
+        );
+        await sleep(retryAfterMs);
+        continue;
+      }
+      const delay = delays[failures++];
       // A refusal (4xx) won't change; a network error or a 5xx may.
-      const status = (error as { status?: number }).status;
       if (delay === undefined || (status !== undefined && status < 500))
         throw error;
       log(
-        `GitHub GET ${path} failed (${(error as Error).message}), retrying in ${delay / 1000} s`,
+        `GitHub ${label} failed (${(error as Error).message}), retrying in ${delay / 1000} s`,
       );
-      await new Promise((resolve) => setTimeout(resolve, delay));
+      await sleep(delay);
     }
   }
+}
+
+function github<T>(path: string, init: RequestInit = {}): Promise<T> {
+  return sendWithRetries(
+    `${init.method ?? "GET"} ${path}`,
+    () => githubOnce<T>(path, init),
+    init.method === undefined ? RETRY_DELAYS_MS : [],
+  );
 }
 
 async function githubOnce<T>(path: string, init: RequestInit): Promise<T> {
@@ -182,8 +291,12 @@ async function githubOnce<T>(path: string, init: RequestInit): Promise<T> {
     },
   );
   if (!response.ok) {
-    const message = `GitHub ${init.method ?? "GET"} ${path}: ${response.status} ${await response.text()}`;
-    throw Object.assign(new Error(message), { status: response.status });
+    const text = await response.text();
+    throw new GitHubError(
+      `GitHub ${init.method ?? "GET"} ${path}: ${response.status} ${text}`,
+      response.status,
+      rateLimitWait(response, text),
+    );
   }
   // A DELETE answers 204, with no body.
   return (response.status === 204 ? undefined : await response.json()) as T;
@@ -203,7 +316,14 @@ async function githubAll<T>(path: string): Promise<T[]> {
   }
 }
 
-async function graphql<T>(
+function graphql<T>(
+  query: string,
+  variables: Record<string, unknown>,
+): Promise<T> {
+  return sendWithRetries("GraphQL", () => graphqlOnce<T>(query, variables), []);
+}
+
+async function graphqlOnce<T>(
   query: string,
   variables: Record<string, unknown>,
 ): Promise<T> {
@@ -217,42 +337,91 @@ async function graphql<T>(
     signal: AbortSignal.timeout(60_000),
   });
   const text = await response.text();
-  let result: { data?: T; errors?: { message: string }[] } = {};
+  let result: { data?: T; errors?: { type?: string; message: string }[] } = {};
   try {
     result = JSON.parse(text);
   } catch {}
   if (!response.ok || result.errors?.length || result.data === undefined) {
-    throw new Error(
+    // The primary limit answers 200, with a RATE_LIMITED error.
+    const limited = result.errors?.some((e) => e.type === "RATE_LIMITED");
+    throw new GitHubError(
       `GitHub GraphQL: ${response.status} ${result.errors?.map((e) => e.message).join("; ") ?? text}`,
+      response.status,
+      limited
+        ? rateLimitWait({ status: 429, headers: response.headers }, text)
+        : rateLimitWait(response, text),
     );
   }
   return result.data;
 }
 
+/** Destroys the review sandboxes Atelier lists with `metadata`, and the ones
+ * in `known` (it can't list one whose record hasn't landed yet). */
 async function destroyReviewSandboxes(
   metadata: Record<string, string>,
+  known: readonly string[] = [],
 ): Promise<void> {
   const { sandboxes } = await atelier.call<{ sandboxes: { id: string }[] }>(
     "get_sandbox",
     { metadata },
   );
-  for (const { id } of sandboxes) {
+  const ids = new Set([...known, ...sandboxes.map(({ id }) => id)]);
+  for (const id of ids) {
     log(`destroying sandbox ${id}`);
-    await atelier
-      .call("destroy_sandbox", { id })
-      .catch((error) => log(`could not destroy ${id}: ${error}`));
+    await destroySandbox(id);
+  }
+}
+
+/**
+ * Destroys sandbox `id`; never throws. Until its create job lands its record
+ * (once the source is resolved: baking a missing prebuild takes minutes),
+ * Atelier can't destroy it, though `get_sandbox` finds it, `creating`: the
+ * destroy is tried again until it lands, DESTROY_WAIT_MS at most. Past that, a
+ * warning: the PR's next run, or its close, destroys it
+ * (`destroyReviewSandboxes`).
+ */
+async function destroySandbox(id: string): Promise<void> {
+  const deadline = Date.now() + DESTROY_WAIT_MS;
+  for (;;) {
+    try {
+      await atelier.call("destroy_sandbox", { id });
+      log(`sandbox ${id} destroyed`);
+      return;
+    } catch (error) {
+      const exists = await atelier
+        .call("get_sandbox", { id })
+        .then(() => true)
+        .catch(() => false);
+      if (!exists) {
+        // Gone already, or never made: nothing to destroy.
+        log(`sandbox ${id} not destroyed: ${error}`);
+        return;
+      }
+      if (Date.now() > deadline) {
+        warn(
+          `sandbox ${id} not destroyed (${error}): the PR's next run, or its close, destroys it`,
+        );
+        return;
+      }
+      log(`sandbox ${id} not destroyed yet (${error}): trying again`);
+      await sleep(15_000);
+    }
   }
 }
 
 async function createSandbox(headRef: string, head: string): Promise<string> {
   const created = await atelier.call<{ id: string }>("create_sandbox", {
-    name: `review-${repositoryName}-${number}-${head.slice(0, 7)}`,
+    name: sandboxName(head),
     spec: { source: { image: IMAGE }, metadata: headMarker(head) },
     // The repository's prebuild, switched to the PR's branch (its build steps
     // re-run in the background).
     repo: { url: `https://github.com/${repository}.git`, branch: headRef },
   });
   log(`sandbox ${created.id} booting`);
+  if (sandboxIdFile)
+    await Bun.write(sandboxIdFile, created.id).catch((error) =>
+      log(`sandbox id not left for a cancelled job's cleanup: ${error}`),
+    );
   return created.id;
 }
 
@@ -359,7 +528,9 @@ async function readReviewFile(
  * The PR's earlier agent review, as the prompt gets it (without `delta`, known
  * once its head is fetched), and its state, for merging the new review with it.
  */
-async function findEarlierReview(): Promise<
+async function findEarlierReview(
+  author: string,
+): Promise<
   { state: ReviewState; prompt: Omit<EarlierReview, "delta"> } | undefined
 > {
   const earlier = earlierReview(
@@ -370,12 +541,14 @@ async function findEarlierReview(): Promise<
   const replies = threadReplies(
     await githubAll<PostedComment>(`/pulls/${number}/comments`),
     JOB_ACCOUNT,
+    author,
   );
   const conversation = conversationSince(
     await githubAll<IssueComment>(`/issues/${number}/comments`),
     earlier.submittedAt,
     earlier.state.open.map((finding) => finding.id),
     JOB_ACCOUNT,
+    author,
   );
   const { state } = earlier;
   log(
@@ -419,6 +592,8 @@ interface PullRequest {
   title: string;
   body: string | null;
   state: "open" | "closed";
+  draft?: boolean;
+  user: { login: string } | null;
   head: { ref: string; sha: string; repo: { full_name: string } | null };
   base: { sha: string };
 }
@@ -510,7 +685,7 @@ async function reviewRange(
   // Commits go into shell commands: only what a commit's sha can be.
   for (const sha of [mergeBase, head])
     if (!/^[0-9a-f]{40}$/.test(sha)) throw new Error(`not a commit: ${sha}`);
-  const earlier = await findEarlierReview();
+  const earlier = await findEarlierReview(pr.user?.login ?? "");
   await destroyReviewSandboxes(marker);
 
   const sandboxId = await createSandbox(pr.head.ref, head).catch(
@@ -536,10 +711,12 @@ async function reviewRange(
     const cwd = `${HOME}/${repositoryName}`;
     // Both ends, whatever the branches did since: the review is of exactly this
     // range. Forced: the prebuild's install leaves its own changes in the clone
-    // (bun.lock).
+    // (bun.lock). Only the commits, not their history: the clone is shallow,
+    // and fetching a commit into it brings its whole history otherwise, too
+    // slow on a big repository. diff-files.sh only compares trees.
     await exec(
       sandboxId,
-      `git fetch --quiet --no-tags origin ${mergeBase} ${head} && git checkout --quiet --force --detach ${head}`,
+      `git fetch --quiet --no-tags --depth 1 origin ${mergeBase} ${head} && git checkout --quiet --force --detach ${head}`,
       cwd,
     );
     log(`checked out ${head} in ${cwd}`);
@@ -549,7 +726,7 @@ async function reviewRange(
     if (earlier && earlier.state.head !== head) {
       since = await exec(
         sandboxId,
-        `git fetch --quiet --no-tags origin ${earlier.state.head}`,
+        `git fetch --quiet --no-tags --depth 1 origin ${earlier.state.head}`,
         cwd,
       ).then(
         () => earlier.state.head,
@@ -656,12 +833,7 @@ async function reviewRange(
       head,
     );
   } finally {
-    await atelier
-      .call("destroy_sandbox", { id: sandboxId })
-      .then(() => log(`sandbox ${sandboxId} destroyed`))
-      .catch((error) =>
-        log(`could not destroy sandbox ${sandboxId}: ${error}`),
-      );
+    await destroySandbox(sandboxId);
   }
 }
 
@@ -724,7 +896,7 @@ async function postOnce(
     } catch (error) {
       const status = (error as { status?: number }).status;
       if (status !== undefined && status < 500) throw error;
-      await new Promise((resolve) => setTimeout(resolve, 15_000));
+      await sleep(15_000);
       const reviews = await githubAll<PostedReview>(`/pulls/${number}/reviews`);
       const made = postedByRun(reviews, JOB_ACCOUNT, head, runUrl);
       if (made) {
@@ -743,14 +915,17 @@ async function postOnce(
 
 /**
  * The run was cancelled before posting its review. With a newer push, that
- * push's run takes the progress comment over; with the PR closed, the cleanup
- * job deletes it; otherwise (cancelled by hand, or out of time), it says it
+ * push's run takes the progress comment over, unless the PR is a draft now: the
+ * workflow skips drafts (README.md), so no run does until it's ready for
+ * review, and the comment says it stopped. With the PR closed, the cleanup job
+ * deletes it; otherwise (cancelled by hand, or out of time), it says it
  * stopped.
  */
 async function stopped(head: string): Promise<void> {
   const pr = await github<PullRequest>(`/pulls/${number}`);
-  if (pr.state === "open" && pr.head.sha === head)
-    await showProgress({ state: "stopped" }, head);
+  if (pr.state !== "open") return;
+  if (pr.draft) await showProgress({ state: "stopped", draft: true }, head);
+  else if (pr.head.sha === head) await showProgress({ state: "stopped" }, head);
 }
 
 /** Leaves only `latest` in view (`supersede`): the job's token can collapse its
@@ -787,10 +962,20 @@ try {
     await destroyReviewSandboxes(marker);
     await removeProgress();
   } else if (mode === "cleanup-head") {
-    await destroyReviewSandboxes(headMarker(env("HEAD_SHA")));
+    // The review step's sandbox, which Atelier may not list yet.
+    const left = sandboxIdFile
+      ? (
+          await Bun.file(sandboxIdFile)
+            .text()
+            .catch(() => "")
+        ).trim()
+      : "";
+    await destroyReviewSandboxes(
+      headMarker(env("HEAD_SHA")),
+      left ? [left] : [],
+    );
     await stopped(env("HEAD_SHA"));
   } else await review();
 } catch (error) {
-  console.error(`[agent-review] ${(error as Error).message}`);
-  process.exit(1);
+  fail((error as Error).message);
 }

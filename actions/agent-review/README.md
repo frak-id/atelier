@@ -59,7 +59,9 @@ changes.
 
 The action runs on `pull_request` events only. A pull request from a fork is
 skipped with a notice: it gets no secret, Atelier can't boot its branch, and
-its code would run with the secrets of the account's org.
+its code would run with the secrets of the account's org. So is a Dependabot
+run, which gets no secret either. Any other run without the API key fails and
+says why.
 
 ### Inputs
 
@@ -126,8 +128,9 @@ author's to take or leave.
   review file.
 - **While it runs**, a comment on the PR links to the sandbox's agent session
   on Atelier. The review replaces it. A review that fails, or is cancelled or
-  times out with no newer push, leaves the comment saying so. The next run
-  takes it over, and closing the PR deletes it (`src/progress.ts`).
+  times out with no newer push, leaves the comment saying so, as does one
+  cancelled by a push to a PR that is a draft now (no run reviews a draft). The
+  next run takes it over, and closing the PR deletes it (`src/progress.ts`).
 - **It's an agent's opinion.** It comments, never approves or requests
   changes, and a finding can be wrong.
 - **Each review follows from the earlier one** (`src/memory.ts`). Findings have
@@ -143,18 +146,25 @@ author's to take or leave.
 - **To dismiss a finding**, reply on its thread that it's deferred, intended or
   won't be fixed. A minor finding has no thread: comment on the PR with its id.
   The next review dismisses it without weighing the reason, which is the
-  author's call.
+  author's call. Only the PR's author and the repository's owners, its
+  organization's members and its collaborators (GitHub's
+  `author_association`) can: anyone else's comments don't reach the review.
 - **Each review replaces the earlier ones.** Once it's posted, their summaries
   and comments are collapsed as outdated, not deleted, so the PR keeps every
   review. The job's log has each review file whole (`review file:`).
 - **The sandbox** is destroyed after the review, or when the PR closes. Every
   review sandbox carries the PR in its metadata, so the PR's next run destroys
-  any that a dead job left.
+  any that a dead job left. Atelier can't destroy a sandbox still being created
+  (a missing prebuild is baked first): the job waits up to 5 minutes for it to
+  exist. The review step leaves its sandbox's id for the `cleanup-head` step,
+  since Atelier doesn't list such a sandbox yet.
 
 ## Security
 
 - Whoever can push a branch to the repository runs code in the reviewer's
   sandbox, with the org's secrets, as with any CI job that holds secrets.
+- Comments from people outside the repository (on a public one) don't reach the
+  agent: they could dismiss a finding or steer it.
 - What the agent writes is untrusted: a PR can try to steer it. The job only
   posts it as a comment. Its @mentions notify no one, its raw HTML is shown as
   text, and its open code fences are closed (`quiet` in
@@ -164,8 +174,8 @@ author's to take or leave.
 ## Run it locally
 
 A dry run reviews a PR and prints the review instead of posting it, and leaves
-the PR's comments alone. Its sandboxes are apart from the CI's, so neither
-destroys the other's. Any token that reads the PR will do:
+the PR's comments alone. Its sandboxes are apart from the CI's (their own name
+and metadata), so neither destroys the other's. Any token that reads the PR will do:
 
 ```sh
 ATELIER_URL=https://atelier.example.com ATELIER_API_KEY=atl_... \

@@ -32,6 +32,14 @@ describe("the progress comment", () => {
     }
   });
 
+  test("stopped by a push to a draft, says the PR is reviewed once it's ready, not on the next push", () => {
+    const body = progressComment({ state: "stopped", draft: true }, head, run);
+    expect(body).toContain("stopped");
+    expect(body).toContain("draft");
+    expect(body).toContain("ready for review");
+    expect(body).not.toContain("next push");
+  });
+
   test("is the job's own: a person's comment quoting the marker is never updated or deleted", () => {
     const body = progressComment({ state: "failed" }, head, run);
     const comments = [

@@ -23,6 +23,9 @@ export interface IssueComment {
   body?: string | null;
   user: { login: string } | null;
   created_at?: string;
+  /** The author's role in the repository, as GitHub tells: OWNER, MEMBER,
+   * COLLABORATOR, CONTRIBUTOR, NONE… */
+  author_association?: string;
 }
 
 export type Progress =
@@ -32,8 +35,9 @@ export type Progress =
   /** The review threw: nothing posted. */
   | { state: "failed" }
   /** Cancelled (by hand) or out of time before it was posted, with no newer
-   * push to review. */
-  | { state: "stopped" };
+   * push to review; or cancelled by a push to a PR that is a draft now, which
+   * no run reviews until it's ready. */
+  | { state: "stopped"; draft?: boolean };
 
 /** The comment for `progress` of the review of `head`. */
 export function progressComment(
@@ -57,7 +61,9 @@ function progressText(progress: Progress, commit: string): string {
     case "failed":
       return `❌ **Agent review of ${commit} failed**: the run's log says why. ${again}`;
     case "stopped":
-      return `⏹️ **Agent review of ${commit} stopped** (cancelled, or out of time) before it was posted. ${again}`;
+      return progress.draft
+        ? `⏹️ **Agent review of ${commit} stopped**: the PR is a draft now. It's reviewed again once it's ready for review.`
+        : `⏹️ **Agent review of ${commit} stopped** (cancelled, or out of time) before it was posted. ${again}`;
   }
 }
 

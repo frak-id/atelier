@@ -6,16 +6,20 @@
  */
 
 const PROTOCOL_VERSION = "2025-06-18";
-/** Tools that only read, so safe to send again after a network error or a
- * server error. */
-const READ_ONLY_TOOLS = new Set([
+/** Tools safe to send again after a network error or a server error: the ones
+ * that only read, and two whose repeat changes nothing. `create_sandbox` is
+ * idempotent by name (a retry gets the sandbox the lost call made, even one
+ * still being created), `destroy_sandbox` by id. */
+const RETRIED_TOOLS = new Set([
   "whoami",
   "get_sandbox",
   "get_task",
   "read_files",
+  "create_sandbox",
+  "destroy_sandbox",
 ]);
-/** Waits before each retry of a read-only call: a 40-minute review shouldn't
- * die of one dropped connection. */
+/** Waits before each retry: a 40-minute review shouldn't die of one dropped
+ * connection. */
 const RETRY_DELAYS_MS = [5_000, 15_000, 30_000];
 
 interface JsonRpcResponse {
@@ -52,7 +56,7 @@ export class Atelier {
     tool: string,
     args: Record<string, unknown>,
   ): Promise<JsonRpcResponse> {
-    const delays = READ_ONLY_TOOLS.has(tool) ? RETRY_DELAYS_MS : [];
+    const delays = RETRIED_TOOLS.has(tool) ? RETRY_DELAYS_MS : [];
     for (let attempt = 0; ; attempt++) {
       try {
         return await this.request("tools/call", {
