@@ -26,7 +26,8 @@
   "references": [
     { "path": "./apps/server" },
     { "path": "./apps/console" },
-    { "path": "./packages/spec" }
+    { "path": "./packages/spec" },
+    { "path": "./actions/agent-review" }
   ],
   "files": []
 }

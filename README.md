@@ -73,6 +73,20 @@ Server admins only (owners of the default org). Anyone else gets 403.
 Tools return structured results with behaviour annotations. An unknown
 session id answers 404, so clients re-initialize after a deploy.
 
+## Agent review on GitHub
+
+[`actions/agent-review`](actions/agent-review/README.md) is a GitHub Action
+that has a coding agent review each pull request in a sandbox, with
+sub-agents, and posts its findings as one review. It drives `/mcp` as a
+service account:
+
+```yaml
+- uses: frak-id/atelier/actions/agent-review@main
+  with:
+    atelier-url: https://atelier.example.com
+    api-key: ${{ secrets.ATELIER_REVIEWER_API_KEY }}
+```
+
 ## Quickstart: local mode
 
 Local mode runs the server and console against your Docker daemon. Auth is
@@ -149,6 +163,8 @@ The server dev script needs a running Docker daemon. See
 - [Constraints](docs/constraints.md): gotchas
 - [Code patterns](docs/patterns.md): conventions for contributors
 - [Roadmap](docs/roadmap.md): remaining gaps
+- [Agent review](actions/agent-review/README.md): the GitHub Action that
+  reviews pull requests in a sandbox
 
 ## Security
 

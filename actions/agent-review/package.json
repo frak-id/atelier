@@ -1,0 +1,13 @@
+{
+  "name": "@atelier/agent-review",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "GitHub Action: a coding agent reviews each pull request in an Atelier sandbox.",
+  "scripts": {
+    "typecheck": "tsc --noEmit"
+  },
+  "devDependencies": {
+    "@types/bun": "^1.4.4"
+  }
+}

@@ -37,6 +37,9 @@ jobs:
       - name: Test
         run: bun run test
 
+      - name: Shellcheck the actions
+        run: shellcheck -s bash actions/*/src/*.sh
+
   agent:
     runs-on: ubuntu-latest
     timeout-minutes: 20
