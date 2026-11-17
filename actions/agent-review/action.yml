@@ -31,6 +31,35 @@ inputs:
       Base image the sandbox boots on. Atelier reuses the repository's
       prebuild on it, and bakes one if there is none.
     default: dev-base
+  subagents:
+    description: >-
+      `auto` (the default): the agent reviews a diff of at most 500 changed
+      lines (lockfiles aside) alone, a bigger one with sub-agents. `always`
+      or `never` to choose. Sub-agents need pi-subagents in the sandbox.
+    default: auto
+  reviewer-model:
+    description: >-
+      Model the sub-agents run on, as pi-subagents names it
+      (`provider/model`). Empty: their default. The agent's own model comes
+      from its toolbox (`toolboxes`).
+    default: ""
+  toolboxes:
+    description: >-
+      Toolboxes the sandbox gets on top of its org's auto-included ones, as
+      Atelier's `whoami` lists their selectors, comma- or line-separated. One
+      can set the agent's model.
+    default: ""
+  instructions:
+    description: >-
+      Text added to the agent's prompt: what to focus on or leave out, how to
+      write. It can't change the review's format or rules.
+    default: ""
+  instructions-file:
+    description: >-
+      A file of instructions like `instructions`, read on the PR's target
+      branch (a PR can't change its own). Skipped when missing; empty to read
+      none.
+    default: REVIEW.md
   agent-timeout-minutes:
     description: >-
       The agent's time for a review, past which it is cancelled. Give the job
@@ -76,6 +105,11 @@ runs:
         MODE: ${{ inputs.mode }}
         IMAGE: ${{ inputs.image }}
         AGENT_TIMEOUT_MINUTES: ${{ inputs.agent-timeout-minutes }}
+        SUBAGENTS: ${{ inputs.subagents }}
+        REVIEWER_MODEL: ${{ inputs.reviewer-model }}
+        TOOLBOXES: ${{ inputs.toolboxes }}
+        INSTRUCTIONS: ${{ inputs.instructions }}
+        INSTRUCTIONS_FILE: ${{ inputs.instructions-file }}
         EVENT_ACTION: ${{ github.event.action }}
         PR_NUMBER: ${{ github.event.pull_request.number }}
         BASE_SHA: ${{ github.event.pull_request.base.sha }}

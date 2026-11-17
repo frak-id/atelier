@@ -61,7 +61,16 @@ import {
   progressComment,
   progressCommentId,
 } from "./progress.ts";
-import { type EarlierReview, reviewPrompt } from "./prompt.ts";
+import {
+  type ChangedFile,
+  changedLines,
+  type EarlierReview,
+  type Instructions,
+  reviewPrompt,
+  SUBAGENT_SETTINGS,
+  type SubagentSetting,
+  withSubagents,
+} from "./prompt.ts";
 import { MAX_RATE_LIMIT_WAIT_MS, rateLimitWait } from "./rate-limit.ts";
 
 /** `text` on one line: messages carry the agent's text and servers', and the
@@ -143,6 +152,38 @@ const BOOT_TIMEOUT_MS = 10 * 60_000;
 const DESTROY_WAIT_MS = 5 * 60_000;
 /** Atelier's limit on a sandbox's name (`SANDBOX_NAME_MAX_LENGTH`). */
 const SANDBOX_NAME_MAX = 64;
+
+/** The workflow's `subagents`: `auto` decides by the diff's size (prompt.ts). */
+const SUBAGENTS = (process.env.SUBAGENTS || "auto") as SubagentSetting;
+if (!SUBAGENT_SETTINGS.includes(SUBAGENTS))
+  fail(`subagents must be ${SUBAGENT_SETTINGS.join(", ")}, not "${SUBAGENTS}"`);
+/** A model id or toolbox selector: it goes into the prompt and Atelier's
+ * calls, so nothing but what one is made of. */
+const ID = /^[\w.:@/+-]+$/;
+/** The model the sub-agents run on (pi-subagents' `model`), if the workflow
+ * picks one; the agent's own comes from its toolbox. */
+const REVIEWER_MODEL = process.env.REVIEWER_MODEL?.trim() || undefined;
+if (REVIEWER_MODEL !== undefined && !ID.test(REVIEWER_MODEL))
+  fail(`reviewer-model is no model id: "${REVIEWER_MODEL}"`);
+/** Toolboxes the sandbox gets on top of the org's auto-included ones (`whoami`
+ * selectors), comma- or line-separated. */
+const TOOLBOXES = (process.env.TOOLBOXES ?? "").split(/[\s,]+/).filter(Boolean);
+for (const selector of TOOLBOXES)
+  if (!ID.test(selector)) fail(`toolboxes: no toolbox selector: "${selector}"`);
+/** What the repository adds to the prompt, from its workflow and from a file
+ * read at the PR's base, so a PR can't rewrite the rules it's reviewed by.
+ * Each is cut to this many characters. */
+const INSTRUCTIONS = process.env.INSTRUCTIONS?.trim() ?? "";
+const INSTRUCTIONS_FILE = (process.env.INSTRUCTIONS_FILE ?? "REVIEW.md").trim();
+const MAX_INSTRUCTIONS = 20_000;
+if (
+  INSTRUCTIONS_FILE.startsWith("/") ||
+  INSTRUCTIONS_FILE.includes("\\") ||
+  INSTRUCTIONS_FILE.split("/").some((part) => part === ".." || part === ".")
+)
+  fail(
+    `instructions-file must be a path from the repository's root: "${INSTRUCTIONS_FILE}"`,
+  );
 
 const repository = env("GITHUB_REPOSITORY"); // owner/name
 const repositoryName = repository.split("/")[1] ?? repository;
@@ -413,6 +454,7 @@ async function createSandbox(headRef: string, head: string): Promise<string> {
   const created = await atelier.call<{ id: string }>("create_sandbox", {
     name: sandboxName(head),
     spec: { source: { image: IMAGE }, metadata: headMarker(head) },
+    ...(TOOLBOXES.length > 0 ? { toolboxes: TOOLBOXES } : {}),
     // The repository's prebuild, switched to the PR's branch (its build steps
     // re-run in the background).
     repo: { url: `https://github.com/${repository}.git`, branch: headRef },
@@ -647,6 +689,52 @@ interface Comparison {
   merge_base_commit: { sha: string };
   total_commits: number;
   commits: { sha: string; commit: { message: string } }[];
+  /** 300 at most; missing for a diff too big to list. */
+  files?: ChangedFile[];
+}
+
+/**
+ * The repository's instructions for the review: the workflow's `instructions`,
+ * and the file `INSTRUCTIONS_FILE` at `base` (the PR's target branch), if it has
+ * one. A file it can't read only warns: the review goes on without it.
+ */
+async function repositoryInstructions(base: string): Promise<Instructions[]> {
+  const cut = (source: string, text: string): Instructions => {
+    if (text.length > MAX_INSTRUCTIONS)
+      warn(
+        `${source}: only its first ${MAX_INSTRUCTIONS} characters reach the agent`,
+      );
+    return { source, text: text.slice(0, MAX_INSTRUCTIONS) };
+  };
+  const instructions: Instructions[] = [];
+  if (INSTRUCTIONS)
+    instructions.push(cut("the workflow's `instructions`", INSTRUCTIONS));
+  if (INSTRUCTIONS_FILE) {
+    const path = INSTRUCTIONS_FILE.split("/").map(encodeURIComponent).join("/");
+    const source = `${INSTRUCTIONS_FILE} on the target branch`;
+    try {
+      const file = await github<{
+        type?: string;
+        encoding?: string;
+        content?: string;
+      }>(`/contents/${path}?ref=${base}`);
+      if (
+        file.type === "file" &&
+        file.encoding === "base64" &&
+        file.content !== undefined
+      ) {
+        const text = Buffer.from(file.content, "base64").toString().trim();
+        if (text) instructions.push(cut(source, text));
+      } else warn(`${source}: not a file of 1 MB at most, so not read`);
+    } catch (error) {
+      // The repository has none: nothing to add.
+      if ((error as { status?: number }).status !== 404)
+        warn(`${source} not read: ${error}`);
+    }
+  }
+  for (const { source, text } of instructions)
+    log(`instructions from ${source}: ${text.length} characters`);
+  return instructions;
 }
 
 async function review(): Promise<void> {
@@ -686,6 +774,16 @@ async function reviewRange(
   for (const sha of [mergeBase, head])
     if (!/^[0-9a-f]{40}$/.test(sha)) throw new Error(`not a commit: ${sha}`);
   const earlier = await findEarlierReview(pr.user?.login ?? "");
+  const instructions = await repositoryInstructions(base);
+  const subagents = withSubagents(SUBAGENTS, comparison.files);
+  const size = comparison.files
+    ? `${changedLines(comparison.files)} changed lines in ${comparison.files.length} files, lockfiles aside`
+    : "a diff too big for GitHub to list";
+  log(
+    `subagents: ${SUBAGENTS}, ${size}: ${subagents ? "with sub-agents" : "the agent alone"}`,
+  );
+  if (!subagents && REVIEWER_MODEL)
+    log(`reviewer-model ${REVIEWER_MODEL} unused: no sub-agents`);
   await destroyReviewSandboxes(marker);
 
   const sandboxId = await createSandbox(pr.head.ref, head).catch(
@@ -772,6 +870,12 @@ async function reviewRange(
         diffDir: DIFF_DIR,
         diffSummary,
         ...(earlier ? { earlier: { ...earlier.prompt, delta } } : {}),
+        subagents: subagents
+          ? REVIEWER_MODEL
+            ? { model: REVIEWER_MODEL }
+            : {}
+          : false,
+        instructions,
         output: REVIEW_FILE,
       }),
       deadline,

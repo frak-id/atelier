@@ -71,6 +71,11 @@ says why.
 | `api-key` | required | The service account's API key (`mcp` scope), from a secret |
 | `mode` | `review`, or `cleanup` on a `closed` event | `cleanup` destroys the PR's review sandboxes and deletes the progress comment. `cleanup-head` goes in the `if: cancelled()` step |
 | `image` | `dev-base` | Base image the sandbox boots on. Atelier reuses the repository's prebuild on it |
+| `subagents` | `auto` | `auto`: the agent alone on a diff of at most 500 changed lines (lockfiles aside), sub-agents on a bigger one. `always` or `never` to choose |
+| `reviewer-model` | | The sub-agents' model, `provider/model` as pi-subagents names it (*Customise*) |
+| `toolboxes` | | Toolboxes on top of the org's auto-included ones, comma- or line-separated selectors (*Customise*) |
+| `instructions` | | Text added to the agent's prompt (*Customise*) |
+| `instructions-file` | `REVIEW.md` | Instructions read on the PR's target branch, when the file is there. Empty to read none |
 | `agent-timeout-minutes` | `40` | The agent's time for one review. Give the job about 20 minutes more |
 | `bun-version` | `1.4.4` | Bun version the action runs on |
 
@@ -84,10 +89,11 @@ comment by that account, `github-actions[bot]`.
    org, and its sandboxes run the PR's code: the prebuild's build steps run
    again on the PR's branch. Give it an org that holds only what the review
    needs, such as the model key.
-2. **Its coding agent.** The prompt has pi delegate to its `reviewer`
-   sub-agent (pi-subagents' built-in one), so the org's sandboxes need pi with
-   [pi-subagents](https://github.com/nicobailon/pi-subagents). The console's
-   Library suggests a pi toolbox that has it. Make it auto-included in the org.
+2. **Its coding agent.** On a big diff the prompt has pi delegate to its
+   `reviewer` sub-agent (pi-subagents' built-in one), so the org's sandboxes
+   need pi with [pi-subagents](https://github.com/nicobailon/pi-subagents),
+   unless `subagents` is `never`. The console's Library suggests a pi toolbox
+   that has it. Make it auto-included in the org.
 3. **A service account** in that org, with a read-only GitHub credential.
    For a GitHub App, narrow its token with
    `"permissions": { "contents": "read", "pull_requests": "read", "metadata": "read" }`:
@@ -107,9 +113,12 @@ links to the sandbox's session in the console (sign in with GitHub).
 ## How a review goes
 
 The sub-agents read files but can't run git, so the job first writes the diff
-into the sandbox, one patch per file (`src/diff-files.sh`). The agent sizes the
-review to it: about one sub-agent per 2,000 changed lines, and every patch read
-by one (`src/prompt.ts`).
+into the sandbox, one patch per file (`src/diff-files.sh`). With `subagents:
+auto`, a diff of at most 500 changed lines, lockfiles aside, is reviewed by
+the agent alone: sub-agents start cold, and cost more than they find there.
+On a bigger diff, the agent sizes the review to it: about one sub-agent per
+2,000 changed lines, at least two and at most 12, and every patch read by one
+(`src/prompt.ts`).
 
 The review says whether it blocks: 🛑 *Blocking* with any critical or major
 finding, ✅ *Not blocking* with only minor ones, or LGTM, with the counts per
@@ -158,6 +167,26 @@ author's to take or leave.
   (a missing prebuild is baked first): the job waits up to 5 minutes for it to
   exist. The review step leaves its sandbox's id for the `cleanup-head` step,
   since Atelier doesn't list such a sandbox yet.
+
+## Customise
+
+- **Instructions.** `instructions`, and the file `instructions-file`
+  (`REVIEW.md`) when the repository has one, are added to the agent's prompt:
+  what to focus on or leave out, how to write, the review's language. They
+  can't replace it: the review file's schema, what the severities mean, the
+  limits on findings and "change nothing" are what the job relies on. The file
+  is read on the PR's target branch, so a PR can't change the rules it's
+  reviewed by: a change to it applies once merged. The agent also reads the
+  repository's AGENTS.md files, at the PR's head.
+- **The sub-agents' model.** `reviewer-model` is given to each sub-agent
+  (pi-subagents' `model`, `provider/model`). The org's secrets need that
+  provider's key: a sub-agent that can't start leaves its part unreviewed, and
+  the review's summary says so.
+- **The agent's model** is its toolbox's, not the action's: Atelier has no call
+  to pick one. Make a toolbox whose pi settings file sets it and pass it in
+  `toolboxes`. A toolbox listed there comes after the org's auto-included ones,
+  so its file at the same path wins. Toolboxes are applied at boot and don't
+  change which prebuild the sandbox boots from.
 
 ## Security
 
