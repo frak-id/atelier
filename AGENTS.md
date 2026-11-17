@@ -13,6 +13,8 @@ apps/
 └── agent/    # in-pod agent (`atelier-agent`, Rust, static musl, scratch image)
 packages/
 └── spec/     # @atelier/spec: SandboxSpec seam contract + shared wire types
+actions/
+└── agent-review/  # public GitHub Action: PR reviews by an agent in a sandbox (its README.md)
 infra/k8s/    # server + console manifests (infra/k8s/README.md); cluster infra is NOT deployed from this repo
 infra/nginx/  # console nginx config (SPA + reverse proxy to the server)
 scripts/      # bump-version.ts
@@ -37,6 +39,7 @@ Dockerfile    # multi-target: `server` and `console` images
 | Console UI | `apps/console/src/components/` + `routes/` |
 | SandboxSpec and wire types | `packages/spec/src/` |
 | Deploy manifests | `infra/k8s/` |
+| PR review GitHub Action | `actions/agent-review/` (`action.yml`, `src/main.ts`; no runtime deps, runs on Bun without install) |
 
 ## Commands
 
@@ -52,11 +55,12 @@ bun run knip                           # unused files, deps, exports
 bun run --filter @atelier/server check:boundary   # server module boundaries
 bun run --filter @atelier/server generate-schema  # regenerate apps/server/schemas/*.json
 cd apps/agent && cargo clippy --all-targets --locked -- -D warnings && cargo test --locked
-shellcheck -s bash apps/agent/scripts/*.sh
+shellcheck -s bash apps/agent/scripts/*.sh actions/*/src/*.sh
 ```
 
 CI (`.github/workflows/ci.yml`) runs `biome ci`, typecheck, `check:boundary`,
-`bun run test`, and in the agent job shellcheck, clippy and `cargo test`.
+`bun run test`, shellcheck on `actions/`, and in the agent job shellcheck,
+clippy and `cargo test`.
 
 Local mode without the dev script: `docker compose -f docker-compose.local.yml up`.
 

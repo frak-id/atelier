@@ -8,6 +8,10 @@
       "project": ["src/**/*.{ts,tsx,css}"],
       "entry": ["src/**/*.test.{ts,tsx}"]
     },
+    "actions/agent-review": {
+      "project": ["src/**/*.ts"],
+      "entry": ["src/main.ts", "src/**/*.test.ts"]
+    },
     "packages/spec": {
       "project": ["src/**/*.ts"],
       "entry": ["src/**/*.test.ts"]
