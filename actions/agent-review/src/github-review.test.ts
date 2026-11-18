@@ -10,7 +10,6 @@ import {
   type PostedReview,
   parseReviewFile,
   postedByRun,
-  quiet,
   runLink,
   supersede,
 } from "./github-review.ts";
@@ -302,19 +301,8 @@ describe("review", () => {
 });
 
 describe("the agent's text", () => {
-  test("notifies no one and leaves no code fence open; emails and suggestions are untouched", () => {
-    expect(quiet("ping @alice and @some-org/devs, mail a@b.co")).toBe(
-      "ping @\u200balice and @\u200bsome-org/devs, mail a@b.co",
-    );
-    expect(quiet("see:\n```ts\nconst a = 1;")).toBe(
-      "see:\n```ts\nconst a = 1;\n```",
-    );
-    expect(quiet("```\nclosed\n```")).toBe("```\nclosed\n```");
-    expect(
-      quiet("<!-- hides the rest <details> <img src=x> `Array<string>` a < b"),
-    ).toBe(
-      "<\u200b!-- hides the rest <\u200bdetails> <\u200bimg src=x> `Array<\u200bstring>` a < b",
-    );
+  // quiet() itself: shared/src/markdown.test.ts.
+  test("is quieted in a comment; its suggestion is code, posted as is", () => {
     const [comment] = review([
       finding({
         path: "src/a.ts",

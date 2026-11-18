@@ -13,6 +13,7 @@
  * major problems: a new round of small things on every push never ends.
  * memory.ts's `resolve` drops what goes past either rule.
  */
+import type { Instructions } from "../../shared/src/instructions.ts";
 import { type Closed, MAX_MINORS } from "./github-review.ts";
 import type { Reply, StoredFinding } from "./memory.ts";
 
@@ -72,12 +73,6 @@ export function changedLines(files: readonly ChangedFile[]): number {
   return files
     .filter((file) => !LOCKFILES.has(file.filename.split("/").at(-1) ?? ""))
     .reduce((sum, file) => sum + file.additions + file.deletions, 0);
-}
-
-/** Text the repository adds to the prompt, and where it comes from. */
-export interface Instructions {
-  source: string;
-  text: string;
 }
 
 /** The earlier agent review of the PR, as the prompt gets it. */

@@ -1,0 +1,13 @@
+{
+  "name": "@atelier/actions-shared",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "Code the GitHub Actions share: Atelier's MCP, GitHub's API, the job's log. Imported by relative path: the actions run without an install.",
+  "scripts": {
+    "typecheck": "tsc --noEmit"
+  },
+  "devDependencies": {
+    "@types/bun": "^1.4.4"
+  }
+}

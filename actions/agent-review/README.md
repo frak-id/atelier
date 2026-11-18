@@ -217,7 +217,7 @@ or `subagents` says the change made reviews worse.
 - What the agent writes is untrusted: a PR can try to steer it. The job only
   posts it as a comment. Its @mentions notify no one, its raw HTML is shown as
   text, and its open code fences are closed (`quiet` in
-  `src/github-review.ts`).
+  `../shared/src/markdown.ts`).
 - The sandbox's GitHub token should be read only (*Setup on Atelier*, step 3).
 
 ## Run it locally

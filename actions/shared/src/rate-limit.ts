@@ -1,6 +1,6 @@
 /**
  * GitHub's rate limits, as its REST and GraphQL APIs tell them. A request
- * refused for one did nothing, so main.ts sends it again once the limit
+ * refused for one did nothing, so github.ts sends it again once the limit
  * allows, whatever its method.
  */
 
