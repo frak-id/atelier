@@ -7,7 +7,11 @@ The job starts a sandbox from the repository's prebuild, at the base branch's
 head, as an Atelier [service account](../../docs/service-accounts.md). The
 sandbox's coding agent (pi) runs the repository's checks first, then finds
 what's outdated in every ecosystem: packages, toolchains, container images,
-GitHub Actions, versions pinned in Dockerfiles. For each update it reads the
+GitHub Actions, versions pinned in Dockerfiles. It assumes no stack and uses
+the package manager the repository's lockfile names: npm, pnpm, Yarn, Bun,
+uv, Poetry, PDM, Pipenv, pip, Cargo, Go modules, Bundler, Composer, Maven,
+Gradle, NuGet, pub (`src/prompt.ts` lists where each keeps what the agent
+needs). For each update it reads the
 release notes between the two versions, migrates the configuration, replaces
 what the new version deprecates, runs the checks again and commits. What it
 can't make pass it undoes and holds back, saying why. The job checks its
@@ -113,6 +117,12 @@ changes.
 6. **A prebuild of the repository** on the `image`, of the base branch.
    Without one, the first update bakes it, which can take longer than the 10
    minutes a sandbox has to boot.
+7. **An image with the repository's toolchain**, ideally. `dev-base` has
+   Node, Bun, Python, git, gh and mise. The agent fetches another runtime or
+   package manager with mise (Go, Rust, Java, Ruby, PHP, .NET, pnpm, Yarn, uv,
+   Poetry…) at the version the repository pins, within its time, and a
+   compiled one (Ruby, PHP) takes minutes. A repository whose install needs
+   system libraries needs an image that has them.
 
 The pull request is opened by the service account's GitHub identity, not by
 the job's `GITHUB_TOKEN`, so the repository's workflows run on it: CI, and
@@ -216,9 +226,12 @@ link to the sandbox's session in the console (sign in with GitHub).
   repository's secrets before any review. Leave it off where those secrets
   matter, and let Dependabot update the Actions.
 - Narrow what the new code can do: a package manager that enforces the
-  release age itself (Bun's and pnpm's `minimumReleaseAge`) and runs no
-  install script it doesn't trust, an org whose sandboxes reach only the
-  network they need, an App installed on this repository only.
+  release age itself and runs no install script it doesn't trust. The agent
+  passes the age on the command line where it can (npm's `--before`, pip's
+  `--uploaded-prior-to`, uv's `--exclude-newer`); a repository can set it in
+  its config too (pnpm's and Bun's `minimumReleaseAge`). Also: an org whose
+  sandboxes reach only the network they need, an App installed on this
+  repository only.
 - Comments from people outside the repository don't reach the agent.
 - The run's log has the agent's result file and its tool calls: on a public
   repository, anyone can read them.
