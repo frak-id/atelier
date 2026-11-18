@@ -5,9 +5,10 @@
  *
  * One branch carries the update, run after run: each run starts again from the
  * base branch's head and force-pushes it, so an update left open for weeks
- * stays one pull request, up to date. Never over a person's commits: once
- * someone pushes to the branch, it's theirs until the pull request is merged or
- * closed.
+ * stays one pull request, up to date. The job never pushes over a person's
+ * commits: once someone pushes to the branch, it's theirs until the pull
+ * request is merged or closed. (The agent holds the credential, and one steered
+ * into misusing it isn't bound by this: the base branch's rules are.)
  */
 import { closeFences, quiet } from "../../shared/src/markdown.ts";
 import {
@@ -26,26 +27,33 @@ export const HEADING = "### Dependency updates";
 export interface BumpState {
   base: string;
   head: string;
+  /** The branch's head before the push. The body of an open pull request is
+   * written before the push, so that a push that lands is always recorded:
+   * the branch is at `previous` until it does, or if it fails. */
+  previous?: string;
 }
 
-const STATE = /<!-- agent-bump-state (\{[^<>]*\}) -->/;
+const STATE = /<!-- agent-bump-state (\{[^<>]*\}) -->/g;
 const SHA = /^[0-9a-f]{40}$/;
+const isSha = (value: unknown): value is string =>
+  typeof value === "string" && SHA.test(value);
 
 export function encodeState(state: BumpState): string {
   return `<!-- agent-bump-state ${JSON.stringify(state)} -->`;
 }
 
-/** The state in a pull request's body. The agent's text can't forge one: it
- * has no raw HTML (`quiet`). */
+/** The state in a pull request's body: its last marker, the footer's. The
+ * agent's text comes before the footer, so a marker it wrote (a code span keeps
+ * `<!--`) can't stand for the job's. */
 export function decodeState(
   body: string | null | undefined,
 ): BumpState | undefined {
-  const match = STATE.exec(body ?? "");
+  const match = [...(body ?? "").matchAll(STATE)].at(-1);
   if (!match?.[1]) return undefined;
   try {
-    const { base, head } = JSON.parse(match[1]) as Partial<BumpState>;
-    if (typeof base === "string" && SHA.test(base))
-      if (typeof head === "string" && SHA.test(head)) return { base, head };
+    const { base, head, previous } = JSON.parse(match[1]) as Partial<BumpState>;
+    if (isSha(base) && isSha(head))
+      return { base, head, ...(isSha(previous) ? { previous } : {}) };
   } catch {}
   return undefined;
 }
@@ -55,6 +63,7 @@ export interface PullRequest {
   number: number;
   state: "open" | "closed";
   draft?: boolean;
+  title?: string;
   body: string | null;
   head: { sha: string };
 }
@@ -66,10 +75,10 @@ export type Verdict =
 /**
  * Whether the job may replace the update's branch, now at `branchHead`
  * (undefined: there's none), given the pull requests from it, any order. It
- * may when the branch is at the head the job last pushed, as the newest of
- * them records: an open one (it's updated), or a merged or closed one (its
- * branch was left). A branch at any other head has someone's commits, or isn't
- * the job's at all.
+ * may when the branch is at the head the job last pushed, or was about to push
+ * from (`previous`), as the newest of them records: an open one (it's updated),
+ * or a merged or closed one (its branch was left). A branch at any other head
+ * has someone's commits, or isn't the job's at all.
  */
 export function branchVerdict(
   branch: string,
@@ -79,8 +88,11 @@ export function branchVerdict(
   if (branchHead === undefined) return { ours: true };
   const open = pulls.find((pull) => pull.state === "open");
   const newest = open ?? pulls.toSorted((a, b) => b.number - a.number)[0];
-  const pushed = decodeState(newest?.body)?.head;
-  if (newest && pushed === branchHead && newest.head.sha === branchHead)
+  const state = decodeState(newest?.body);
+  const pushed =
+    state !== undefined &&
+    (state.head === branchHead || state.previous === branchHead);
+  if (newest && pushed && newest.head.sha === branchHead)
     return open ? { ours: true, open } : { ours: true };
   return {
     ours: false,
@@ -176,7 +188,10 @@ export function pullRequestBody(
     base: string;
     baseBranch: string;
     head: string;
-    runUrl: string;
+    /** The branch's head before the push, if it has one. */
+    previous?: string;
+    /** The workflow run, linked from the footer: none on a local dry run. */
+    runUrl?: string;
   },
 ): string {
   const kinds = new Map(
@@ -242,8 +257,12 @@ export function pullRequestBody(
     );
   const footer =
     `<sub>Updated from \`${run.base.slice(0, 7)}\` (${cell(run.baseBranch)}) by a coding agent on Atelier, which read the ` +
-    `release notes: check its notes against them before merging. <a href="${run.runUrl}">Run</a></sub>\n\n` +
-    encodeState({ base: run.base, head: run.head });
+    `release notes: check its notes against them before merging.${run.runUrl ? ` <a href="${run.runUrl}">Run</a>` : ""}</sub>\n\n` +
+    encodeState({
+      base: run.base,
+      head: run.head,
+      ...(run.previous ? { previous: run.previous } : {}),
+    });
   let body = sections.join("\n\n");
   if (body.length > MAX_BODY)
     body = `${closeFences(body.slice(0, MAX_BODY))}\n\n… cut here: the run's log has the agent's whole file.`;

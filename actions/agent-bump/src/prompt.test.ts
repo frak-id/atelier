@@ -9,6 +9,7 @@ function prompt(
     model?: string;
     open?: { number: number; conversation: { author: string; body: string }[] };
     instructions?: { source: string; text: string }[];
+    workflows?: boolean;
   } = {},
 ) {
   return bumpPrompt({
@@ -19,6 +20,7 @@ function prompt(
     baseBranch: "main",
     minutes: 90,
     minimumReleaseAge: 3,
+    workflows: options.workflows ?? false,
     subagents: {
       setting: options.setting ?? "auto",
       ...(options.model ? { model: options.model } : {}),
@@ -32,6 +34,29 @@ function prompt(
 }
 
 describe("the prompt", () => {
+  test("pins the picked version: a bare update would take a fresher one", () => {
+    const text = prompt();
+    expect(text).toContain("cargo update -p\n  <crate> --precise <version>");
+    expect(text).toContain("Never a bare `update` or `upgrade`");
+  });
+
+  test("keeps the agent out of the workflows unless the repository lets it", () => {
+    const off = prompt();
+    expect(off).toContain("Leave `.github/workflows/` alone");
+    expect(off).toContain("No commit changes `.github/workflows/`");
+    expect(off).toContain("`uses:` in action.yml files");
+    const on = prompt({ workflows: true });
+    expect(on).not.toContain("Leave `.github/workflows/` alone");
+    expect(on).toContain("`uses:` in workflows and in action.yml files");
+  });
+
+  test("tells the scouts to write nothing, in words pi-subagents knows", () => {
+    const text = prompt({ setting: "always" });
+    expect(text).toContain("Do not edit, write or create any file");
+    expect(text).toContain("`async: false` matters");
+    expect(text).toContain("at\n  most 6 scouts");
+  });
+
   test("sets the contract: the branch, the release age, no push, the file", () => {
     const text = prompt();
     expect(text).toContain(`on branch agent-bump, made at ${BASE}`);

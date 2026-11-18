@@ -5,12 +5,7 @@
  * from it (pull-request.ts).
  */
 
-const CHECK_STATUSES = [
-  "passed",
-  "failed",
-  "pre-existing",
-  "skipped",
-] as const;
+const CHECK_STATUSES = ["passed", "failed", "pre-existing", "skipped"] as const;
 export type CheckStatus = (typeof CHECK_STATUSES)[number];
 
 export interface Update {

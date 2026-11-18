@@ -70,12 +70,13 @@ changes.
 | `branch` | `agent-bump` | Branch that carries the update (*How an update goes*) |
 | `image` | `dev-base` | Base image the sandbox boots on. Atelier reuses the repository's prebuild on it |
 | `minimum-release-age` | `3` | Days a release must have been out before the agent takes it |
+| `update-workflows` | `false` | `true` lets the agent change `.github/workflows/`: it takes the `workflows` permission (*Security*) |
 | `subagents` | `auto` | `auto`: sub-agents read the release notes when there are more than 6 updates. `always` or `never` to choose |
 | `subagent-model` | | The sub-agents' model, `provider/model` as pi-subagents names it |
 | `toolboxes` | | Toolboxes on top of the org's auto-included ones, comma- or line-separated selectors |
 | `instructions` | | Text added to the agent's prompt (*Customise*) |
 | `instructions-file` | `DEPENDENCIES.md` | Instructions read on the base branch, when the file is there. Empty to read none |
-| `labels` | | Labels for the pull request, comma- or line-separated. They must exist |
+| `labels` | | Labels for the pull request, comma- or line-separated. They must exist: checked before the agent starts |
 | `agent-timeout-minutes` | `90` | The agent's time for one update. Give the job about 30 minutes more |
 | `bun-version` | `1.4.4` | Bun version the action runs on |
 
@@ -92,16 +93,19 @@ changes.
    console's Library suggests a pi toolbox that has it. Make it auto-included
    in the org.
 3. **A service account** in that org, with a GitHub credential that can push
-   and open pull requests. For a GitHub App installed on the repository only,
-   narrow its token with
-   `"permissions": { "contents": "write", "pull_requests": "write", "workflows": "write", "metadata": "read" }`.
+   and open pull requests: a GitHub App installed on this repository only,
+   its token narrowed with
+   `"permissions": { "contents": "write", "pull_requests": "write", "metadata": "read" }`.
    Without `workflows`, GitHub refuses a push that changes
-   `.github/workflows/`: the run fails and says so. Say in `DEPENDENCIES.md`
-   to leave GitHub Actions alone, or grant it.
-4. **A rule on the base branch** that requires a pull request and a review,
-   without a bypass for the App. The credential can push to any branch no rule
-   protects, and the agent holds it. A rule that requires signed commits
-   refuses the update's: they're made with git in the sandbox, unsigned.
+   `.github/workflows/`, so the agent leaves those files alone
+   (`update-workflows` is off). Grant it and turn the input on only once
+   you've read *Security*.
+4. **Rules that keep the credential off what matters**: on the base branch,
+   a pull request and a review, without a bypass for the App; on tags, and
+   on any other branch a workflow deploys or publishes from, no push by the
+   App. The credential can push to any branch or tag no rule protects, and
+   the agent holds it. A rule that requires signed commits refuses the
+   update's: they're made with git in the sandbox, unsigned.
 5. **An API key** for the account, with the `mcp` scope (the default for a
    service account). Store it as an Actions secret of the repository. On
    GitHub's free plan, an organization secret reaches a private repository's
@@ -124,14 +128,16 @@ link to the sandbox's session in the console (sign in with GitHub).
   branch only at the head it pushed itself, as the newest pull request from
   the branch records in its body. Once a person pushes to it, the update is
   theirs: runs stop with a notice until its pull request is merged or closed.
-  A branch of that name the job never pushed stops them too.
+  A branch of that name the job never pushed stops them too. Two updates of
+  one repository (another base, say) need a `branch` each: a run destroys the
+  sandboxes its branch's last runs left.
 - **The agent** works in a clone at the base branch's head, on the update's
   branch (`src/prompt.ts`). It runs the checks before changing anything, so
   that a check already failing on the base isn't blamed on an update. It takes
   the newest stable release at least `minimum-release-age` days old, no
   pre-release, and a major one only when it can migrate now. What is released
   together moves together: a framework and its plugins, a package and its
-  `@types`, the same tool in a Dockerfile and a workflow. It reads every
+  `@types`, the same tool in a Dockerfile and a CI script. It reads every
   release's notes between the two versions, then makes the changes they call
   for, and only those: a renamed config key, a new schema version, a
   deprecated API replaced, the tool's own migration (`biome migrate`). Each
@@ -139,11 +145,16 @@ link to the sandbox's session in the console (sign in with GitHub).
   checks pass, so that one can be reverted alone. It doesn't push.
 - **The job then checks** the agent's file (`src/bump-file.ts`) and its
   commits: on the update's branch, on top of the base, nothing left out of
-  them. Once more, in the same context, the agent gets to fix either. Then the
-  job pushes the branch from the sandbox, with a lease on the head it saw at
-  the start: a push to the branch since isn't overwritten. Then it opens the
-  pull request, or updates the one open, with `gh`. The run's log has the
-  agent's whole file (`result file:`), and its summary has the body.
+  them, nothing in `.github/workflows/` unless `update-workflows` is on.
+  Once more, in the same context, the agent gets to fix either; files it
+  leaves untracked after that are left out with a warning. Then the job
+  pushes the branch from the sandbox, with a lease on the head it saw at the
+  start: a push to the branch since isn't overwritten. It opens the pull
+  request, or updates the one open, with `gh`. An open pull request's body is
+  written first, and put back if the push fails; a new branch whose pull
+  request can't be opened is deleted. Either way the next run still knows the
+  branch for its own. The run's log has the agent's whole file
+  (`result file:`), and its summary has the body.
 - **The pull request** (`src/pull-request.ts`) has the agent's summary, a
   table of the updates, majors first, with a link to the release notes it
   read, what each update took, what it held back and why, and the checks. A
@@ -193,7 +204,24 @@ link to the sandbox's session in the console (sign in with GitHub).
   credential that can push. What it pushes reaches the base branch only
   through a pull request that a person reviews (*Setup*, step 4). The job
   checks where the commits are, not what they do: that's the review's job.
+- Before anyone reviews it, the update runs in CI: the repository's `push`
+  and `pull_request` workflows run its code (tests, build scripts, package
+  scripts) with the secrets they get. Keep deploy and publish secrets in
+  environments that need an approval, and don't give secrets to
+  `pull_request_target` or `workflow_run` workflows that check out the
+  update's branch.
+- `update-workflows` takes the `workflows` permission. With it, a steered
+  agent, or a compromised release's install script, could push a workflow of
+  its own to the update's branch, and a `push` workflow runs there with the
+  repository's secrets before any review. Leave it off where those secrets
+  matter, and let Dependabot update the Actions.
+- Narrow what the new code can do: a package manager that enforces the
+  release age itself (Bun's and pnpm's `minimumReleaseAge`) and runs no
+  install script it doesn't trust, an org whose sandboxes reach only the
+  network they need, an App installed on this repository only.
 - Comments from people outside the repository don't reach the agent.
+- The run's log has the agent's result file and its tool calls: on a public
+  repository, anyone can read them.
 - What the agent writes goes into the body quieted: its @mentions notify no
   one, its raw HTML is shown as text, its open code fences are closed
   (`quiet` in `../shared/src/markdown.ts`).

@@ -34,6 +34,16 @@ export interface Deadline {
   minutes: number;
 }
 
+/**
+ * `text` without the GitHub credentials git or gh could print: a URL's user
+ * info, a token. The sandbox's are no runner secret, which the log would mask.
+ */
+export function redact(text: string): string {
+  return text
+    .replaceAll(/(https?:\/\/)[^\s/@]+@/g, "$1***@")
+    .replaceAll(/\b(?:gh[pousr]_\w{20,}|github_pat_\w{20,})/g, "***");
+}
+
 export const deadlineIn = (minutes: number): Deadline => ({
   at: Date.now() + minutes * 60_000,
   minutes,
@@ -149,7 +159,7 @@ export function sandboxes(
       });
       if (result.exitCode !== 0)
         throw new Error(
-          `\`${command}\` exited ${result.exitCode}: ${result.stderr.trim()}`,
+          `\`${command}\` exited ${result.exitCode}: ${redact(result.stderr.trim())}`,
         );
       return result.stdout.trim();
     },

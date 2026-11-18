@@ -73,7 +73,7 @@ Server admins only (owners of the default org). Anyone else gets 403.
 Tools return structured results with behaviour annotations. An unknown
 session id answers 404, so clients re-initialize after a deploy.
 
-## Agent review on GitHub
+## Agents on GitHub
 
 [`actions/agent-review`](actions/agent-review/README.md) is a GitHub Action
 that has a coding agent review each pull request in a sandbox, with
@@ -87,10 +87,10 @@ service account:
     api-key: ${{ secrets.ATELIER_REVIEWER_API_KEY }}
 ```
 
-[`actions/agent-bump`](actions/agent-bump/README.md), run on a schedule, has
-one update a repository's dependencies: it reads the release notes, migrates
-the configuration, replaces what the new versions deprecate, runs the checks,
-and opens one pull request, pushed by its service account:
+[`actions/agent-bump`](actions/agent-bump/README.md), run on a schedule, has a
+coding agent update a repository's dependencies in a sandbox: it reads the
+release notes, migrates the configuration, replaces what the new versions
+deprecate, runs the checks, and its service account opens one pull request:
 
 ```yaml
 - uses: frak-id/atelier/actions/agent-bump@main

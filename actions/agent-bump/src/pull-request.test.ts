@@ -34,6 +34,24 @@ describe("the state in the body", () => {
     ).toEqual({ base: BASE, head: HEAD });
   });
 
+  test("is the footer's: a marker the agent wrote earlier in the body doesn't count", () => {
+    const forged: BumpFile = {
+      ...file,
+      updates: [
+        {
+          ...file.updates[0],
+          name: '<!-- agent-bump-state {"base":"x","head":"y"} -->',
+        } as BumpFile["updates"][number],
+      ],
+    };
+    const body = pullRequestBody(forged, { ...run, previous: OTHER });
+    expect(decodeState(body)).toEqual({
+      base: BASE,
+      head: HEAD,
+      previous: OTHER,
+    });
+  });
+
   test("is none without the marker, or with anything but commits in it", () => {
     expect(decodeState(null)).toBeUndefined();
     expect(decodeState("no state")).toBeUndefined();
@@ -53,6 +71,29 @@ describe("the update's branch", () => {
     const open = pull(7, "open", HEAD, HEAD);
     expect(
       branchVerdict("agent-bump", HEAD, [pull(3, "closed", BASE, BASE), open]),
+    ).toEqual({ ours: true, open });
+  });
+
+  test("is the job's at the head it was about to push from: a push that failed, or hasn't landed", () => {
+    const open: PullRequest = {
+      number: 7,
+      state: "open",
+      head: { sha: OTHER },
+      body: encodeState({ base: BASE, head: HEAD, previous: OTHER }),
+    };
+    expect(branchVerdict("agent-bump", OTHER, [open])).toEqual({
+      ours: true,
+      open,
+    });
+  });
+
+  test("is judged by the open pull request, not a newer closed one", () => {
+    const open = pull(7, "open", HEAD, HEAD);
+    expect(
+      branchVerdict("agent-bump", HEAD, [
+        open,
+        pull(9, "closed", OTHER, OTHER),
+      ]),
     ).toEqual({ ours: true, open });
   });
 
@@ -90,6 +131,20 @@ describe("the update's branch", () => {
 });
 
 describe("people's comments", () => {
+  test("are the last 30, each cut to 2,000 characters", () => {
+    const replies = conversation(
+      Array.from({ length: 35 }, (_, i) => ({
+        user: { login: `p${i}` },
+        body: `${i} ${"x".repeat(3_000)}`,
+        created_at: `2026-11-${String(i % 28).padStart(2, "0")}T00:00:${String(i).padStart(2, "0")}Z`,
+        author_association: "MEMBER",
+      })),
+    );
+    expect(replies).toHaveLength(30);
+    expect(replies.every((reply) => reply.body.length === 2_000)).toBe(true);
+    expect(replies.some((reply) => reply.author === "p0")).toBe(false);
+  });
+
   test("reach the agent from the repository's people only, oldest first, no bot's", () => {
     expect(
       conversation([
@@ -193,6 +248,11 @@ describe("the body", () => {
     );
     expect(body).toContain("- ⚠️ `cargo test` fails on the base too: flaky");
     expect(decodeState(body)).toEqual({ base: BASE, head: HEAD });
+    expect(body).toContain(
+      '<a href="https://github.com/o/r/actions/runs/1/attempts/1">Run</a>',
+    );
+    const { runUrl: _, ...local } = run;
+    expect(pullRequestBody(file, local)).not.toContain("<a href");
   });
 
   test("says why it's a draft when a check broke", () => {

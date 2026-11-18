@@ -44,6 +44,14 @@ inputs:
       Days a release must have been out before the agent takes it. A
       compromised release is usually caught and pulled within days.
     default: "3"
+  update-workflows:
+    description: >-
+      `true` to let the agent change `.github/workflows/` (the Actions and
+      versions pinned there). The service account's credential then needs the
+      `workflows` permission, with which a steered agent could push a workflow
+      that runs with the repository's secrets: README.md, Security. `false`
+      (the default): the job refuses commits that change them.
+    default: "false"
   subagents:
     description: >-
       `auto` (the default): sub-agents read the release notes when there are
@@ -72,7 +80,9 @@ inputs:
       update can't change its own). Skipped when missing; empty to read none.
     default: DEPENDENCIES.md
   labels:
-    description: Labels for the pull request, comma- or line-separated. They must exist.
+    description: >-
+      Labels for the pull request, comma- or line-separated. They must exist:
+      the job checks before the agent starts.
     default: ""
   agent-timeout-minutes:
     description: >-
@@ -107,6 +117,7 @@ runs:
         BRANCH: ${{ inputs.branch }}
         IMAGE: ${{ inputs.image }}
         MINIMUM_RELEASE_AGE: ${{ inputs.minimum-release-age }}
+        UPDATE_WORKFLOWS: ${{ inputs.update-workflows }}
         SUBAGENTS: ${{ inputs.subagents }}
         SUBAGENT_MODEL: ${{ inputs.subagent-model }}
         TOOLBOXES: ${{ inputs.toolboxes }}

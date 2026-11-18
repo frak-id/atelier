@@ -3,7 +3,7 @@
  * action (action.yml):
  *
  * 1. the update's branch checked: the job only replaces a branch it pushed
- *    itself, so a person's commits on it are never lost (pull-request.ts's
+ *    itself, so it never pushes over a person's commits (pull-request.ts's
  *    `branchVerdict`);
  * 2. a sandbox on Atelier, as the service account whose key the job holds, from
  *    the repository's prebuild, with the update's branch made at the base
@@ -36,7 +36,9 @@ import {
   repositoryInstructions,
 } from "../../shared/src/instructions.ts";
 import { job, shellQuote } from "../../shared/src/job.ts";
+import { quiet } from "../../shared/src/markdown.ts";
 import {
+  type Deadline,
   deadlineIn,
   HOME,
   SANDBOX_NAME_MAX,
@@ -74,6 +76,9 @@ const BODY_FILE = `${HOME}/agent-bump-body.md`;
 /** The agent's turns, past which the task is cancelled: the job's own timeout
  * is above this and the sandbox's boot. */
 const TASK_MINUTES = minutes("AGENT_TIMEOUT_MINUTES", 90);
+/** A follow-up turn's time at least, even past the agent's: it's sent to fix a
+ * file or a commit, and cancelled at once otherwise. */
+const FOLLOW_UP_MINUTES = 5;
 /** A release younger than this many days is too fresh to take. */
 const MINIMUM_RELEASE_AGE = (() => {
   const value = Number(process.env.MINIMUM_RELEASE_AGE || 3);
@@ -105,6 +110,16 @@ const LABELS = (process.env.LABELS ?? "")
 for (const label of LABELS)
   if (label.length > 50 || /\p{Cc}/u.test(label))
     fail(`labels: no label name: "${label}"`);
+/** Whether the agent may change `.github/workflows/`. Pushing that takes the
+ * credential's `workflows` permission, with which a steered agent could push a
+ * workflow that runs with the repository's secrets (README.md, Security). */
+const UPDATE_WORKFLOWS = (() => {
+  const value = (process.env.UPDATE_WORKFLOWS || "false").trim();
+  if (value !== "true" && value !== "false")
+    fail(`update-workflows must be true or false, not "${value}"`);
+  return value === "true";
+})();
+const WORKFLOWS_DIR = ".github/workflows";
 /** A branch name: it goes into git and gh commands. */
 const BRANCH_NAME = /^(?!-)(?!.*\.\.)[\w./-]+$/;
 const BRANCH = (process.env.BRANCH || "agent-bump").trim();
@@ -142,10 +157,11 @@ const { request: github, all: githubAll } = gitHub({
 const mode = process.argv[2] || process.env.MODE || "bump";
 if (!["bump", "dry-run", "cleanup"].includes(mode))
   fail(`unknown mode: ${mode}`);
-/** Every sandbox of the repository's updates carries it: how the next run, or
- * the cleanup step, finds the ones a dead job left. A dry run's are apart. */
+/** Every sandbox of the update carries it, with its branch (one workflow per
+ * branch): how the next run, or the cleanup step, finds the ones a dead job
+ * left. A dry run's are apart. A branch name has no `#`. */
 const marker = {
-  "agent-bump": `${repository}${mode === "dry-run" ? "-dry-run" : ""}`,
+  "agent-bump": `${repository}:${BRANCH}${mode === "dry-run" ? "#dry-run" : ""}`,
 };
 /**
  * Where the job leaves its sandbox's id, for the `cleanup` step of a cancelled
@@ -161,7 +177,10 @@ const { destroyAll, destroy, waitUntilRunning, exec, runTurn } = sandboxes(
   { log, warn },
   "the next run destroys it",
 );
-const runUrl = `${process.env.GITHUB_SERVER_URL}/${repository}/actions/runs/${process.env.GITHUB_RUN_ID}/attempts/${process.env.GITHUB_RUN_ATTEMPT ?? "1"}`;
+/** The workflow run: none on a local dry run. */
+const runUrl = process.env.GITHUB_RUN_ID
+  ? `${process.env.GITHUB_SERVER_URL ?? "https://github.com"}/${repository}/actions/runs/${process.env.GITHUB_RUN_ID}/attempts/${process.env.GITHUB_RUN_ATTEMPT ?? "1"}`
+  : undefined;
 
 /** The commit `branch` is at on GitHub, or undefined when it has none. */
 async function branchHead(branch: string): Promise<string | undefined> {
@@ -225,9 +244,13 @@ interface GitState {
   /** The base is an ancestor of the head: the commits are on top of it. */
   onBase: boolean;
   commits: number;
+  /** The files of `.github/workflows/` the commits change. */
+  workflowFiles: string[];
   /** `git status --porcelain`: what isn't committed. */
   uncommitted: string[];
 }
+
+const SECTION = "@@agent-bump@@";
 
 async function gitState(
   id: string,
@@ -238,27 +261,59 @@ async function gitState(
     id,
     `printf '%s\\n' "$(git rev-parse HEAD)" "$(git rev-parse --abbrev-ref HEAD)" ` +
       `"$(git merge-base --is-ancestor ${base} HEAD && echo yes || echo no)" "$(git rev-list --count ${base}..HEAD)" ` +
-      "&& git status --porcelain",
+      `&& echo ${SECTION} && git diff --name-only ${base} HEAD -- ${WORKFLOWS_DIR} ` +
+      `&& echo ${SECTION} && git status --porcelain`,
     cwd,
   );
-  const [head = "", branch = "", onBase = "", commits = "", ...uncommitted] =
-    out.split("\n");
+  const [facts = [], workflows = [], status = []] = out
+    .split(new RegExp(`^${SECTION}$`, "m"))
+    .map((section) => section.split("\n").filter(Boolean));
+  const [head = "", branch = "", onBase = "", commits = ""] = facts;
   return {
     head,
     branch,
     onBase: onBase === "yes",
     commits: Number(commits),
-    uncommitted: uncommitted.filter(Boolean),
+    workflowFiles: workflows,
+    uncommitted: status,
   };
 }
 
 /** What's wrong with `git` for the job to push it, if anything. */
-function notReady(git: GitState): string | undefined {
+function notReady(git: GitState, base: string): string | undefined {
   if (git.branch !== BRANCH)
     return `the clone is on ${git.branch}, not on ${BRANCH}`;
+  if (!git.onBase)
+    return `${BRANCH}'s commits aren't on top of ${base}: they must start from it`;
+  if (!UPDATE_WORKFLOWS && git.workflowFiles.length > 0)
+    return (
+      `the commits change ${WORKFLOWS_DIR}/, which this run may not push (\`update-workflows\` is off): ` +
+      `${git.workflowFiles.slice(0, 20).join(", ")}. Take those changes out of the commits, and move their updates ` +
+      "from `updates` to `held`"
+    );
   if (git.uncommitted.length > 0)
     return `the working tree has changes nobody committed:\n${git.uncommitted.slice(0, 20).join("\n")}`;
   return undefined;
+}
+
+/** A follow-up turn's deadline: what's left of the agent's time, or
+ * `FOLLOW_UP_MINUTES` when less is left. */
+const followUp = (deadline: Deadline): Deadline =>
+  deadline.at - Date.now() >= FOLLOW_UP_MINUTES * 60_000
+    ? deadline
+    : deadlineIn(FOLLOW_UP_MINUTES);
+
+/** Prints text the agent wrote: without control characters (a terminal's
+ * escapes) and, on a runner, between `stop-commands` markers, so that none of
+ * its lines is taken for a workflow command. */
+function printUntrusted(text: string): void {
+  const clean = text.replaceAll(/[^\P{Cc}\n\t]/gu, "");
+  if (process.env.GITHUB_ACTIONS !== "true") {
+    console.log(clean);
+    return;
+  }
+  const token = crypto.randomUUID();
+  console.log(`::stop-commands::${token}\n${clean}\n::${token}::`);
 }
 
 /**
@@ -280,10 +335,12 @@ async function push(
     );
   } catch (error) {
     const message = (error as Error).message;
-    if (/workflow/i.test(message))
+    // GitHub's refusal, not the command's text (a branch can be named so).
+    if (/refusing to allow .*workflow/i.test(message))
       throw new Error(
-        "the service account's GitHub credential can't change workflow files: give its App the `workflows` " +
-          `permission (a token, the \`workflow\` scope), or have ${INSTRUCTIONS_FILE} leave GitHub Actions alone. ${message}`,
+        "`update-workflows` is on, but the service account's GitHub credential can't change workflow files: give " +
+          "its App the `workflows` permission (README.md, Security, says what that risks), or turn `update-workflows` off. " +
+          message,
       );
     if (/stale info/i.test(message))
       throw new Error(
@@ -295,34 +352,72 @@ async function push(
 }
 
 /**
- * Opens the pull request, or updates `open`, from the sandbox with `gh` (the
- * service account's credential): a draft while a check fails. Its number.
+ * Pushes the branch and opens its pull request, or updates `open`, from the
+ * sandbox (the service account's credential, `gh`): a draft while a check
+ * fails. Its number.
+ *
+ * The branch never gets ahead of the state that makes it the job's
+ * (pull-request.ts's `branchVerdict`), or every later run would stop: an open
+ * pull request's body, which records the new head and the one before
+ * (`previous`), is written before the push, and put back if the push fails; a
+ * new branch whose pull request can't be opened is deleted.
  */
-async function openPullRequest(
+async function publish(
   id: string,
   cwd: string,
   pr: {
     open?: PullRequest;
+    /** The branch's head on GitHub before the push: undefined, none. */
+    branchHead: string | undefined;
+    /** The head pushed. */
+    head: string;
     baseBranch: string;
     title: string;
     body: string;
     draft: boolean;
   },
 ): Promise<number> {
-  await atelier.call("write_files", {
-    id,
-    files: [{ path: BODY_FILE, content: pr.body }],
-  });
   const repo = `--repo ${shellQuote(repository)}`;
-  const content = `--title ${shellQuote(pr.title)} --body-file ${BODY_FILE}`;
+  const writeBody = (body: string) =>
+    atelier.call("write_files", {
+      id,
+      files: [{ path: BODY_FILE, content: body }],
+    });
+  const pushed = async () => {
+    try {
+      await push(id, cwd, pr.branchHead);
+    } catch (error) {
+      // A push can land and still fail, past exec's timeout.
+      if ((await branchHead(BRANCH).catch(() => undefined)) !== pr.head)
+        throw error;
+      log(`${BRANCH} is at ${pr.head}: the push landed, though it failed`);
+    }
+  };
+
   if (pr.open) {
-    const { number, draft } = pr.open;
-    const labels = LABELS.map((label) => ` --add-label ${shellQuote(label)}`);
+    const { number, title, body, draft } = pr.open;
+    const edit = (newTitle: string) =>
+      `gh pr edit ${number} ${repo} --title ${shellQuote(newTitle)} --body-file ${BODY_FILE}`;
+    await writeBody(pr.body);
     await exec(
       id,
-      `gh pr edit ${number} ${repo} ${content}${labels.join("")}`,
+      `${edit(pr.title)} --base ${shellQuote(pr.baseBranch)}` +
+        LABELS.map((label) => ` --add-label ${shellQuote(label)}`).join(""),
       cwd,
     );
+    try {
+      await pushed();
+    } catch (error) {
+      // The body describes commits that aren't on the branch: the last one back.
+      await writeBody(body ?? "")
+        .then(() => exec(id, edit(title ?? pr.title), cwd))
+        .catch((restore) =>
+          warn(
+            `#${number}'s body describes commits that weren't pushed, and couldn't be put back: ${(restore as Error).message}`,
+          ),
+        );
+      throw error;
+    }
     if (pr.draft !== Boolean(draft))
       await exec(
         id,
@@ -332,17 +427,38 @@ async function openPullRequest(
     log(`#${number} updated`);
     return number;
   }
-  const labels = LABELS.map((label) => ` --label ${shellQuote(label)}`);
-  const url = await exec(
-    id,
-    `gh pr create ${repo} --base ${shellQuote(pr.baseBranch)} --head ${shellQuote(BRANCH)} ${content}` +
-      `${pr.draft ? " --draft" : ""}${labels.join("")}`,
-    cwd,
-  );
-  const number = Number(/\/pull\/(\d+)/.exec(url)?.[1]);
-  if (!number) throw new Error(`gh pr create printed no pull request: ${url}`);
-  log(`#${number} opened`);
-  return number;
+
+  await pushed();
+  try {
+    await writeBody(pr.body);
+    const url = await exec(
+      id,
+      `gh pr create ${repo} --base ${shellQuote(pr.baseBranch)} --head ${shellQuote(BRANCH)} ` +
+        `--title ${shellQuote(pr.title)} --body-file ${BODY_FILE}${pr.draft ? " --draft" : ""}` +
+        LABELS.map((label) => ` --label ${shellQuote(label)}`).join(""),
+      cwd,
+    );
+    const number = Number(/\/pull\/(\d+)/.exec(url)?.[1]);
+    if (!number)
+      throw new Error(`gh pr create printed no pull request: ${url}`);
+    log(`#${number} opened`);
+    return number;
+  } catch (error) {
+    // No pull request records it: the branch would stop every later run.
+    const lease = `refs/heads/${BRANCH}:${pr.head}`;
+    await exec(
+      id,
+      `git push --quiet --force-with-lease=${shellQuote(lease)} origin ${shellQuote(`:refs/heads/${BRANCH}`)}`,
+      cwd,
+    )
+      .then(() => log(`${BRANCH} deleted: its pull request wasn't opened`))
+      .catch((cleanup) =>
+        warn(
+          `${BRANCH} has no pull request and couldn't be deleted: delete it, or the next runs stop. ${(cleanup as Error).message}`,
+        ),
+      );
+    throw error;
+  }
 }
 
 /** What people said on the open update: its comments, its review comments and
@@ -438,6 +554,19 @@ async function bump(): Promise<void> {
           `the service account can't push to ${repository}: its GitHub credential needs contents: write. ${(error as Error).message}`,
         );
       });
+    // A label gh can't find fails the pull request once pushed: now instead.
+    if (mode !== "dry-run")
+      for (const label of LABELS)
+        await exec(
+          sandboxId,
+          `gh api --silent ${shellQuote(`repos/${repository}/labels/${encodeURIComponent(label)}`)}`,
+          cwd,
+        ).catch((error) => {
+          throw new Error(
+            `labels: ${repository} has no label "${label}" (or the service account can't read it): create it, ` +
+              `or take it out of \`labels\`. ${(error as Error).message}`,
+          );
+        });
 
     const deadline = deadlineIn(TASK_MINUTES);
     const task = await runTurn(
@@ -450,6 +579,7 @@ async function bump(): Promise<void> {
         baseBranch,
         minutes: TASK_MINUTES,
         minimumReleaseAge: MINIMUM_RELEASE_AGE,
+        workflows: UPDATE_WORKFLOWS,
         subagents: {
           setting: SUBAGENTS,
           ...(SUBAGENT_MODEL ? { model: SUBAGENT_MODEL } : {}),
@@ -476,7 +606,7 @@ async function bump(): Promise<void> {
         { taskId: task.taskId },
         `${RESULT_FILE} can't be used: ${(error as Error).message}. Write it again as the schema says, ` +
           `check it with \`jq . ${RESULT_FILE}\`, then reply with the number of updates and held-back ones.`,
-        deadline,
+        followUp(deadline),
       );
       file = await readResultFile(sandboxId);
     }
@@ -485,26 +615,30 @@ async function bump(): Promise<void> {
     console.log(`[agent-bump] result file: ${JSON.stringify(file)}`);
 
     let git = await gitState(sandboxId, cwd, base);
-    const problem = notReady(git);
+    const problem = notReady(git, base);
     if (problem) {
       log(`${problem.split("\n")[0]}: asking the agent again`);
       await runTurn(
         { taskId: task.taskId },
-        `The clone isn't ready to push: ${problem}\nCommit what belongs to an update you listed, undo the rest ` +
-          `or move it to ${SCRATCH_DIR}, stay on ${BRANCH}, and update ${RESULT_FILE} if that changes it. ` +
-          "Reply once `git status --porcelain` prints nothing.",
-        deadline,
+        `The clone isn't ready to push: ${problem}\nFix it: commit what belongs to an update you listed and undo ` +
+          `the rest (scratch files go to ${SCRATCH_DIR}), keep every commit on ${BRANCH} on top of ${base}, and ` +
+          `update ${RESULT_FILE} to match. Reply once that's done and \`git status --porcelain\` prints nothing.`,
+        followUp(deadline),
       );
       file = await readResultFile(sandboxId);
       git = await gitState(sandboxId, cwd, base);
-      const still = notReady(git);
+      // Untracked files aren't pushed: they cost a warning, not the update.
+      const tracked = git.uncommitted.filter((line) => !line.startsWith("??"));
+      const still = notReady({ ...git, uncommitted: tracked }, base);
       if (still) throw new Error(still);
+      if (tracked.length < git.uncommitted.length)
+        warn(
+          `files the agent left in the clone, not in the update: ${git.uncommitted.slice(0, 20).join(", ")}`,
+        );
     }
     await atelier
       .call("manage_task", { taskId: task.taskId, action: "close" })
       .catch(() => {});
-    if (!git.onBase)
-      throw new Error(`${BRANCH}'s commits aren't on top of ${base}`);
     if (git.commits === 0) {
       if (file.updates.length > 0)
         throw new Error(
@@ -532,17 +666,19 @@ async function bump(): Promise<void> {
       base,
       baseBranch,
       head: git.head,
-      runUrl,
+      ...(head ? { previous: head } : {}),
+      ...(runUrl ? { runUrl } : {}),
     });
     if (mode === "dry-run") {
-      console.log(
+      printUntrusted(
         `${draft ? "[draft] " : ""}${file.title}\n\n${body}\n\n${await exec(sandboxId, `git diff --stat ${base} HEAD`, cwd)}`,
       );
       return;
     }
-    await push(sandboxId, cwd, head);
-    const number = await openPullRequest(sandboxId, cwd, {
+    const number = await publish(sandboxId, cwd, {
       ...(open ? { open } : {}),
+      branchHead: head,
+      head: git.head,
       baseBranch,
       title: file.title,
       body,
@@ -561,7 +697,7 @@ async function bump(): Promise<void> {
     if (process.env.GITHUB_STEP_SUMMARY)
       await appendFile(
         process.env.GITHUB_STEP_SUMMARY,
-        `[#${number} ${file.title}](${pull.html_url})\n\n${body}\n`,
+        `[#${number} ${quiet(file.title).replaceAll(/[[\]\\]/g, "\\$&")}](${pull.html_url})\n\n${body}\n`,
       ).catch((error) => log(`no step summary: ${error}`));
   } finally {
     await destroy(sandboxId);
