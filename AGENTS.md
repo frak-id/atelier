@@ -14,7 +14,9 @@ apps/
 packages/
 └── spec/     # @atelier/spec: SandboxSpec seam contract + shared wire types
 actions/
-└── agent-review/  # public GitHub Action: PR reviews by an agent in a sandbox (its README.md)
+├── agent-review/  # public GitHub Action: PR reviews by an agent in a sandbox (its README.md)
+├── agent-bump/    # public GitHub Action: scheduled dependency updates by an agent, as one PR (its README.md)
+└── shared/        # what both import by relative path: Atelier MCP client, GitHub client, sandbox and job helpers
 infra/k8s/    # server + console manifests (infra/k8s/README.md); cluster infra is NOT deployed from this repo
 infra/nginx/  # console nginx config (SPA + reverse proxy to the server)
 scripts/      # bump-version.ts
@@ -40,6 +42,8 @@ Dockerfile    # multi-target: `server` and `console` images
 | SandboxSpec and wire types | `packages/spec/src/` |
 | Deploy manifests | `infra/k8s/` |
 | PR review GitHub Action | `actions/agent-review/` (`action.yml`, `src/main.ts`; no runtime deps, runs on Bun without install) |
+| Dependency update GitHub Action | `actions/agent-bump/` (same shape; the agent's commits are pushed from the sandbox) |
+| Code the actions share | `actions/shared/src/` (relative imports only: a workflow gets the whole repo, never an install) |
 
 ## Commands
 

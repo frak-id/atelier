@@ -87,6 +87,18 @@ service account:
     api-key: ${{ secrets.ATELIER_REVIEWER_API_KEY }}
 ```
 
+[`actions/agent-bump`](actions/agent-bump/README.md), run on a schedule, has
+one update a repository's dependencies: it reads the release notes, migrates
+the configuration, replaces what the new versions deprecate, runs the checks,
+and opens one pull request, pushed by its service account:
+
+```yaml
+- uses: frak-id/atelier/actions/agent-bump@main
+  with:
+    atelier-url: https://atelier.example.com
+    api-key: ${{ secrets.ATELIER_BUMP_API_KEY }}
+```
+
 ## Quickstart: local mode
 
 Local mode runs the server and console against your Docker daemon. Auth is
@@ -165,6 +177,8 @@ The server dev script needs a running Docker daemon. See
 - [Roadmap](docs/roadmap.md): remaining gaps
 - [Agent review](actions/agent-review/README.md): the GitHub Action that
   reviews pull requests in a sandbox
+- [Agent dependency update](actions/agent-bump/README.md): the GitHub Action
+  that updates dependencies in a sandbox, as one pull request
 
 ## Security
 

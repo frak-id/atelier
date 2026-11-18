@@ -60,3 +60,9 @@ export function job(name: string, title: string): Job {
 
 export const sleep = (ms: number) =>
   new Promise<void>((resolve) => setTimeout(resolve, ms));
+
+/** `value` as one POSIX shell word: single-quoted, so nothing in it (spaces,
+ * `$`, backticks, quotes, newlines) is interpreted. */
+export function shellQuote(value: string): string {
+  return `'${value.replaceAll("'", `'\\''`)}'`;
+}
