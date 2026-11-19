@@ -235,9 +235,24 @@ describe("review", () => {
       "footer",
     );
     expect(posted.body).toContain(
-      "💡 **Improvements not reviewed**: the improvements agent took too long\n\n<sub>footer</sub>",
+      "Adds things.\n\n💡 **Improvements not reviewed**: the improvements agent took too long\n\n<sub>footer</sub>",
     );
-    expect(review([]).body).not.toContain("Improvements");
+    expect(review([]).body).not.toContain("mprovement");
+  });
+
+  test("with no improvement, says so with its agent's summary, before the minor findings", () => {
+    const posted = buildReview(
+      {
+        summary: "Adds things.",
+        findings: [finding({ severity: "minor", title: "Nit" })],
+        improvements: { summary: "Nothing worth changing." },
+      },
+      commentable,
+      "footer",
+    );
+    expect(posted.body).toContain(
+      "Adds things.\n\n💡 **No improvement**: Nothing worth changing.\n\n<details><summary>🟡 1 minor",
+    );
   });
 
   test("cut inside the minor findings, closes them so the footer stays in view", () => {

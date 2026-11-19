@@ -9,7 +9,8 @@
  * Its findings have a category instead of a severity, and never block
  * (github-review.ts). How many it reports per category grows with the diff
  * (limits.ts). A later review rules on its earlier improvements and looks for
- * new ones in what changed since only: the rest of the PR had its review.
+ * new ones in what changed since only, when the earlier review looked for them
+ * (memory.ts's `ReviewState.improvements`): the rest of the PR had its review.
  */
 import type { Category } from "./github-review.ts";
 import {
@@ -46,18 +47,22 @@ export function improvementsPrompt(
   pr: PromptInput & {
     /** The categories the workflow asks for (limits.ts). */
     categories: readonly Category[];
-    /** The new findings it may report per category (limits.ts): none on a
-     * later review of a head nothing was pushed to. */
+    /**
+     * Where it looks for new improvements: the whole `diff` (a first review,
+     * or the earlier one didn't look for them, or what changed since can't be
+     * told), what changed since in the `delta`, or `none` (nothing that counts
+     * changed since): it only rules on its earlier ones then.
+     */
+    scope: "diff" | "delta" | "none";
+    /** The new findings it may report per category (limits.ts). */
     limits: Readonly<Record<Category, number>>;
   },
 ): string {
   const earlier = pr.earlier;
   const dir = pr.diffDir;
   const subagents = pr.subagents;
-  // What it looks at for new improvements: the whole PR the first time, what
-  // changed since on a later review, or the whole PR again when that's unknown.
-  const delta = earlier?.delta === "written";
-  const fresh = earlier?.delta !== "unchanged";
+  const delta = pr.scope === "delta";
+  const fresh = pr.scope !== "none";
   const [patches, tsv] = delta
     ? [`${dir}/delta/`, `${dir}/delta-files.tsv`]
     : [`${dir}/diff/`, `${dir}/files.tsv`];
@@ -78,13 +83,13 @@ export function improvementsPrompt(
           `Start from the earlier review (above)${subagents && fresh ? ", with a sub-agent of its own, run with the others (next step)" : ""}:
    - ${RULING};
    - ${
-     earlier.delta === "written"
+     pr.scope === "delta"
        ? `then look for new improvements in what changed since only (\`${dir}/delta/\`): the rest of the PR had its
      review for improvements, which reported those worth making.`
-       : earlier.delta === "unavailable"
-         ? `then look for new improvements in the whole PR: its earlier head is gone, so what changed since can't be
-     told. Leave out what the earlier review reported or dismissed.`
-         : "nothing was pushed since: report no new improvement, only your rulings."
+       : pr.scope === "diff"
+         ? `then look for new improvements in the whole PR: the earlier review didn't look at it for improvements,
+     or what changed since can't be told. Leave out what the earlier reviews reported or dismissed.`
+         : "nothing that counts changed since: report no new improvement, only your rulings."
    }`,
         ]
       : []),

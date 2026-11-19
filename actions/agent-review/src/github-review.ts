@@ -616,6 +616,16 @@ export function buildReview(
     review.improvements && "summary" in review.improvements
       ? [quiet(review.improvements.summary)]
       : [];
+  // Before the collapsed lists, so that a cut keeps it: why there's no
+  // improvement listed, when the review for improvements ran.
+  const improvementsNote =
+    review.improvements && "failed" in review.improvements
+      ? [
+          `${IMPROVEMENT} **Improvements not reviewed**: ${quiet(review.improvements.failed)}`,
+        ]
+      : improvements.length === 0 && improvementsSummary.length > 0
+        ? [`${IMPROVEMENT} **No improvement**: ${improvementsSummary[0]}`]
+        : [];
   const listItem = (finding: PostedFinding) => {
     // Off the diff's lines, a suggestion can't be a GitHub suggestion: the
     // change, to apply by hand.
@@ -634,6 +644,7 @@ export function buildReview(
     ...(elsewhere.length > 0
       ? ["#### Not on the diff's lines", elsewhere.map(listItem).join("\n\n")]
       : []),
+    ...improvementsNote,
     // Our own HTML: quiet() turns any the agent wrote into text, so this
     // `<details>` is the only one.
     ...(minors.length > 0
@@ -649,11 +660,6 @@ export function buildReview(
           ...improvementsSummary,
           improvements.map(listItem).join("\n\n"),
           "</details>",
-        ]
-      : []),
-    ...(review.improvements && "failed" in review.improvements
-      ? [
-          `${IMPROVEMENT} **Improvements not reviewed**: ${quiet(review.improvements.failed)}`,
         ]
       : []),
   ].join("\n\n");

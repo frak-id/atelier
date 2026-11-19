@@ -141,6 +141,7 @@ describe("the state", () => {
         ...state(),
         open: [{ ...stored("F1"), line: "10" }],
       },
+      "a text improvements flag": { ...state(), improvements: "yes" },
       "an open entry with an unknown category": {
         ...state(),
         open: [{ ...stored("F1"), category: "style" }],
@@ -163,6 +164,8 @@ describe("the state", () => {
       open: [stored("F1", { severity: "minor", category: "duplication" })],
     });
     expect(decodeState(block(improvement))).toEqual(improvement);
+    const covered = state({ improvements: true });
+    expect(decodeState(block(covered))).toEqual(covered);
   });
 
   test("is read from the job's latest agent review that has one, not from a person's copy", () => {
@@ -676,5 +679,14 @@ describe("a review after an earlier one", () => {
       },
     ]);
     expect(result.dropped.performance).toBe(1);
+  });
+
+  test("says in the state whether improvements were looked for up to its head", () => {
+    expect(resolve(file({}), undefined, NEXT, FIRST).state).not.toHaveProperty(
+      "improvements",
+    );
+    expect(
+      resolve(file({}), undefined, NEXT, FIRST, true).state.improvements,
+    ).toBe(true);
   });
 });

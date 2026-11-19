@@ -19,7 +19,7 @@
  * memory.ts's `resolve` drops what goes past either rule.
  */
 import type { Instructions } from "../../shared/src/instructions.ts";
-import type { Closed } from "./github-review.ts";
+import type { Category, Closed } from "./github-review.ts";
 import type { Reply, StoredFinding } from "./memory.ts";
 
 /** The workflow's `subagents` input. */
@@ -273,14 +273,21 @@ export function sharedFields(
 - No finding: \`"findings": []\`.`;
 }
 
+/** What each category of improvement leaves out of the review of issues. */
+const LEFT_OUT: Record<Category, string> = {
+  performance: "a slower path",
+  duplication: "code repeated",
+  conventions: "a convention not followed",
+};
+
 /** The review of issues: bugs, security, data, deploy, tests, the repository's
- * rules. With `improvements`, another agent looks for improvements at the same
- * time, and this one leaves them out. */
+ * rules. Another agent looks for the `improvements` of those categories at the
+ * same time, and this one leaves them out. */
 export function reviewPrompt(
   pr: PromptInput & {
     /** The new minor findings it may report (limits.ts): 0 on a later review. */
     maxMinors: number;
-    improvements: boolean;
+    improvements: readonly Category[];
   },
 ): string {
   const earlier = pr.earlier;
@@ -298,6 +305,21 @@ export function reviewPrompt(
     ? `its new findings, critical and major only (the one on the earlier review also rules on each earlier
      finding, minor ones included)`
     : "its findings";
+  const listed = (items: readonly string[]) =>
+    items.length > 1
+      ? `${items.slice(0, -1).join(", ")} and ${items.at(-1)}`
+      : (items[0] ?? "");
+  const improvements = pr.improvements;
+  const conventions = improvements.includes("conventions");
+  // What looks like an improvement but is an issue.
+  const stillYours = [
+    ...(improvements.includes("performance")
+      ? [
+          "a performance problem that breaks something (a request that times out, memory that runs\n   out, a bill that explodes)",
+        ]
+      : []),
+    ...(conventions ? ["a rule broken with real consequences"] : []),
+  ];
   const minors =
     pr.maxMinors > 0
       ? `at most ${pr.maxMinors} minor ones: those most worth
@@ -308,7 +330,7 @@ export function reviewPrompt(
   const steps = [
     `Read the repository's rules first: AGENTS.md at the root and in every directory the diff touches, and the
    documents they point to for the parts touched. Breaking one of those rules is a finding, rated by what breaking it
-   does, not by the rule.`,
+   does, not by the rule.${conventions ? " One broken with no real consequence (a convention: naming, layout, style) is the other agent's (below)." : ""}`,
     ...(earlier
       ? [
           `Start from the earlier review (above)${subagents ? ", with a sub-agent of its own, run with the others (next steps)" : ""}:
@@ -358,12 +380,12 @@ export function reviewPrompt(
     `Check every candidate finding yourself against the code at the head before keeping it: read the code around it,
    follow its callers and callees, and write down how you confirmed it (its \`evidence\`). Drop what you can't
    confirm, duplicates, matters of taste, and what the tooling already enforces (formatting, lint, types).${
-     pr.improvements
+     improvements.length > 0
        ? `
-   Another agent, running at the same time, looks for improvements that aren't bugs: performance, duplicated code,
-   and the repository's conventions. Leave out what is only that: a slower path, code repeated, or a convention not
-   followed, that breaks nothing.${subagents ? " Tell your sub-agents too." : ""} A performance problem that breaks something (a request that times out,
-   memory that runs out, a bill that explodes) is yours, and so is a rule broken with real consequences.`
+   Another agent, running at the same time, looks for improvements that aren't bugs: ${listed(improvements)}. Leave out
+   what is only that: ${listed(improvements.map((category) => LEFT_OUT[category]))}, that breaks nothing.${subagents ? " Tell your sub-agents too." : ""}${
+     stillYours.length > 0 ? ` Still yours: ${listed(stillYours)}.` : ""
+   }`
        : ""
    }
    A problem already there at the merge base is not the PR's: drop it unless the PR makes it worse or newly reachable

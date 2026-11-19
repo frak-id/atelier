@@ -12,6 +12,7 @@ const prompt = (
     categories?: Category[];
     limits?: Record<Category, number>;
     earlier?: Partial<EarlierReview>;
+    scope?: "diff" | "delta" | "none";
   } = {},
 ) =>
   improvementsPrompt({
@@ -42,6 +43,9 @@ const prompt = (
     subagents: options.subagents ?? {},
     instructions: [],
     categories: options.categories ?? ALL,
+    scope:
+      options.scope ??
+      (delta === "written" ? "delta" : delta === "unchanged" ? "none" : "diff"),
     limits: options.limits ?? {
       performance: 3,
       duplication: 4,
@@ -134,8 +138,11 @@ describe("a later review", () => {
     expect(text).toContain("Earlier improvements you carry don't count.");
   });
 
-  test("looks at the whole PR when the earlier head is gone", () => {
+  test("looks at the whole PR when the earlier review didn't, or the earlier head is gone", () => {
     const text = prompt("unavailable");
+    expect(prompt("written", { scope: "diff" })).toContain(
+      "new improvements in the whole PR",
+    );
     expect(text).toContain("new improvements in the whole PR");
     expect(text).toContain("Point it to its patches in `/home/dev/diff/diff/`");
   });
@@ -144,7 +151,12 @@ describe("a later review", () => {
     const text = prompt("unchanged", {
       limits: { performance: 0, duplication: 0, conventions: 0 },
     });
-    expect(text).toContain("report no new improvement, only your rulings");
+    expect(text).toContain(
+      "nothing that counts changed since: report no new improvement, only your rulings",
+    );
+    expect(prompt("written", { scope: "none" })).toContain(
+      "report no new improvement, only your rulings",
+    );
     expect(text).toContain("No new finding: only earlier ones you carry");
     expect(text).not.toContain("subagent(");
     expect(text).not.toContain("how many sub-agents you ran");

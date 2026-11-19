@@ -78,6 +78,7 @@ import {
   encodeState,
   type ReviewState,
   resolve,
+  type StoredFinding,
   threadReplies,
 } from "./memory.ts";
 import {
@@ -613,45 +614,64 @@ async function reviewRange(
         ? await readListedFiles(sandboxId, "delta-files.tsv")
         : [];
     const lines = changedLines(files);
-    // Where a later review looks for new improvements: what changed since, or
-    // the whole PR when that can't be told, or nothing on the same head.
-    const fresh = !earlier || delta !== "unchanged";
-    const reviewed = !earlier
-      ? files
-      : delta === "written"
-        ? deltaFiles
-        : fresh
-          ? files
-          : [];
-    const limits = findingLimits(
-      ALLOWED,
+    // Improvements are looked for in what changed since the earlier review when
+    // it looked for them (memory.ts) and that can be told; else in the whole PR.
+    const improvementsSince =
+      earlier?.state.improvements && delta !== "unavailable"
+        ? changedLines(deltaFiles)
+        : undefined;
+    const scope =
+      improvementsSince === undefined
+        ? "diff"
+        : improvementsSince > 0
+          ? "delta"
+          : "none";
+    const reviewed =
+      scope === "diff" ? files : scope === "delta" ? deltaFiles : [];
+    const limits = findingLimits(ALLOWED, {
       lines,
-      earlier ? { delta: changedLines(reviewed) } : undefined,
-    );
+      later: earlier !== undefined,
+      ...(improvementsSince !== undefined ? { improvementsSince } : {}),
+    });
     const subagents = withSubagents(SUBAGENTS, files);
     const improvementSubagents = withSubagents(SUBAGENTS, reviewed);
-    // Each agent rules on its own kind of earlier findings.
-    const earlierOf = (lane: Lane): EarlierReview | undefined =>
+    // Each agent rules on its own kind of earlier findings. Those of a category
+    // the workflow no longer asks for are dismissed (`turnedOff`).
+    const earlierOf = (
+      keep: (finding: StoredFinding) => boolean,
+    ): EarlierReview | undefined =>
       earlier && {
         ...earlier.prompt,
         delta,
-        open: earlier.prompt.open.filter(
-          (finding) =>
-            (finding.category !== undefined) === (lane === "improvements"),
-        ),
+        open: earlier.prompt.open.filter(keep),
       };
-    const issuesEarlier = earlierOf("issues");
-    const improvementsEarlier = earlierOf("improvements");
-    // On the same head, with no earlier improvement to rule on, there's nothing
-    // for it to do.
+    const issuesEarlier = earlierOf((finding) => !finding.category);
+    const improvementsEarlier = earlierOf(
+      (finding) =>
+        finding.category !== undefined && CATEGORIES.includes(finding.category),
+    );
+    const turnedOff = (earlier?.state.open ?? []).flatMap((finding) =>
+      finding.category && !CATEGORIES.includes(finding.category)
+        ? [
+            {
+              id: finding.id,
+              status: "dismissed" as const,
+              note: `The workflow no longer asks for ${finding.category} improvements.`,
+            },
+          ]
+        : [],
+    );
+    // With nothing new to look at and no earlier improvement to rule on,
+    // there's nothing for it to do.
     const withImprovements =
       CATEGORIES.length > 0 &&
-      (fresh || (improvementsEarlier?.open.length ?? 0) > 0);
+      (scope !== "none" || (improvementsEarlier?.open.length ?? 0) > 0);
     log(
-      `${lines} changed lines in ${files.length} files, lockfiles aside${earlier ? `, ${changedLines(deltaFiles)} since the earlier review` : ""}; ` +
+      `${lines} changed lines in ${files.length} files, lockfiles aside${since !== undefined ? `, ${changedLines(deltaFiles)} since the earlier review` : ""}; ` +
         `issues: ${subagents ? "with sub-agents" : "the agent alone"}, at most ${limits.minor} new minor; ` +
         (withImprovements
-          ? `improvements: ${improvementSubagents ? "with sub-agents" : "the agent alone"}, at most ${CATEGORIES.map((category) => `${limits[category]} ${category}`).join(", ")}`
+          ? `improvements in ${scope === "diff" ? "the whole PR" : scope === "delta" ? "what changed since" : "nothing new"}: ` +
+            `${improvementSubagents ? "with sub-agents" : "the agent alone"}, at most ${CATEGORIES.map((category) => `${limits[category]} ${category}`).join(", ")}`
           : "no improvements"),
     );
     if (
@@ -695,6 +715,7 @@ async function reviewRange(
             ...(improvementsEarlier ? { earlier: improvementsEarlier } : {}),
             subagents: improvementSubagents ? model : false,
             categories: CATEGORIES,
+            scope,
             limits,
             output: IMPROVEMENTS_FILE,
           }),
@@ -714,7 +735,7 @@ async function reviewRange(
         ...(issuesEarlier ? { earlier: issuesEarlier } : {}),
         subagents: subagents ? model : false,
         maxMinors: limits.minor,
-        improvements: CATEGORIES.length > 0,
+        improvements: CATEGORIES,
         output: REVIEW_FILE,
       }),
       REVIEW_FILE,
@@ -736,15 +757,24 @@ async function reviewRange(
     const result: ReviewFile = {
       summary: issues.summary,
       findings: [...issues.findings, ...(other ? other.findings : [])],
-      previous: [...issues.previous, ...(other ? other.previous : [])],
+      previous: [
+        ...issues.previous,
+        ...(other ? other.previous : []),
+        ...turnedOff,
+      ],
     };
+    // Whether improvements were looked for up to this head: by its agent now,
+    // or by an earlier one, with nothing that counts changed since.
+    const improvementsCovered = withImprovements
+      ? other !== undefined
+      : CATEGORIES.length > 0 && scope === "none";
 
     const {
       findings,
       dropped,
       since: changes,
       state,
-    } = resolve(result, earlier?.state, head, limits);
+    } = resolve(result, earlier?.state, head, limits, improvementsCovered);
     // Past what this review may report (limits.ts): in the log's review files
     // above, not on the PR.
     const past = LIMITED.filter((kind) => dropped[kind] > 0);

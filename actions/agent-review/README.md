@@ -168,14 +168,17 @@ the agent confirmed it, for whoever doubts it.
   ends. It looks for new improvements in what changed since the earlier review
   only, in proportion to its size: 3 per category per 600 changed lines, at
   least one when anything changed, and no more than a first review of that
-  size. The agents are told to weigh a fix against its cost, and to suggest a
+  size. That is when the earlier review looked for improvements: after one
+  whose improvements' agent failed, or one by an earlier version of this
+  action, it looks for them in the whole PR, as a first review would. The agents are told to weigh a fix against its cost, and to suggest a
   follow-up rather than new machinery for an unlikely case. The job drops the
   findings past these limits (`resolve` in `src/memory.ts`). The job's log
   keeps them, in the review files. A problem the PR didn't bring is left out
   unless the PR makes it worse: a critical one is named in the summary, as
   pre-existing.
 - **Improvements** are listed collapsed after the minor findings, by
-  category, under their agent's summary, never as comments.
+  category, under their agent's summary, never as comments. With none, the
+  review has its agent's summary in a line, or says why it didn't run.
 - **While it runs**, a comment on the PR links to the sandbox's agent sessions
   on Atelier. The review replaces it. A review that fails, or is cancelled or
   times out with no newer push, leaves the comment saying so, as does one
@@ -231,9 +234,10 @@ the agent confirmed it, for whoever doubts it.
     conventions: 0
   ```
 
-  A kind at 0 is not reported, and its category not looked for. With
-  `performance`, `duplication` and `conventions` all at 0, the improvements'
-  agent doesn't run.
+  A kind at 0 is not reported, and its category not looked for: the issues'
+  agent keeps it then. With `performance`, `duplication` and `conventions` all
+  at 0, the improvements' agent doesn't run. The next review dismisses the
+  open improvements of a category turned off.
 - **The sandbox's size.** `vcpus` and `memory-mb`: both agents and their
   sub-agents run in it at once, each a pi process.
 - **The sub-agents' model.** `reviewer-model` is given to each sub-agent of

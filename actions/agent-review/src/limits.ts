@@ -11,9 +11,9 @@
  * every category at 0, no improvement is looked for.
  *
  * A later review reports no new minor issue: a new round of small things on
- * every push never ends. It reports new improvements on what changed since the
- * earlier review only, in proportion to its size, past which it gets what a
- * first review of that size would.
+ * every push never ends. When the earlier review looked for improvements, a
+ * later one reports new improvements on what changed since only, in proportion
+ * to its size, past which it gets what a first review of that size would.
  */
 import { CATEGORIES, type Category } from "./github-review.ts";
 
@@ -79,21 +79,23 @@ export function scaled(allowed: number, lines: number): number {
 }
 
 /**
- * The new findings a review reports at most, per kind: a first review's, for
- * the diff's `lines`, or a later one's, for `later.delta`, the lines changed
- * since the earlier review.
+ * The new findings a review of a diff of `lines` changed lines reports at most,
+ * per kind. A `later` one reports no new minor issue. Improvements are limited
+ * for the whole diff, or, with `improvementsSince`, for the lines changed since
+ * an earlier review that looked for them.
  */
 export function findingLimits(
   allowed: Limits,
-  lines: number,
-  later?: { delta: number },
+  review: { lines: number; later: boolean; improvementsSince?: number },
 ): Limits {
+  const since = review.improvementsSince;
   const limit = (kind: Limited) => {
-    if (!later) return scaled(allowed[kind], lines);
-    if (kind === "minor") return 0;
+    if (kind === "minor")
+      return review.later ? 0 : scaled(allowed.minor, review.lines);
+    if (since === undefined) return scaled(allowed[kind], review.lines);
     return Math.min(
-      scaled(allowed[kind], later.delta),
-      Math.ceil((allowed[kind] * later.delta) / REFERENCE_LINES),
+      scaled(allowed[kind], since),
+      Math.ceil((allowed[kind] * since) / REFERENCE_LINES),
     );
   };
   return Object.fromEntries(

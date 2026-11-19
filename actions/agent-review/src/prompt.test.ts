@@ -1,5 +1,6 @@
 import { describe, expect, test } from "bun:test";
 import type { Instructions } from "../../shared/src/instructions.ts";
+import type { Category } from "./github-review.ts";
 import {
   type ChangedFile,
   changedLines,
@@ -17,7 +18,7 @@ const prompt = (
     subagents?: { model?: string } | false;
     instructions?: Instructions[];
     maxMinors?: number;
-    improvements?: boolean;
+    improvements?: Category[];
   } = {},
 ) =>
   reviewPrompt({
@@ -47,7 +48,7 @@ const prompt = (
     subagents: options.subagents ?? {},
     instructions: options.instructions ?? [],
     maxMinors: options.maxMinors ?? 5,
-    improvements: options.improvements ?? false,
+    improvements: options.improvements ?? [],
     output: "/home/dev/review.json",
   });
 
@@ -205,16 +206,39 @@ describe("sub-agents", () => {
 });
 
 describe("with an agent for improvements at the same time", () => {
+  const ALL: Category[] = ["performance", "duplication", "conventions"];
+
   test("leaves improvements to it, but not a performance problem that breaks something", () => {
-    const text = prompt(undefined, { improvements: true });
+    const text = prompt(undefined, { improvements: ALL });
     expect(text).toContain(
-      "Another agent, running at the same time, looks for improvements that aren't bugs",
+      "Another agent, running at the same time, looks for improvements that aren't bugs: performance, duplication and conventions.",
     );
-    expect(text).toContain("A performance problem that breaks something");
+    expect(text).toContain(
+      "a slower path, code repeated and a convention not followed, that breaks nothing",
+    );
+    expect(text).toContain(
+      "Still yours: a performance problem that breaks something",
+    );
+    expect(text).toContain("and a rule broken with real consequences.");
+    expect(text).toContain(
+      "One broken with no real consequence (a convention: naming, layout, style) is the other agent's",
+    );
     expect(text).toContain("Tell your sub-agents too.");
     expect(
-      prompt(undefined, { improvements: true, subagents: false }),
+      prompt(undefined, { improvements: ALL, subagents: false }),
     ).not.toContain("Tell your sub-agents");
+  });
+
+  test("leaves out only the categories it looks for", () => {
+    const text = prompt(undefined, { improvements: ["duplication"] });
+    expect(text).toContain(
+      "looks for improvements that aren't bugs: duplication.",
+    );
+    expect(text).toContain(
+      "what is only that: code repeated, that breaks nothing",
+    );
+    expect(text).not.toContain("Still yours");
+    expect(text).not.toContain("is the other agent's");
   });
 
   test("without one, says nothing of it", () => {

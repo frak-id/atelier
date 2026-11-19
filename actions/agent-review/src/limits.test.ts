@@ -8,6 +8,13 @@ import {
   scaled,
 } from "./limits.ts";
 
+const first = (lines: number) => ({ lines, later: false });
+const later = (lines: number, improvementsSince: number) => ({
+  lines,
+  later: true,
+  improvementsSince,
+});
+
 describe("allowed-findings", () => {
   test("empty: the defaults", () => {
     expect(parseAllowedFindings("")).toEqual(DEFAULT_ALLOWED);
@@ -67,13 +74,13 @@ describe("a first review's limits", () => {
       expect(scaled(5, lines)).toBe(5);
     expect(scaled(5, 4 * REFERENCE_LINES)).toBe(10);
     expect(scaled(3, 4 * REFERENCE_LINES)).toBe(6);
-    expect(findingLimits(DEFAULT_ALLOWED, 5_000)).toEqual({
+    expect(findingLimits(DEFAULT_ALLOWED, first(5_000))).toEqual({
       minor: 14,
       performance: 9,
       duplication: 9,
       conventions: 9,
     });
-    expect(findingLimits(DEFAULT_ALLOWED, 20_000).minor).toBe(29);
+    expect(findingLimits(DEFAULT_ALLOWED, first(20_000)).minor).toBe(29);
   });
 
   test("a kind set to 0 stays at 0", () => {
@@ -83,33 +90,39 @@ describe("a first review's limits", () => {
 
 describe("a later review's limits", () => {
   test("no new minor issue, whatever changed", () => {
-    expect(findingLimits(DEFAULT_ALLOWED, 5_000, { delta: 5_000 }).minor).toBe(
-      0,
-    );
+    expect(findingLimits(DEFAULT_ALLOWED, later(5_000, 5_000)).minor).toBe(0);
+    expect(
+      findingLimits(DEFAULT_ALLOWED, { lines: 5_000, later: true }).minor,
+    ).toBe(0);
   });
 
   test("improvements in proportion to what changed since, at least one when anything did", () => {
-    expect(findingLimits(DEFAULT_ALLOWED, 5_000, { delta: 0 })).toEqual({
+    expect(findingLimits(DEFAULT_ALLOWED, later(5_000, 0))).toEqual({
       minor: 0,
       performance: 0,
       duplication: 0,
       conventions: 0,
     });
+    expect(findingLimits(DEFAULT_ALLOWED, later(5_000, 10)).performance).toBe(
+      1,
+    );
+    expect(findingLimits(DEFAULT_ALLOWED, later(5_000, 300)).performance).toBe(
+      2,
+    );
     expect(
-      findingLimits(DEFAULT_ALLOWED, 5_000, { delta: 10 }).performance,
-    ).toBe(1);
-    expect(
-      findingLimits(DEFAULT_ALLOWED, 5_000, { delta: 300 }).performance,
-    ).toBe(2);
-    expect(
-      findingLimits(DEFAULT_ALLOWED, 5_000, { delta: REFERENCE_LINES })
-        .performance,
+      findingLimits(DEFAULT_ALLOWED, later(5_000, REFERENCE_LINES)).performance,
     ).toBe(3);
+  });
+
+  test("when the earlier review didn't look for improvements, the whole diff's", () => {
+    expect(
+      findingLimits(DEFAULT_ALLOWED, { lines: 5_000, later: true }),
+    ).toEqual({ minor: 0, performance: 9, duplication: 9, conventions: 9 });
   });
 
   test("past the reference size, what a first review of that size would get", () => {
     expect(
-      findingLimits(DEFAULT_ALLOWED, 9_000, { delta: 5_000 }).performance,
+      findingLimits(DEFAULT_ALLOWED, later(9_000, 5_000)).performance,
     ).toBe(9);
   });
 });

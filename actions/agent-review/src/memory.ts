@@ -50,6 +50,11 @@ export interface ReviewState {
   /** Dismissed in this review or an earlier one, the most recent last: not to
    * be reported again. */
   dismissed: Closed[];
+  /** The review looked for improvements at `head` (improvements.ts), or an
+   * earlier one did and nothing changed since: the next looks for new ones in
+   * what changed since only. Without it, in the whole PR: the review before
+   * this action had the agent for improvements, or whose agent failed. */
+  improvements?: boolean;
 }
 
 /** A comment someone wrote on a finding's thread, or on the PR. */
@@ -122,8 +127,9 @@ export function decodeState(body: string | null): ReviewState | undefined {
       gunzipSync(Buffer.from(encoded, "base64")).toString(),
     );
     if (!isObject(state)) return undefined;
-    const { head, nextId, open, dismissed } = state;
+    const { head, nextId, open, dismissed, improvements } = state;
     const valid =
+      (improvements === undefined || typeof improvements === "boolean") &&
       typeof head === "string" &&
       /^[0-9a-f]{40}$/.test(head) &&
       Number.isInteger(nextId) &&
@@ -288,13 +294,15 @@ export function conversationSince(
  * (limits.ts): the others are `dropped`, and get no id. An earlier finding it
  * calls open without writing it again, or doesn't rule on, is posted as it was,
  * off the diff's lines (they may have moved). Returns what to post, what became
- * of the earlier findings, and the state for the next.
+ * of the earlier findings, and the state for the next, which says whether
+ * `improvements` were looked for up to `head` (`ReviewState`).
  */
 export function resolve(
   result: ReviewFile,
   earlier: ReviewState | undefined,
   head: string,
   limits: Limits,
+  improvements = false,
 ): {
   findings: PostedFinding[];
   /** The new findings past `limits`, per kind. */
@@ -368,6 +376,7 @@ export function resolve(
         ...(earlier?.dismissed ?? []),
         ...(since?.dismissed ?? []),
       ].slice(-MAX_DISMISSED),
+      ...(improvements ? { improvements } : {}),
     },
   };
 }
