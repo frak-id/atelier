@@ -2,11 +2,11 @@ import { describe, expect, test } from "bun:test";
 import {
   findingMarker,
   HEADING,
-  MAX_MINORS,
   type PostedComment,
   type PostedReview,
   type ReviewFile,
 } from "./github-review.ts";
+import { DEFAULT_ALLOWED, type Limits } from "./limits.ts";
 import {
   conversationSince,
   decodeState,
@@ -19,6 +19,15 @@ import {
 } from "./memory.ts";
 
 const BOT = "github-actions[bot]";
+/** A first review's limits on a small diff, and a later one's with nothing
+ * pushed since. */
+const FIRST: Limits = { ...DEFAULT_ALLOWED };
+const LATER: Limits = {
+  minor: 0,
+  performance: 0,
+  duplication: 0,
+  conventions: 0,
+};
 const HEAD = "1111111111111111111111111111111111111111";
 const NEXT = "2222222222222222222222222222222222222222";
 const stored = (
@@ -132,6 +141,10 @@ describe("the state", () => {
         ...state(),
         open: [{ ...stored("F1"), line: "10" }],
       },
+      "an open entry with an unknown category": {
+        ...state(),
+        open: [{ ...stored("F1"), category: "style" }],
+      },
       "no head": { ...state(), head: undefined },
       "a null state": null,
     };
@@ -146,6 +159,10 @@ describe("the state", () => {
         }),
       ),
     ).toBeDefined();
+    const improvement = state({
+      open: [stored("F1", { severity: "minor", category: "duplication" })],
+    });
+    expect(decodeState(block(improvement))).toEqual(improvement);
   });
 
   test("is read from the job's latest agent review that has one, not from a person's copy", () => {
@@ -408,6 +425,7 @@ describe("a review after an earlier one", () => {
       }),
       undefined,
       NEXT,
+      FIRST,
     );
     expect(findings).toEqual([
       {
@@ -468,6 +486,7 @@ describe("a review after an earlier one", () => {
       }),
       earlier,
       NEXT,
+      LATER,
     );
     expect(
       result.findings.map((finding) => [finding.id, finding.title]),
@@ -496,7 +515,7 @@ describe("a review after an earlier one", () => {
     expect(result.state.dismissed.map((item) => item.id)).toEqual(["F0", "F2"]);
   });
 
-  test(`a first review keeps its first ${MAX_MINORS} new minor findings, and every major one`, () => {
+  test("a first review keeps its first new minor findings up to its limit, and every major one", () => {
     const minor = (title: string) => ({
       severity: "minor" as const,
       title,
@@ -512,6 +531,7 @@ describe("a review after an earlier one", () => {
       }),
       undefined,
       NEXT,
+      FIRST,
     );
     expect(
       result.findings.map((finding) => [finding.id, finding.title]),
@@ -523,7 +543,7 @@ describe("a review after an earlier one", () => {
       ["F5", "m4"],
       ["F6", "m5"],
     ]);
-    expect(result.dropped).toBe(2);
+    expect(result.dropped).toEqual({ ...LATER, minor: 2 });
     expect(result.state.nextId).toBe(7);
   });
 
@@ -544,6 +564,7 @@ describe("a review after an earlier one", () => {
       }),
       state({ open: [stored("F1")] }),
       NEXT,
+      LATER,
     );
     expect(
       result.findings.map((finding) => [finding.id, finding.title]),
@@ -551,7 +572,7 @@ describe("a review after an earlier one", () => {
       ["F1", "F1, now minor"],
       ["F4", "New"],
     ]);
-    expect(result.dropped).toBe(1);
+    expect(result.dropped).toEqual({ ...LATER, minor: 1 });
     expect(result.state.nextId).toBe(5);
   });
 
@@ -560,6 +581,7 @@ describe("a review after an earlier one", () => {
       file({ previous: [{ id: "F1", status: "open", note: "" }] }),
       state({ open: [stored("F1"), stored("F2")] }),
       NEXT,
+      LATER,
     );
     expect(result.findings).toEqual([
       {
@@ -582,5 +604,77 @@ describe("a review after an earlier one", () => {
       "F1",
       "F2",
     ]);
+  });
+
+  const improvement = (
+    title: string,
+    category: "performance" | "duplication" | "conventions",
+  ) => ({ severity: "minor" as const, category, title, body: "b" });
+
+  test("limits each category of improvement on its own, apart from the minor issues", () => {
+    const result = resolve(
+      file({
+        findings: [
+          { severity: "minor", title: "m1", body: "b" },
+          improvement("p1", "performance"),
+          improvement("p2", "performance"),
+          improvement("d1", "duplication"),
+          { severity: "minor", title: "m2", body: "b" },
+          improvement("p3", "performance"),
+          improvement("c1", "conventions"),
+        ],
+      }),
+      undefined,
+      NEXT,
+      { minor: 1, performance: 2, duplication: 1, conventions: 0 },
+    );
+    expect(
+      result.findings.map((finding) => [finding.id, finding.title]),
+    ).toEqual([
+      ["F1", "m1"],
+      ["F2", "p1"],
+      ["F3", "p2"],
+      ["F4", "d1"],
+    ]);
+    expect(result.dropped).toEqual({
+      minor: 1,
+      performance: 1,
+      duplication: 0,
+      conventions: 1,
+    });
+  });
+
+  test("keeps an improvement's category in the state, and carries an earlier improvement past its limit", () => {
+    const earlier = state({
+      open: [
+        stored("F1"),
+        stored("F2", { severity: "minor", category: "performance" }),
+      ],
+    });
+    const result = resolve(
+      file({
+        previous: [
+          { id: "F1", status: "fixed", note: "" },
+          { id: "F2", status: "open", note: "" },
+        ],
+        findings: [
+          { ...improvement("F2 again", "performance"), previous: "F2" },
+          improvement("new", "performance"),
+        ],
+      }),
+      earlier,
+      NEXT,
+      LATER,
+    );
+    expect(result.state.open).toEqual([
+      {
+        id: "F2",
+        severity: "minor",
+        category: "performance",
+        title: "F2 again",
+        body: "b",
+      },
+    ]);
+    expect(result.dropped.performance).toBe(1);
   });
 });

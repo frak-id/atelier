@@ -29,7 +29,7 @@ export interface IssueComment {
 }
 
 export type Progress =
-  /** The agent is on it, in the sandbox at `sandboxUrl` (Atelier's console),
+  /** The agents are on it, in the sandbox at `sandboxUrl` (Atelier's console),
    * for `minutes` at most. */
   | { state: "running"; sandboxUrl: string; minutes: number }
   /** The review threw: nothing posted. */
@@ -54,8 +54,8 @@ function progressText(progress: Progress, commit: string): string {
   switch (progress.state) {
     case "running":
       return (
-        `🔎 **Agent review of ${commit} in progress**: [follow the reviewer on Atelier](${progress.sandboxUrl}) ` +
-        `(sign in with GitHub). Its review replaces this comment once it's posted: a few minutes, ` +
+        `🔎 **Agent review of ${commit} in progress**: [follow the reviewers on Atelier](${progress.sandboxUrl}) ` +
+        `(sign in with GitHub). Their review replaces this comment once it's posted: a few minutes, ` +
         `${progress.minutes} at most.`
       );
     case "failed":

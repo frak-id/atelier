@@ -6,13 +6,17 @@
  *    the repository's prebuild, at the PR's head;
  * 2. the PR's diff written to files there (diff-files.sh), since the agent's
  *    sub-agents can't run git;
- * 3. a task for its coding agent (pi), which reviews the PR's diff (merge base
- *    to head) with sub-agents and writes its findings to a file (prompt.ts).
- *    After an earlier agent review, it gets that review's open findings, the
- *    replies to them and what changed since (memory.ts);
- * 4. the file read back, checked, and posted as one review on the PR with the
- *    job's token (github-review.ts), with what the next review starts from
- *    hidden in it; the earlier reviews are collapsed;
+ * 3. two tasks for its coding agent (pi), at the same time: one reviews the PR's
+ *    diff (merge base to head) for issues (prompt.ts), the other for
+ *    improvements (improvements.ts), each with its own sub-agents, and each
+ *    writes its findings to a file. After an earlier agent review, each gets
+ *    that review's open findings of its kind, the replies to them and what
+ *    changed since (memory.ts). How many minor findings and improvements a
+ *    review reports grows with the diff (limits.ts);
+ * 4. the files read back, checked, merged, and posted as one review on the PR
+ *    with the job's token (github-review.ts), with what the next review starts
+ *    from hidden in it; the earlier reviews are collapsed. Without the
+ *    improvements (their agent failed), the issues are posted all the same;
  * 5. the sandbox destroyed, whatever happened.
  *
  * From the sandbox's creation to the review's posting, a comment on the PR
@@ -39,6 +43,7 @@ import {
 } from "../../shared/src/instructions.ts";
 import { job, sleep } from "../../shared/src/job.ts";
 import {
+  type Deadline,
   deadlineIn,
   HOME,
   SANDBOX_NAME_MAX,
@@ -47,6 +52,7 @@ import {
 import {
   buildReview,
   commentableLines,
+  type Lane,
   type PostedComment,
   type PostedReview,
   parseReviewFile,
@@ -57,6 +63,14 @@ import {
   supersede,
   withoutComments,
 } from "./github-review.ts";
+import { improvementsPrompt } from "./improvements.ts";
+import {
+  findingLimits,
+  improvementCategories,
+  LIMITED,
+  type Limits,
+  parseAllowedFindings,
+} from "./limits.ts";
 import {
   conversationSince,
   decodeState,
@@ -77,6 +91,7 @@ import {
   type ChangedFile,
   changedLines,
   type EarlierReview,
+  listedFiles,
   reviewPrompt,
   SUBAGENT_SETTINGS,
   type SubagentSetting,
@@ -104,6 +119,7 @@ const ATELIER_MCP = `${ATELIER}/mcp`;
  * reused. */
 const IMAGE = process.env.IMAGE || "dev-base";
 const REVIEW_FILE = `${HOME}/agent-review.json`;
+const IMPROVEMENTS_FILE = `${HOME}/agent-review-improvements.json`;
 /** Where diff-files.sh writes the diff: outside the clone, so it's no change to
  * review. */
 const DIFF_DIR = `${HOME}/agent-review-diff`;
@@ -123,6 +139,28 @@ const ID = /^[\w.:@/+-]+$/;
 const REVIEWER_MODEL = process.env.REVIEWER_MODEL?.trim() || undefined;
 if (REVIEWER_MODEL !== undefined && !ID.test(REVIEWER_MODEL))
   fail(`reviewer-model is no model id: "${REVIEWER_MODEL}"`);
+/** How many minor findings and improvements a review reports (limits.ts). */
+const ALLOWED: Limits = (() => {
+  try {
+    return parseAllowedFindings(process.env.ALLOWED_FINDINGS ?? "");
+  } catch (error) {
+    return fail((error as Error).message);
+  }
+})();
+/** The categories of improvement looked for. None: no agent looks for any. */
+const CATEGORIES = improvementCategories(ALLOWED);
+/** The sandbox's size, when the workflow picks it: two agents and their
+ * sub-agents run in it at once. */
+function size(name: string, variable: string): number | undefined {
+  const value = process.env[variable]?.trim();
+  if (!value) return undefined;
+  const parsed = Number(value);
+  if (!Number.isInteger(parsed) || parsed < 1)
+    fail(`${name} must be a whole number, not "${value}"`);
+  return parsed;
+}
+const VCPUS = size("vcpus", "VCPUS");
+const MEMORY_MB = size("memory-mb", "MEMORY_MB");
 /** Toolboxes the sandbox gets on top of the org's auto-included ones (`whoami`
  * selectors), comma- or line-separated. */
 const TOOLBOXES = (process.env.TOOLBOXES ?? "").split(/[\s,]+/).filter(Boolean);
@@ -229,7 +267,18 @@ const COLLAPSE = `mutation($id: ID!) {
 async function createSandbox(headRef: string, head: string): Promise<string> {
   const created = await atelier.call<{ id: string }>("create_sandbox", {
     name: sandboxName(head),
-    spec: { source: { image: IMAGE }, metadata: headMarker(head) },
+    spec: {
+      source: { image: IMAGE },
+      metadata: headMarker(head),
+      ...(VCPUS || MEMORY_MB
+        ? {
+            resources: {
+              ...(VCPUS ? { vcpus: VCPUS } : {}),
+              ...(MEMORY_MB ? { memoryMb: MEMORY_MB } : {}),
+            },
+          }
+        : {}),
+    },
     ...(TOOLBOXES.length > 0 ? { toolboxes: TOOLBOXES } : {}),
     // The repository's prebuild, switched to the PR's branch (its build steps
     // re-run in the background).
@@ -243,18 +292,78 @@ async function createSandbox(headRef: string, head: string): Promise<string> {
   return created.id;
 }
 
-async function readReviewFile(
-  id: string,
-  earlier: ReadonlySet<string>,
-): Promise<ReviewFile> {
+/** The file at `path` in sandbox `id`, 1 MB at most. */
+async function readFile(id: string, path: string): Promise<string> {
   const { files } = await atelier.call<{
     files: { content?: string; error?: string; truncated?: boolean }[];
-  }>("read_files", { id, paths: [REVIEW_FILE], maxBytes: 1_000_000 });
+  }>("read_files", { id, paths: [path], maxBytes: 1_000_000 });
   const [file] = files;
   if (!file || file.content === undefined)
-    throw new Error(`${REVIEW_FILE}: ${file?.error ?? "missing"}`);
-  if (file.truncated) throw new Error(`${REVIEW_FILE} is over 1 MB`);
-  return parseReviewFile(file.content, `${HOME}/${repositoryName}`, earlier);
+    throw new Error(`${path}: ${file?.error ?? "missing"}`);
+  if (file.truncated) throw new Error(`${path} is over 1 MB`);
+  return file.content;
+}
+
+/** The review file an agent of `lane` wrote at `path`, checked. */
+async function readReviewFile(
+  id: string,
+  path: string,
+  earlier: ReadonlySet<string>,
+  lane: Lane,
+): Promise<ReviewFile> {
+  return parseReviewFile(
+    await readFile(id, path),
+    `${HOME}/${repositoryName}`,
+    earlier,
+    lane,
+  );
+}
+
+/** The files diff-files.sh listed in `name` (files.tsv, delta-files.tsv), with
+ * their counts. */
+async function readListedFiles(
+  id: string,
+  name: string,
+): Promise<ChangedFile[]> {
+  return listedFiles(await readFile(id, `${DIFF_DIR}/${name}`));
+}
+
+/**
+ * One agent's review, in its own task in the sandbox: its file, read back and
+ * checked, and asked for again once, in the same context, if it can't be used.
+ */
+async function reviewTask(
+  target: { sandboxId: string; cwd: string },
+  lane: Lane,
+  prompt: string,
+  output: string,
+  earlier: ReadonlySet<string>,
+  deadline: Deadline,
+): Promise<ReviewFile> {
+  const label = `${lane} agent`;
+  const task = await runTurn(target, prompt, deadline, label);
+  try {
+    try {
+      return await readReviewFile(target.sandboxId, output, earlier, lane);
+    } catch (error) {
+      log(
+        `${output} unusable (${(error as Error).message}): asking the ${label} again`,
+      );
+      await runTurn(
+        { taskId: task.taskId },
+        `${output} can't be used: ${(error as Error).message}. Write it again as the schema says, ` +
+          `check it with \`jq . ${output}\`, then reply with the number of findings per ` +
+          `${lane === "issues" ? "severity" : "category"}.`,
+        deadline,
+        label,
+      );
+      return await readReviewFile(target.sandboxId, output, earlier, lane);
+    }
+  } finally {
+    await atelier
+      .call("manage_task", { taskId: task.taskId, action: "close" })
+      .catch(() => {});
+  }
 }
 
 /**
@@ -380,8 +489,6 @@ interface Comparison {
   merge_base_commit: { sha: string };
   total_commits: number;
   commits: { sha: string; commit: { message: string } }[];
-  /** 300 at most; missing for a diff too big to list. */
-  files?: ChangedFile[];
 }
 
 async function review(): Promise<void> {
@@ -431,15 +538,6 @@ async function reviewRange(
       fileSource: "on the target branch",
     },
   );
-  const subagents = withSubagents(SUBAGENTS, comparison.files);
-  const size = comparison.files
-    ? `${changedLines(comparison.files)} changed lines in ${comparison.files.length} files, lockfiles aside`
-    : "a diff too big for GitHub to list";
-  log(
-    `subagents: ${SUBAGENTS}, ${size}: ${subagents ? "with sub-agents" : "the agent alone"}`,
-  );
-  if (!subagents && REVIEWER_MODEL)
-    log(`reviewer-model ${REVIEWER_MODEL} unused: no sub-agents`);
   await destroyReviewSandboxes(marker);
 
   const sandboxId = await createSandbox(pr.head.ref, head).catch(
@@ -507,71 +605,153 @@ async function reviewRange(
     );
     log(`diff files in ${DIFF_DIR}: ${diffSummary}`);
 
-    const deadline = deadlineIn(TASK_MINUTES);
-    const task = await runTurn(
-      { sandboxId, cwd },
-      reviewPrompt({
-        repository,
-        number,
-        title: pr.title,
-        description: pr.body ?? "",
-        mergeBase,
-        head,
-        commits: comparison.commits.map(
-          (c) => `${c.sha.slice(0, 7)} ${c.commit.message.split("\n")[0]}`,
+    // The diff's size, from what diff-files.sh listed (GitHub's compare stops at
+    // 300 files), and what changed since the earlier review.
+    const files = await readListedFiles(sandboxId, "files.tsv");
+    const deltaFiles =
+      since !== undefined
+        ? await readListedFiles(sandboxId, "delta-files.tsv")
+        : [];
+    const lines = changedLines(files);
+    // Where a later review looks for new improvements: what changed since, or
+    // the whole PR when that can't be told, or nothing on the same head.
+    const fresh = !earlier || delta !== "unchanged";
+    const reviewed = !earlier
+      ? files
+      : delta === "written"
+        ? deltaFiles
+        : fresh
+          ? files
+          : [];
+    const limits = findingLimits(
+      ALLOWED,
+      lines,
+      earlier ? { delta: changedLines(reviewed) } : undefined,
+    );
+    const subagents = withSubagents(SUBAGENTS, files);
+    const improvementSubagents = withSubagents(SUBAGENTS, reviewed);
+    // Each agent rules on its own kind of earlier findings.
+    const earlierOf = (lane: Lane): EarlierReview | undefined =>
+      earlier && {
+        ...earlier.prompt,
+        delta,
+        open: earlier.prompt.open.filter(
+          (finding) =>
+            (finding.category !== undefined) === (lane === "improvements"),
         ),
-        totalCommits: comparison.total_commits,
-        cwd,
-        minutes: TASK_MINUTES,
-        diffDir: DIFF_DIR,
-        diffSummary,
-        ...(earlier ? { earlier: { ...earlier.prompt, delta } } : {}),
-        subagents: subagents
-          ? REVIEWER_MODEL
-            ? { model: REVIEWER_MODEL }
-            : {}
-          : false,
-        instructions,
+      };
+    const issuesEarlier = earlierOf("issues");
+    const improvementsEarlier = earlierOf("improvements");
+    // On the same head, with no earlier improvement to rule on, there's nothing
+    // for it to do.
+    const withImprovements =
+      CATEGORIES.length > 0 &&
+      (fresh || (improvementsEarlier?.open.length ?? 0) > 0);
+    log(
+      `${lines} changed lines in ${files.length} files, lockfiles aside${earlier ? `, ${changedLines(deltaFiles)} since the earlier review` : ""}; ` +
+        `issues: ${subagents ? "with sub-agents" : "the agent alone"}, at most ${limits.minor} new minor; ` +
+        (withImprovements
+          ? `improvements: ${improvementSubagents ? "with sub-agents" : "the agent alone"}, at most ${CATEGORIES.map((category) => `${limits[category]} ${category}`).join(", ")}`
+          : "no improvements"),
+    );
+    if (
+      !subagents &&
+      !(withImprovements && improvementSubagents) &&
+      REVIEWER_MODEL
+    )
+      log(`reviewer-model ${REVIEWER_MODEL} unused: no sub-agents`);
+
+    const model = REVIEWER_MODEL ? { model: REVIEWER_MODEL } : {};
+    const pull = {
+      repository,
+      number,
+      title: pr.title,
+      description: pr.body ?? "",
+      mergeBase,
+      head,
+      commits: comparison.commits.map(
+        (c) => `${c.sha.slice(0, 7)} ${c.commit.message.split("\n")[0]}`,
+      ),
+      totalCommits: comparison.total_commits,
+      cwd,
+      minutes: TASK_MINUTES,
+      diffDir: DIFF_DIR,
+      diffSummary,
+      instructions,
+    };
+    const ids = (review: EarlierReview | undefined) =>
+      new Set(review?.open.map((finding) => finding.id));
+    const deadline = deadlineIn(TASK_MINUTES);
+    const target = { sandboxId, cwd };
+    // Both agents at once, each in its own task: the improvements' can fail
+    // without taking the issues' with it. The issues' failing fails the run,
+    // and the sandbox's destruction ends the other.
+    const improvementsRun = withImprovements
+      ? reviewTask(
+          target,
+          "improvements",
+          improvementsPrompt({
+            ...pull,
+            ...(improvementsEarlier ? { earlier: improvementsEarlier } : {}),
+            subagents: improvementSubagents ? model : false,
+            categories: CATEGORIES,
+            limits,
+            output: IMPROVEMENTS_FILE,
+          }),
+          IMPROVEMENTS_FILE,
+          ids(improvementsEarlier),
+          deadline,
+        ).then(
+          (file) => ({ file }),
+          (error: Error) => ({ failed: error.message }),
+        )
+      : undefined;
+    const issues = await reviewTask(
+      target,
+      "issues",
+      reviewPrompt({
+        ...pull,
+        ...(issuesEarlier ? { earlier: issuesEarlier } : {}),
+        subagents: subagents ? model : false,
+        maxMinors: limits.minor,
+        improvements: CATEGORIES.length > 0,
         output: REVIEW_FILE,
       }),
+      REVIEW_FILE,
+      ids(issuesEarlier),
       deadline,
     );
-    const earlierIds = new Set(
-      earlier?.state.open.map((finding) => finding.id),
-    );
-    let result: ReviewFile;
-    try {
-      result = await readReviewFile(sandboxId, earlierIds);
-    } catch (error) {
-      // One more turn, in the same context, to fix the file.
-      log(
-        `review file unusable (${(error as Error).message}): asking the agent again`,
+    const improvements = await improvementsRun;
+    // The whole files, each in one line: the run's log keeps every review,
+    // whatever happens to the comments.
+    console.log(`[agent-review] review file: ${JSON.stringify(issues)}`);
+    if (improvements && "file" in improvements)
+      console.log(
+        `[agent-review] improvements file: ${JSON.stringify(improvements.file)}`,
       );
-      await runTurn(
-        { taskId: task.taskId },
-        `${REVIEW_FILE} can't be used: ${(error as Error).message}. Write it again as the schema says, ` +
-          `check it with \`jq . ${REVIEW_FILE}\`, then reply with the number of findings per severity.`,
-        deadline,
-      );
-      result = await readReviewFile(sandboxId, earlierIds);
-    }
-    await atelier
-      .call("manage_task", { taskId: task.taskId, action: "close" })
-      .catch(() => {});
-    // The whole file, in one line: the run's log keeps every review, whatever
-    // happens to the comments.
-    console.log(`[agent-review] review file: ${JSON.stringify(result)}`);
+    else if (improvements)
+      warn(`improvements not reviewed: ${improvements.failed}`);
+    const other =
+      improvements && "file" in improvements ? improvements.file : undefined;
+    const result: ReviewFile = {
+      summary: issues.summary,
+      findings: [...issues.findings, ...(other ? other.findings : [])],
+      previous: [...issues.previous, ...(other ? other.previous : [])],
+    };
 
     const {
       findings,
       dropped,
       since: changes,
       state,
-    } = resolve(result, earlier?.state, head);
-    // Past the minor findings this review may report (prompt.ts): in the log's
-    // review file above, not on the PR.
-    if (dropped > 0)
-      log(`${dropped} minor findings dropped: past what this review reports`);
+    } = resolve(result, earlier?.state, head, limits);
+    // Past what this review may report (limits.ts): in the log's review files
+    // above, not on the PR.
+    const past = LIMITED.filter((kind) => dropped[kind] > 0);
+    if (past.length > 0)
+      log(
+        `dropped, past what this review reports: ${past.map((kind) => `${dropped[kind]} ${kind}`).join(", ")}`,
+      );
     const encoded = encodeState(state);
     // Too big, the state keeps no open finding (memory.ts): the next review
     // starts from it all the same, not from an older review's.
@@ -588,6 +768,14 @@ async function reviewRange(
         findings,
         ...(changes ? { since: changes } : {}),
         state: encoded,
+        ...(improvements
+          ? {
+              improvements:
+                "file" in improvements
+                  ? { summary: improvements.file.summary }
+                  : { failed: improvements.failed },
+            }
+          : {}),
       },
       base,
       head,

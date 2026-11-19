@@ -4,6 +4,7 @@ import {
   type ChangedFile,
   changedLines,
   type EarlierReview,
+  listedFiles,
   reviewPrompt,
   SINGLE_AGENT_MAX_LINES,
   withSubagents,
@@ -15,6 +16,8 @@ const prompt = (
   options: {
     subagents?: { model?: string } | false;
     instructions?: Instructions[];
+    maxMinors?: number;
+    improvements?: boolean;
   } = {},
 ) =>
   reviewPrompt({
@@ -43,6 +46,8 @@ const prompt = (
       : {}),
     subagents: options.subagents ?? {},
     instructions: options.instructions ?? [],
+    maxMinors: options.maxMinors ?? 5,
+    improvements: options.improvements ?? false,
     output: "/home/dev/review.json",
   });
 
@@ -76,6 +81,18 @@ describe("what a review reports", () => {
     );
     expect(text).toContain("a new minor finding is dropped");
     expect(text).not.toContain("at most 5 minor");
+  });
+
+  test("the first: as many minor ones as its limit, or none", () => {
+    expect(prompt(undefined, { maxMinors: 9 })).toContain(
+      "and at most 9 minor ones",
+    );
+    const none = prompt(undefined, { maxMinors: 0 });
+    expect(none).toContain(
+      "and no minor one: this repository's workflow asks for none",
+    );
+    expect(none).toContain("no `minor` finding: the job drops them.");
+    expect(none).not.toContain("this is their one chance");
   });
 
   test("a later one takes a person's deferral as dismissing the finding, without weighing it", () => {
@@ -141,15 +158,29 @@ describe("sub-agents", () => {
     expect(withSubagents("auto", [...small, file("src/b.ts", 1)])).toBe(true);
   });
 
-  test("auto: sub-agents when GitHub lists as many files as it can, or none", () => {
-    const many = Array.from({ length: 300 }, (_, i) => file(`f${i}`, 0, 0));
-    expect(withSubagents("auto", many)).toBe(true);
-    expect(withSubagents("auto", undefined)).toBe(true);
+  test("auto: the agent alone on nothing to review", () => {
+    expect(withSubagents("auto", [])).toBe(false);
   });
 
   test("always and never are the workflow's choice, whatever the diff", () => {
     expect(withSubagents("always", [file("a", 1)])).toBe(true);
-    expect(withSubagents("never", undefined)).toBe(false);
+    expect(withSubagents("never", [file("a", 100_000)])).toBe(false);
+  });
+
+  test("the files and their counts are read from what diff-files.sh listed", () => {
+    const tsv = [
+      "M\t+12 -3\tsrc/a.ts",
+      "R\t+0 -0\tsrc/b.ts\t(was src/old.ts)",
+      "A\t+4000 -0\tbun.lock",
+      "",
+    ].join("\n");
+    expect(listedFiles(tsv)).toEqual([
+      file("src/a.ts", 12, 3),
+      file("src/b.ts", 0, 0),
+      file("bun.lock", 4_000, 0),
+    ]);
+    expect(changedLines(listedFiles(tsv))).toBe(15);
+    expect(listedFiles("")).toEqual([]);
   });
 
   test("without them, the agent reviews alone, every concern, and no sub-agent is asked for", () => {
@@ -170,6 +201,24 @@ describe("sub-agents", () => {
     const text = prompt();
     expect(text).toContain('{ agent: "reviewer", task: "..." }');
     expect(text).not.toContain("model:");
+  });
+});
+
+describe("with an agent for improvements at the same time", () => {
+  test("leaves improvements to it, but not a performance problem that breaks something", () => {
+    const text = prompt(undefined, { improvements: true });
+    expect(text).toContain(
+      "Another agent, running at the same time, looks for improvements that aren't bugs",
+    );
+    expect(text).toContain("A performance problem that breaks something");
+    expect(text).toContain("Tell your sub-agents too.");
+    expect(
+      prompt(undefined, { improvements: true, subagents: false }),
+    ).not.toContain("Tell your sub-agents");
+  });
+
+  test("without one, says nothing of it", () => {
+    expect(prompt()).not.toContain("Another agent");
   });
 });
 

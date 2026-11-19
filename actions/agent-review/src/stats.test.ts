@@ -68,6 +68,32 @@ test("rebuilds what became of each finding from the states its reviews hid, olde
   });
 });
 
+test("counts improvements per category, apart from the minor issues", () => {
+  const pull = pullFindings(
+    [
+      posted(10, {
+        head: A,
+        nextId: 3,
+        open: [
+          { ...finding("F1", "minor"), category: "duplication" },
+          finding("F2", "minor"),
+        ],
+        dismissed: [],
+      }),
+    ],
+    BOT,
+    A,
+  ) as PullFindings;
+  expect(pull.findings).toEqual([
+    { id: "F1", severity: "minor", category: "duplication", outcome: "open" },
+    { id: "F2", severity: "minor", outcome: "open" },
+  ]);
+  const report = findingsReport("o/r", 1, [pull]);
+  expect(report).toContain("| minor | 1 | 0 | 0 | 1 | 0% |");
+  expect(report).toContain("| duplication | 1 | 0 | 0 | 1 | 0% |");
+  expect(report).toContain("| all | 2 | 0 | 0 | 2 | 0% |");
+});
+
 test("says when the PR was merged at a head its last review didn't see", () => {
   expect(pullFindings(reviews, BOT, A)?.stale).toBe(true);
 });
@@ -89,6 +115,7 @@ test("counts per severity, with the share fixed", () => {
   expect(report).toContain("| critical | 1 | 0 | 1 | 0 | 0% |");
   expect(report).toContain("| major | 1 | 1 | 0 | 0 | 100% |");
   expect(report).toContain("| minor | 1 | 0 | 0 | 1 | 0% |");
+  expect(report).toContain("| performance | 0 | 0 | 0 | 0 | – |");
   expect(report).toContain("| all | 3 | 1 | 1 | 1 | 33% |");
   expect(findingsReport("o/r", 2, [])).toContain(
     "2 merged PRs, none reviewed by the agent.",

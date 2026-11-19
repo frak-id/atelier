@@ -62,11 +62,13 @@ export interface Sandboxes {
   /** Runs `command` in `cwd`; a non-zero exit throws, with its stderr. */
   exec(id: string, command: string, cwd: string): Promise<string>;
   /** Sends the prompt (a new task in the sandbox, or a follow-up turn of
-   * `taskId`) and waits for the agent's turn, until `deadline`. */
+   * `taskId`) and waits for the agent's turn, until `deadline`. `label` names
+   * the agent in the log, where several can run at once. */
   runTurn(
     target: { sandboxId: string; cwd: string } | { taskId: string },
     prompt: string,
     deadline: Deadline,
+    label?: string,
   ): Promise<Task>;
 }
 
@@ -164,7 +166,7 @@ export function sandboxes(
       return result.stdout.trim();
     },
 
-    async runTurn(target, prompt, deadline) {
+    async runTurn(target, prompt, deadline, label = "agent") {
       let task = await atelier.call<Task>("send_prompt", {
         ...target,
         prompt,
@@ -176,7 +178,7 @@ export function sandboxes(
             .call("manage_task", { taskId: task.taskId, action: "cancel" })
             .catch(() => {});
           throw new Error(
-            `the agent took longer than ${deadline.minutes} minutes`,
+            `the ${label} took longer than ${deadline.minutes} minutes`,
           );
         }
         task = await atelier.call<Task>("get_task", {
@@ -187,14 +189,14 @@ export function sandboxes(
         // list only comes with a running turn).
         const calls = task.turn.toolCalls ?? [];
         for (const call of calls.slice(logged))
-          log(`agent: ${call.title.replaceAll("\n", " ").slice(0, 160)}`);
+          log(`${label}: ${call.title.replaceAll("\n", " ").slice(0, 160)}`);
         logged = Math.max(logged, calls.length);
       }
       if (task.status !== "idle")
         throw new Error(
-          `the agent's task is ${task.status}: ${task.turn.error ?? ""}`,
+          `the ${label}'s task is ${task.status}: ${task.turn.error ?? ""}`,
         );
-      log(`agent done: ${task.turn.reply ?? ""}`);
+      log(`${label} done: ${task.turn.reply ?? ""}`);
       return task;
     },
   };
