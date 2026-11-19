@@ -217,7 +217,7 @@ or `subagents` says the change made reviews worse.
 - What the agent writes is untrusted: a PR can try to steer it. The job only
   posts it as a comment. Its @mentions notify no one, its raw HTML is shown as
   text, and its open code fences are closed (`quiet` in
-  `src/github-review.ts`).
+  `../shared/src/markdown.ts`).
 - The sandbox's GitHub token should be read only (*Setup on Atelier*, step 3).
 
 ## Run it locally
@@ -235,7 +235,10 @@ ATELIER_URL=https://atelier.example.com ATELIER_API_KEY=atl_... \
 ## Develop
 
 The action runs `src/main.ts` with Bun, with no install and no build: the
-code has no dependency. Its tests run with the rest (`bun run test` at the
+code has no dependency. It shares Atelier's MCP client, the GitHub client and
+the job's helpers with the [dependency update](../agent-bump/README.md), from
+`../shared/src/`, imported by relative path: a workflow that uses the action
+gets the whole repository. Its tests run with the rest (`bun run test` at the
 repository's root), and CI shellchecks `src/diff-files.sh`.
 
 Later runs read back the markers the action leaves in reviews and comments

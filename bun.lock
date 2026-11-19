@@ -14,8 +14,22 @@
         "typescript": "^7.0.2",
       },
     },
+    "actions/agent-bump": {
+      "name": "@atelier/agent-bump",
+      "version": "0.1.0",
+      "devDependencies": {
+        "@types/bun": "^1.4.4",
+      },
+    },
     "actions/agent-review": {
       "name": "@atelier/agent-review",
+      "version": "0.1.0",
+      "devDependencies": {
+        "@types/bun": "^1.4.4",
+      },
+    },
+    "actions/shared": {
+      "name": "@atelier/actions-shared",
       "version": "0.1.0",
       "devDependencies": {
         "@types/bun": "^1.4.4",
@@ -106,6 +120,10 @@
   },
   "packages": {
     "@agentclientprotocol/sdk": ["@agentclientprotocol/sdk@2.4.0", "", { "peerDependencies": { "@modelcontextprotocol/server": "^2.4.0", "zod": "^3.25.76 || ^4.0.0" }, "optionalPeers": ["@modelcontextprotocol/server"] }, "sha512-7qJ8nnyj7WesC5ve185ioTpB2/svQoeGV4HA4nLEhgDUrcmBe54/08VcXc/oL4p14tDbxxECZzdYmUYQ+4l+Wg=="],
+
+    "@atelier/actions-shared": ["@atelier/actions-shared@workspace:actions/shared"],
+
+    "@atelier/agent-bump": ["@atelier/agent-bump@workspace:actions/agent-bump"],
 
     "@atelier/agent-review": ["@atelier/agent-review@workspace:actions/agent-review"],
 

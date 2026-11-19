@@ -11,6 +11,11 @@
  * Prints a markdown table (for `$GITHUB_STEP_SUMMARY` as well), and its
  * progress on stderr.
  */
+
+import {
+  MAX_RATE_LIMIT_WAIT_MS,
+  rateLimitWait,
+} from "../../shared/src/rate-limit.ts";
 import {
   HEADING,
   type PostedReview,
@@ -19,7 +24,6 @@ import {
 } from "./github-review.ts";
 import { decodeState } from "./memory.ts";
 import { JOB_ACCOUNT } from "./progress.ts";
-import { MAX_RATE_LIMIT_WAIT_MS, rateLimitWait } from "./rate-limit.ts";
 
 type Outcome = "fixed" | "dismissed" | "open";
 

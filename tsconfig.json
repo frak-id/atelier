@@ -27,7 +27,9 @@
     { "path": "./apps/server" },
     { "path": "./apps/console" },
     { "path": "./packages/spec" },
-    { "path": "./actions/agent-review" }
+    { "path": "./actions/agent-review" },
+    { "path": "./actions/agent-bump" },
+    { "path": "./actions/shared" }
   ],
   "files": []
 }

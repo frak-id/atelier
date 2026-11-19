@@ -36,9 +36,12 @@ export class Atelier {
   private sessionId: string | undefined;
   private nextId = 1;
 
+  /** `client` names the action, to the server (`clientInfo`) and in the log
+   * lines `log` gets. */
   constructor(
     private readonly url: string,
     private readonly apiKey: string,
+    private readonly client: { name: string; log: (message: string) => void },
   ) {}
 
   /** Calls a tool and returns its result's data; a tool error (`isError`)
@@ -68,8 +71,8 @@ export class Atelier {
         // A refusal (4xx) won't change; a network error, a timeout or a 5xx
         // may.
         if (delay === undefined || error instanceof RefusedError) throw error;
-        console.log(
-          `[agent-review] ${tool} failed (${(error as Error).message}), retrying in ${delay / 1000} s`,
+        this.client.log(
+          `${tool} failed (${(error as Error).message}), retrying in ${delay / 1000} s`,
         );
         await new Promise((resolve) => setTimeout(resolve, delay));
       }
@@ -106,7 +109,7 @@ export class Atelier {
       params: {
         protocolVersion: PROTOCOL_VERSION,
         capabilities: {},
-        clientInfo: { name: "agent-review", version: "1" },
+        clientInfo: { name: this.client.name, version: "1" },
       },
     });
     if (!response.ok) {

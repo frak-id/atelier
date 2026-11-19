@@ -1,9 +1,9 @@
 import { describe, expect, test } from "bun:test";
+import type { Instructions } from "../../shared/src/instructions.ts";
 import {
   type ChangedFile,
   changedLines,
   type EarlierReview,
-  type Instructions,
   reviewPrompt,
   SINGLE_AGENT_MAX_LINES,
   withSubagents,

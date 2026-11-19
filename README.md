@@ -73,7 +73,7 @@ Server admins only (owners of the default org). Anyone else gets 403.
 Tools return structured results with behaviour annotations. An unknown
 session id answers 404, so clients re-initialize after a deploy.
 
-## Agent review on GitHub
+## Agents on GitHub
 
 [`actions/agent-review`](actions/agent-review/README.md) is a GitHub Action
 that has a coding agent review each pull request in a sandbox, with
@@ -85,6 +85,18 @@ service account:
   with:
     atelier-url: https://atelier.example.com
     api-key: ${{ secrets.ATELIER_REVIEWER_API_KEY }}
+```
+
+[`actions/agent-bump`](actions/agent-bump/README.md), run on a schedule, has a
+coding agent update a repository's dependencies in a sandbox: it reads the
+release notes, migrates the configuration, replaces what the new versions
+deprecate, runs the checks, and its service account opens one pull request:
+
+```yaml
+- uses: frak-id/atelier/actions/agent-bump@main
+  with:
+    atelier-url: https://atelier.example.com
+    api-key: ${{ secrets.ATELIER_BUMP_API_KEY }}
 ```
 
 ## Quickstart: local mode
@@ -165,6 +177,8 @@ The server dev script needs a running Docker daemon. See
 - [Roadmap](docs/roadmap.md): remaining gaps
 - [Agent review](actions/agent-review/README.md): the GitHub Action that
   reviews pull requests in a sandbox
+- [Agent dependency update](actions/agent-bump/README.md): the GitHub Action
+  that updates dependencies in a sandbox, as one pull request
 
 ## Security
 

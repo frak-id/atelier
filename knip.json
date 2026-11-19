@@ -12,6 +12,14 @@
       "project": ["src/**/*.ts"],
       "entry": ["src/main.ts", "src/stats.ts", "src/**/*.test.ts"]
     },
+    "actions/agent-bump": {
+      "project": ["src/**/*.ts"],
+      "entry": ["src/main.ts", "src/**/*.test.ts"]
+    },
+    "actions/shared": {
+      "project": ["src/**/*.ts"],
+      "entry": ["src/**/*.test.ts"]
+    },
     "packages/spec": {
       "project": ["src/**/*.ts"],
       "entry": ["src/**/*.test.ts"]
