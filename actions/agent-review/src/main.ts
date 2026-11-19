@@ -124,6 +124,14 @@ const IMPROVEMENTS_FILE = `${HOME}/agent-review-improvements.json`;
 /** Where diff-files.sh writes the diff: outside the clone, so it's no change to
  * review. */
 const DIFF_DIR = `${HOME}/agent-review-diff`;
+/**
+ * Between the two agents' starts. Two pi processes started at once under
+ * pi-acp (0.0.33, on Atelier) can take each other down: one dies at its start,
+ * and pi-acp with it on its next write (EPIPE), failing both tasks, or the dead
+ * one's task stays running with no word. Seen in 3 of 4 simultaneous starts,
+ * in none 15 seconds apart.
+ */
+const STAGGER_MS = 30_000;
 /** The agent's turns, past which the task is cancelled: the job's own timeout
  * is above this and the sandbox's boot. */
 const TASK_MINUTES = minutes("AGENT_TIMEOUT_MINUTES", 40);
@@ -703,31 +711,11 @@ async function reviewRange(
       new Set(review?.open.map((finding) => finding.id));
     const deadline = deadlineIn(TASK_MINUTES);
     const target = { sandboxId, cwd };
-    // Both agents at once, each in its own task: the improvements' can fail
-    // without taking the issues' with it. The issues' failing fails the run,
-    // and the sandbox's destruction ends the other.
-    const improvementsRun = withImprovements
-      ? reviewTask(
-          target,
-          "improvements",
-          improvementsPrompt({
-            ...pull,
-            ...(improvementsEarlier ? { earlier: improvementsEarlier } : {}),
-            subagents: improvementSubagents ? model : false,
-            categories: CATEGORIES,
-            scope,
-            limits,
-            output: IMPROVEMENTS_FILE,
-          }),
-          IMPROVEMENTS_FILE,
-          ids(improvementsEarlier),
-          deadline,
-        ).then(
-          (file) => ({ file }),
-          (error: Error) => ({ failed: error.message }),
-        )
-      : undefined;
-    const issues = await reviewTask(
+    // Both agents at the same time, each in its own task, the improvements'
+    // started STAGGER_MS after the issues': it can fail without taking the
+    // issues' with it. The issues' failing fails the run, and the sandbox's
+    // destruction ends the other.
+    const issuesRun = reviewTask(
       target,
       "issues",
       reviewPrompt({
@@ -742,6 +730,34 @@ async function reviewRange(
       ids(issuesEarlier),
       deadline,
     );
+    const improvementsRun = withImprovements
+      ? sleep(STAGGER_MS)
+          .then(() =>
+            reviewTask(
+              target,
+              "improvements",
+              improvementsPrompt({
+                ...pull,
+                ...(improvementsEarlier
+                  ? { earlier: improvementsEarlier }
+                  : {}),
+                subagents: improvementSubagents ? model : false,
+                categories: CATEGORIES,
+                scope,
+                limits,
+                output: IMPROVEMENTS_FILE,
+              }),
+              IMPROVEMENTS_FILE,
+              ids(improvementsEarlier),
+              deadline,
+            ),
+          )
+          .then(
+            (file) => ({ file }),
+            (error: Error) => ({ failed: error.message }),
+          )
+      : undefined;
+    const issues = await issuesRun;
     const improvements = await improvementsRun;
     // The whole files, each in one line: the run's log keeps every review,
     // whatever happens to the comments.

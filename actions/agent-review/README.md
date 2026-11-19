@@ -135,7 +135,11 @@ and file:
 Apart, neither weighs a bug against a nicer loop, and a failure of the
 improvements' agent leaves the issues' review whole: it's posted, saying the
 improvements weren't reviewed. Both share the sandbox, its boot and the diff
-files, and the agents' time.
+files, and the agents' time. The improvements' agent starts 30 seconds after
+the issues': two pi processes started at once under pi-acp can take each
+other down. An agent that shows no tool call and no reply in its first 5
+minutes is taken for dead (its process can die without a word), not waited
+for until the time is up.
 
 With `subagents: auto`, a diff of at most 500 changed lines, lockfiles aside,
 is reviewed by each agent alone: sub-agents start cold, and cost more than
