@@ -84,7 +84,7 @@ export function improvementsPrompt(
    documents they point to for the parts touched. That is where its conventions are written down.`,
     ...(earlier
       ? [
-          `Start from the earlier review (above)${subagents && fresh ? ", with a sub-agent of its own, run with the others (next step)" : ""}:
+          `Start from the earlier review (above)${subagents && fresh ? ", which can be a sub-agent's own part if you use them (next step)" : ""}:
    - ${RULING};
    - ${
      pr.scope === "delta"
@@ -100,14 +100,16 @@ export function improvementsPrompt(
     ...(fresh
       ? [
           subagents
-            ? `Review it with sub-agents. You are asked to delegate this review (call \`subagents_enable\` first if
-   \`subagent\` isn't available yet), and you have up to ${pr.minutes} minutes for all of it.
+            ? `Sub-agents can help with ${scope} (call \`subagents_enable\` first if \`subagent\` isn't available
+   yet): the workflow suggests them for its size. Whether to use them, and how many, is your call: delegate what one
+   careful reader can't cover well in the time, and look at the rest yourself. You have up to ${pr.minutes} minutes
+   for all of it. Every patch gets looked at for each category, by you or a sub-agent.
    - A \`reviewer\` sub-agent can read, grep, find and ls, but has no shell: it can't run git, tests or the diff
      command. Point it to its patches in \`${patches}\`, to the files at the head, which it reads around each change,
      and to the whole repository, which it searches.
-   - Give each category a sub-agent of its own. Past 5,000 changed lines in ${scope} (\`${tsv}\` has the counts;
-     lockfiles and generated files aside), split a category by area (each app, service, package), about one
-     sub-agent per 5,000 lines. At most 9 in all. Each patch goes to a sub-agent of each category.
+   - As a guide: a sub-agent per category; past 5,000 changed lines in ${scope} (\`${tsv}\` has the counts;
+     lockfiles and generated files aside), a category split by area (each app, service, package), about one
+     sub-agent per 5,000 lines; at most 9 in all.
    - Run them in parallel and wait for them in this turn:
      \`subagent({ workflow: "parallel", async: false, args: { tasks: [{ agent: "reviewer", ${subagents.model ? `model: "${subagents.model}", ` : ""}task: "..." }, ...] } })\`.
      \`async: false\` matters: your turn must not end before you have their results and the file below is written.${

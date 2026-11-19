@@ -35,8 +35,10 @@ inputs:
   subagents:
     description: >-
       `auto` (the default): each agent reviews a diff of at most 500 changed
-      lines (lockfiles aside) alone, a bigger one with sub-agents. `always`
-      or `never` to choose. Sub-agents need pi-subagents in the sandbox.
+      lines (lockfiles aside) alone; on a bigger one, sub-agents are suggested
+      and the agent decides whether to use them. `always` suggests them on
+      every diff, `never` rules them out. Sub-agents need pi-subagents in the
+      sandbox.
     default: auto
   allowed-findings:
     description: >-

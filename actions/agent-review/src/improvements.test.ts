@@ -110,10 +110,11 @@ test("asks to search the whole repository for duplicates, and to leave what was 
 });
 
 describe("sub-agents", () => {
-  test("one per category at least, on the workflow's model when it picked one", () => {
+  test("suggested, one per category as a guide, on the workflow's model when it picked one", () => {
     const text = prompt(undefined, { subagents: { model: "p/m-1" } });
-    expect(text).toContain("Give each category a sub-agent of its own");
-    expect(text).toContain("At most 9 in all");
+    expect(text).toContain("Whether to use them, and how many, is your call");
+    expect(text).toContain("a sub-agent per category");
+    expect(text).toContain("at most 9 in all");
     expect(text).toContain(
       '{ agent: "reviewer", model: "p/m-1", task: "..." }',
     );

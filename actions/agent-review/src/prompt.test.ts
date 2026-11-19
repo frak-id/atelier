@@ -53,7 +53,7 @@ const prompt = (
   });
 
 test("gives the agent the job's time for the review", () => {
-  expect(prompt()).toContain("you have up to 25 minutes for all of it");
+  expect(prompt()).toContain("up to 25 minutes for all of it");
 });
 
 describe("what a review reports", () => {
@@ -190,9 +190,20 @@ describe("sub-agents", () => {
       expect(text).toContain("Review it yourself, without sub-agents");
       expect(text).toContain("once for each concern: security");
       expect(text).not.toContain("subagent(");
-      expect(text).not.toContain("with a sub-agent of its own");
+      expect(text).not.toContain("a sub-agent's own part");
       expect(text).not.toContain("how many sub-agents you ran");
     }
+  });
+
+  test("with them, they're a suggestion: whether and how many is the agent's call", () => {
+    const text = prompt(undefined);
+    expect(text).toContain("the\n   workflow suggests them for its size");
+    expect(text).toContain("Whether to use them, and how many, is your call");
+    expect(text).toContain("Every patch gets read, by you or a sub-agent");
+    expect(text).not.toContain("at least two");
+    expect(prompt(undefined, { subagents: false })).not.toContain(
+      "Whether to use them",
+    );
   });
 
   test("with them, each runs on the workflow's model when it picked one", () => {

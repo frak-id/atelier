@@ -74,7 +74,7 @@ says why.
 | `api-key` | required | The service account's API key (`mcp` scope), from a secret |
 | `mode` | `review`, or `cleanup` on a `closed` event | `cleanup` destroys the PR's review sandboxes and deletes the progress comment. `cleanup-head` goes in the `if: cancelled()` step |
 | `image` | `dev-base` | Base image the sandbox boots on. Atelier reuses the repository's prebuild on it |
-| `subagents` | `auto` | `auto`: each agent alone on a diff of at most 500 changed lines (lockfiles aside), sub-agents on a bigger one. `always` or `never` to choose |
+| `subagents` | `auto` | `auto`: each agent alone on a diff of at most 500 changed lines (lockfiles aside), sub-agents suggested on a bigger one (the agent decides). `always` or `never` to choose |
 | `allowed-findings` | | How many minor issues and improvements per category a review reports, for a diff of up to 600 changed lines (*What it reports*) |
 | `reviewer-model` | | The sub-agents' model, `provider/model` as pi-subagents names it (*Customise*) |
 | `toolboxes` | | Toolboxes on top of the org's auto-included ones, comma- or line-separated selectors (*Customise*) |
@@ -154,10 +154,11 @@ review in steps:
 
 With `subagents: auto`, a diff of at most 500 changed lines, lockfiles aside,
 is reviewed by each agent alone: sub-agents start cold, and cost more than
-they find there. On a bigger diff, each sizes its review to it. The issues'
-agent runs about one sub-agent per 2,000 changed lines, at least two and at
-most 12, and every patch read by one. The improvements' agent runs at least
-one per category, split by area past 5,000 lines, at most 9.
+they find there. On a bigger diff, sub-agents are suggested, not required:
+each agent decides whether to use them and how many, and reads the rest
+itself. As a guide, the issues' agent gets about one per 2,000 changed lines,
+at most 12, and the improvements' agent one per category, split by area past
+5,000 lines, at most 9.
 
 The review says whether it blocks: 🛑 *Blocking* with any critical or major
 finding, ✅ *Not blocking* with only minor ones, or LGTM, with the counts per

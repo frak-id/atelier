@@ -333,7 +333,7 @@ export function reviewPrompt(
    does, not by the rule.${conventions ? " One broken with no real consequence (a convention: naming, layout, style) is the other agent's (below)." : ""}`,
     ...(earlier
       ? [
-          `Start from the earlier review (above)${subagents ? ", with a sub-agent of its own, run with the others (next steps)" : ""}:
+          `Start from the earlier review (above)${subagents ? ", which can be a sub-agent's own part if you use them (next steps)" : ""}:
    - ${RULING};
    - review ${
      earlier.delta === "written"
@@ -351,14 +351,16 @@ export function reviewPrompt(
         ]
       : []),
     subagents
-      ? `Review it with sub-agents. You are asked to delegate this review (call \`subagents_enable\` first if \`subagent\`
-   isn't available yet), and you have up to ${pr.minutes} minutes for all of it: a large diff deserves them.
+      ? `Sub-agents can help with this diff (call \`subagents_enable\` first if \`subagent\` isn't available yet): the
+   workflow suggests them for its size. Whether to use them, and how many, is your call: delegate what one careful
+   reader can't cover well in the time, and read the rest yourself. You have up to ${pr.minutes} minutes for all of it.
+   Every patch gets read, by you or a sub-agent, and looked at for each concern: ${concerns}.
    - A \`reviewer\` sub-agent can read, grep, find and ls, but has no shell: it can't run git, tests or the diff
      command. Point it to its patches in \`${dir}/diff/\` and to the files at the head, which it reads around each
      change.
-   - Size the review to the diff: about one sub-agent per 2,000 changed lines (\`${dir}/files.tsv\` has the counts;
-     lockfiles and generated files aside), at least two, at most 12. Split by area (each app, service, package,
-     infra/, workflows), and give the concerns that cross areas sub-agents of their own: ${concerns}. Every patch goes to at least one sub-agent.
+   - As a guide: about one sub-agent per 2,000 changed lines (\`${dir}/files.tsv\` has the counts; lockfiles and
+     generated files aside), at most 12, split by area (each app, service, package, infra/, workflows), and the
+     concerns that cross areas given sub-agents of their own.
    - Run them in parallel and wait for them in this turn:
      \`subagent({ workflow: "parallel", async: false, args: { tasks: [{ agent: "reviewer", ${subagents.model ? `model: "${subagents.model}", ` : ""}task: "..." }, ...] } })\`.
      \`async: false\` matters: your turn must not end before you have their results and the file below is written.${
