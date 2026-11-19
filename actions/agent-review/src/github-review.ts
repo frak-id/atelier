@@ -1,12 +1,13 @@
 /**
- * The review the agent writes (`ReviewFile`), checked, and turned into one
+ * The reviews the agents write (`ReviewFile`), checked, and turned into one
  * GitHub pull request review: a summary that says whether the findings block
  * the merge, with the counts per severity, and a comment on the diff's lines
  * for each critical or major finding GitHub accepts one on. A finding on a line
  * the diff doesn't show (GitHub refuses the whole review for one such comment)
  * goes into the summary instead. Minor findings are never comments: they're
  * listed at the end of the summary, collapsed, so that they don't bury the ones
- * that matter. A finding's evidence (how the agent confirmed it) is collapsed
+ * that matter. So are improvements, apart (`category`): another agent's, which
+ * never block. A finding's evidence (how the agent confirmed it) is collapsed
  * under it.
  *
  * Each finding has an id (F1, F2…, per PR) that later reviews keep: the next
@@ -17,10 +18,18 @@ import { closeFences, quiet } from "../../shared/src/markdown.ts";
 
 export const SEVERITIES = ["critical", "major", "minor"] as const;
 export type Severity = (typeof SEVERITIES)[number];
+/** What an improvement (improvements.ts) is about. */
+export const CATEGORIES = [
+  "performance",
+  "duplication",
+  "conventions",
+] as const;
+export type Category = (typeof CATEGORIES)[number];
 
-/** The minor findings a first review reports at most; later reviews report no
- * new one (prompt.ts, memory.ts). */
-export const MAX_MINORS = 5;
+/** Which agent wrote a review file: the one looking for issues (prompt.ts),
+ * whose findings have a severity, or the one looking for improvements
+ * (improvements.ts), whose findings have a category. */
+export type Lane = "issues" | "improvements";
 
 export interface Finding {
   severity: Severity;
@@ -42,6 +51,9 @@ export interface Finding {
   /** The id of the earlier review's finding this one is, still open: it keeps
    * that id. */
   previous?: string;
+  /** An improvement's category. An improvement never blocks: its severity is
+   * `minor`. An issue has none. */
+  category?: Category;
 }
 
 const STATUSES = ["fixed", "open", "dismissed"] as const;
@@ -66,13 +78,14 @@ export interface ReviewFile {
  * The agent's file, checked field by field: what it wrote is a model's output.
  * Throws with what's wrong. `root` is the repository's directory in the
  * sandbox, stripped from a path the agent wrote absolute. `earlier` holds the
- * ids of the earlier review's open findings, the only ones it can rule on or
- * carry.
+ * ids of the earlier review's open findings of the same `lane`, the only ones
+ * it can rule on or carry.
  */
 export function parseReviewFile(
   text: string,
   root: string,
   earlier: ReadonlySet<string> = new Set(),
+  lane: Lane = "issues",
 ): ReviewFile {
   let raw: unknown;
   try {
@@ -98,7 +111,7 @@ export function parseReviewFile(
     status.set(verdict.id, verdict.status);
   }
   const parsed = findings.map((finding, index) =>
-    parseFinding(finding, `findings[${index}]`, root, earlier),
+    parseFinding(finding, `findings[${index}]`, root, earlier, lane),
   );
   const carried = new Set<string>();
   for (const [index, finding] of parsed.entries()) {
@@ -140,6 +153,7 @@ function parseFinding(
   where: string,
   root: string,
   earlier: ReadonlySet<string>,
+  lane: Lane,
 ): Finding {
   if (typeof raw !== "object" || raw === null)
     throw new Error(`${where} is not an object`);
@@ -147,7 +161,8 @@ function parseFinding(
   const field = (name: string) =>
     ((raw as Record<string, unknown>)[name] ?? undefined) as unknown;
   const [
-    severity,
+    rawSeverity,
+    category,
     title,
     body,
     path,
@@ -158,6 +173,7 @@ function parseFinding(
     previous,
   ] = [
     "severity",
+    "category",
     "title",
     "body",
     "path",
@@ -167,6 +183,11 @@ function parseFinding(
     "evidence",
     "previous",
   ].map(field);
+  // An improvement has a category, and never blocks; an issue has a severity,
+  // and no category.
+  const severity = lane === "improvements" ? "minor" : rawSeverity;
+  if (lane === "improvements" && !CATEGORIES.includes(category as Category))
+    throw new Error(`${where}.category must be one of ${CATEGORIES}`);
   if (!SEVERITIES.includes(severity as Severity))
     throw new Error(`${where}.severity must be one of ${SEVERITIES}`);
   if (typeof title !== "string" || title.trim() === "")
@@ -225,6 +246,7 @@ function parseFinding(
       ? { evidence: (evidence as string).trim() }
       : {}),
     ...(previous !== undefined ? { previous: previous as string } : {}),
+    ...(lane === "improvements" ? { category: category as Category } : {}),
   };
 }
 
@@ -386,6 +408,17 @@ const LABELS: Record<Severity, string> = {
   major: "Major",
   minor: "Minor",
 };
+const IMPROVEMENT = "💡";
+const CATEGORY_ICONS: Record<Category, string> = {
+  performance: "⚡",
+  duplication: "♻️",
+  conventions: "📐",
+};
+const CATEGORY_LABELS: Record<Category, string> = {
+  performance: "Performance",
+  duplication: "Duplication",
+  conventions: "Conventions",
+};
 /** GitHub's limit on a review's body is 65,536 characters: room for the footer.
  */
 const MAX_BODY = 60_000;
@@ -394,8 +427,12 @@ const MAX_BODY = 60_000;
  * replies refer to. */
 export type PostedFinding = Omit<Finding, "previous"> & { id?: string };
 
-const headline = (finding: PostedFinding) =>
-  `${ICONS[finding.severity]} **${LABELS[finding.severity]}${finding.id ? ` · ${finding.id}` : ""}: ${quiet(finding.title)}**`;
+function headline(finding: PostedFinding): string {
+  const [icon, label] = finding.category
+    ? [CATEGORY_ICONS[finding.category], CATEGORY_LABELS[finding.category]]
+    : [ICONS[finding.severity], LABELS[finding.severity]];
+  return `${icon} **${label}${finding.id ? ` · ${finding.id}` : ""}: ${quiet(finding.title)}**`;
+}
 
 /** A code block of `code`, its fence longer than any run of backticks in it, or
  * one in it would close the block. */
@@ -463,6 +500,28 @@ export interface ReviewToPost {
   since?: Since;
   /** memory.ts's hidden block, for the next review. */
   state?: string;
+  /** The review for improvements, when one ran: its summary, or why it has
+   * none. Its findings are in `findings`, with their category. `pending`: it
+   * runs after this review is posted, which is then updated with it. */
+  improvements?: { summary: string } | { failed: string } | { pending: true };
+}
+
+/** The line of a review posted before its improvements (`pending`): what
+ * replaces it if the run stops before they're added (`stoppedImprovements`). */
+export const PENDING_IMPROVEMENTS = `${IMPROVEMENT} **Improvements on the way**: another agent is looking for them now. They're added to this review once it's done.`;
+
+const notReviewed = (reason: string) =>
+  `${IMPROVEMENT} **Improvements not reviewed**: ${quiet(reason)}`;
+
+/** A posted review's `body` with its pending improvements line saying they
+ * won't come, or undefined if it has none. */
+export function stoppedImprovements(body: string): string | undefined {
+  return body.includes(PENDING_IMPROVEMENTS)
+    ? body.replace(
+        PENDING_IMPROVEMENTS,
+        notReviewed("the run stopped before they were done."),
+      )
+    : undefined;
 }
 
 function sinceSection(since: Since): string[] {
@@ -504,7 +563,12 @@ export function buildReview(
   const comments: ReviewComment[] = [];
   const elsewhere: PostedFinding[] = [];
   const minors: PostedFinding[] = [];
+  const improvements: PostedFinding[] = [];
   for (const finding of findings) {
+    if (finding.category) {
+      improvements.push(finding);
+      continue;
+    }
     if (finding.severity === "minor") {
       minors.push(finding);
       continue;
@@ -533,19 +597,54 @@ export function buildReview(
     });
   }
 
+  // Improvements by category, each as the agent ranked them.
+  improvements.sort(
+    (a, b) =>
+      CATEGORIES.indexOf(a.category as Category) -
+      CATEGORIES.indexOf(b.category as Category),
+  );
+  const issues = findings.filter((finding) => !finding.category);
   const count = (severity: Severity) =>
-    findings.filter((finding) => finding.severity === severity).length;
-  const counts = SEVERITIES.map(
-    (severity) => `${ICONS[severity]} ${count(severity)} ${severity}`,
-  ).join(" · ");
-  // Any critical or major finding blocks: minor ones are the author's to take
-  // or leave.
+    issues.filter((finding) => finding.severity === severity).length;
+  const improvementCount = `${IMPROVEMENT} ${improvements.length} ${improvements.length === 1 ? "improvement" : "improvements"}`;
+  const counts = [
+    ...SEVERITIES.map(
+      (severity) => `${ICONS[severity]} ${count(severity)} ${severity}`,
+    ),
+    ...(improvements.length > 0 ? [improvementCount] : []),
+  ].join(" · ");
+  const optional = [
+    ...(minors.length > 0 ? [`${ICONS.minor} ${minors.length} minor`] : []),
+    ...(improvements.length > 0 ? [improvementCount] : []),
+  ].join(" · ");
+  // Any critical or major finding blocks: minor ones and improvements are the
+  // author's to take or leave.
   const verdict =
     findings.length === 0
       ? "✅ **LGTM**: nothing flagged."
-      : minors.length < findings.length
+      : minors.length < issues.length
         ? `🛑 **Blocking**: ${counts}`
-        : `✅ **Not blocking**: ${ICONS.minor} ${minors.length} minor, optional`;
+        : `✅ **Not blocking**: ${optional}, optional`;
+  const byCategory = CATEGORIES.flatMap((category) => {
+    const n = improvements.filter(
+      (finding) => finding.category === category,
+    ).length;
+    return n > 0 ? [`${CATEGORY_ICONS[category]} ${n} ${category}`] : [];
+  }).join(" · ");
+  const improvementsSummary =
+    review.improvements && "summary" in review.improvements
+      ? [quiet(review.improvements.summary)]
+      : [];
+  // Before the collapsed lists, so that a cut keeps it: why there's no
+  // improvement listed, when the review for improvements ran.
+  const improvementsNote =
+    review.improvements && "pending" in review.improvements
+      ? [PENDING_IMPROVEMENTS]
+      : review.improvements && "failed" in review.improvements
+        ? [notReviewed(review.improvements.failed)]
+        : improvements.length === 0 && improvementsSummary.length > 0
+          ? [`${IMPROVEMENT} **No improvement**: ${improvementsSummary[0]}`]
+          : [];
   const listItem = (finding: PostedFinding) => {
     // Off the diff's lines, a suggestion can't be a GitHub suggestion: the
     // change, to apply by hand.
@@ -564,12 +663,21 @@ export function buildReview(
     ...(elsewhere.length > 0
       ? ["#### Not on the diff's lines", elsewhere.map(listItem).join("\n\n")]
       : []),
+    ...improvementsNote,
     // Our own HTML: quiet() turns any the agent wrote into text, so this
     // `<details>` is the only one.
     ...(minors.length > 0
       ? [
           `<details><summary>${ICONS.minor} ${minors.length} minor, optional</summary>`,
           minors.map(listItem).join("\n\n"),
+          "</details>",
+        ]
+      : []),
+    ...(improvements.length > 0
+      ? [
+          `<details><summary>${improvementCount}, optional: ${byCategory}</summary>`,
+          ...improvementsSummary,
+          improvements.map(listItem).join("\n\n"),
           "</details>",
         ]
       : []),

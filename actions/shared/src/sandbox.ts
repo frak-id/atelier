@@ -15,6 +15,10 @@ const BOOT_TIMEOUT_MS = 10 * 60_000;
 /** How long a destroy waits for a sandbox whose create job hasn't landed its
  * record yet (`destroy`). */
 const DESTROY_WAIT_MS = 5 * 60_000;
+/** How long an agent's turn may show no tool call and no reply before it is
+ * taken for dead: an agent process that dies at its start (its harness never
+ * says so) leaves the task running until the deadline otherwise. */
+const START_TIMEOUT_MS = 5 * 60_000;
 
 /** The agent's task, as `send_prompt` and `get_task` return it. */
 interface Task {
@@ -62,11 +66,13 @@ export interface Sandboxes {
   /** Runs `command` in `cwd`; a non-zero exit throws, with its stderr. */
   exec(id: string, command: string, cwd: string): Promise<string>;
   /** Sends the prompt (a new task in the sandbox, or a follow-up turn of
-   * `taskId`) and waits for the agent's turn, until `deadline`. */
+   * `taskId`) and waits for the agent's turn, until `deadline`. `label` names
+   * the agent in the log, where several can run at once. */
   runTurn(
     target: { sandboxId: string; cwd: string } | { taskId: string },
     prompt: string,
     deadline: Deadline,
+    label?: string,
   ): Promise<Task>;
 }
 
@@ -75,11 +81,14 @@ export interface Sandboxes {
  * this job couldn't, in the warning it gets.
  */
 export function sandboxes(
-  atelier: Atelier,
+  atelier: Pick<Atelier, "call">,
   job: Pick<Job, "log" | "warn">,
   leftover: string,
+  options: { startTimeoutMs?: number; pollSeconds?: number } = {},
 ): Sandboxes {
   const { log, warn } = job;
+  const startTimeoutMs = options.startTimeoutMs ?? START_TIMEOUT_MS;
+  const pollSeconds = options.pollSeconds ?? 50;
 
   /**
    * Until its create job lands its record (once the source is resolved: baking
@@ -164,37 +173,52 @@ export function sandboxes(
       return result.stdout.trim();
     },
 
-    async runTurn(target, prompt, deadline) {
+    async runTurn(target, prompt, deadline, label = "agent") {
+      const sent = Date.now();
       let task = await atelier.call<Task>("send_prompt", {
         ...target,
         prompt,
       });
       let logged = 0;
+      let started = false;
+      const cancel = () =>
+        atelier
+          .call("manage_task", { taskId: task.taskId, action: "cancel" })
+          .catch(() => {});
       while (task.status === "running") {
         if (Date.now() > deadline.at) {
-          await atelier
-            .call("manage_task", { taskId: task.taskId, action: "cancel" })
-            .catch(() => {});
+          await cancel();
           throw new Error(
-            `the agent took longer than ${deadline.minutes} minutes`,
+            `the ${label} took longer than ${deadline.minutes} minutes`,
           );
         }
         task = await atelier.call<Task>("get_task", {
           taskId: task.taskId,
-          waitSeconds: 50,
+          waitSeconds: pollSeconds,
         });
         // The job's log tells what the agent did: each tool call once (the
         // list only comes with a running turn).
         const calls = task.turn.toolCalls ?? [];
+        started ||= calls.length > 0 || Boolean(task.turn.reply);
+        if (
+          !started &&
+          task.status === "running" &&
+          Date.now() - sent > startTimeoutMs
+        ) {
+          await cancel();
+          throw new Error(
+            `the ${label} never started: no tool call and no reply in ${Math.round(startTimeoutMs / 60_000)} minutes (its agent process may have died)`,
+          );
+        }
         for (const call of calls.slice(logged))
-          log(`agent: ${call.title.replaceAll("\n", " ").slice(0, 160)}`);
+          log(`${label}: ${call.title.replaceAll("\n", " ").slice(0, 160)}`);
         logged = Math.max(logged, calls.length);
       }
       if (task.status !== "idle")
         throw new Error(
-          `the agent's task is ${task.status}: ${task.turn.error ?? ""}`,
+          `the ${label}'s task is ${task.status}: ${task.turn.error ?? ""}`,
         );
-      log(`agent done: ${task.turn.reply ?? ""}`);
+      log(`${label} done: ${task.turn.reply ?? ""}`);
       return task;
     },
   };

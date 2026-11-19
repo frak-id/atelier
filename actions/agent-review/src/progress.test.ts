@@ -19,6 +19,7 @@ describe("the progress comment", () => {
     expect(body.startsWith(PROGRESS_MARKER)).toBe(true);
     expect(body).toContain(`(${sandboxUrl})`);
     expect(body).toContain("25 at most");
+    expect(body).toContain("looking for issues first, then improvements");
     expect(body).toContain("`0123456`");
     expect(body).toContain(run);
   });

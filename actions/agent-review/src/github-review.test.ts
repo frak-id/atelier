@@ -6,11 +6,13 @@ import {
   findingMarker,
   findingOf,
   HEADING,
+  PENDING_IMPROVEMENTS,
   type PostedComment,
   type PostedReview,
   parseReviewFile,
   postedByRun,
   runLink,
+  stoppedImprovements,
   supersede,
 } from "./github-review.ts";
 
@@ -169,6 +171,111 @@ describe("review", () => {
         "- 🟡 **Minor: Stale comment** `src/a.ts:12`\n\n  The loop skips the last item.\n  \n  Suggested change:\n  \n  ```\n  // ok\n  ```",
         "</details>\n\n<sub>footer</sub>",
       ].join("\n\n"),
+    );
+  });
+
+  test("improvements never block, and are listed apart, by category, collapsed, with their agent's summary", () => {
+    const improvement = (
+      category: "performance" | "duplication" | "conventions",
+      title: string,
+    ) =>
+      finding({
+        severity: "minor",
+        category,
+        title,
+        path: "src/a.ts",
+        line: 11,
+      });
+    const posted = buildReview(
+      {
+        summary: "Adds things.",
+        findings: [
+          { ...improvement("duplication", "Reuse quiet()"), id: "F2" },
+          finding({ severity: "minor", title: "Nit" }),
+          { ...improvement("performance", "Query in a loop"), id: "F3" },
+        ],
+        improvements: { summary: "Two worth making." },
+      },
+      commentable,
+      "footer",
+    );
+    expect(posted.comments).toEqual([]);
+    expect(posted.body).toContain(
+      "✅ **Not blocking**: 🟡 1 minor · 💡 2 improvements, optional",
+    );
+    expect(posted.body).toContain(
+      [
+        "<details><summary>💡 2 improvements, optional: ⚡ 1 performance · ♻️ 1 duplication</summary>",
+        "Two worth making.",
+        "- ⚡ **Performance · F3: Query in a loop** `src/a.ts:11`",
+      ].join("\n\n"),
+    );
+    expect(posted.body).toContain(
+      "- ♻️ **Duplication · F2: Reuse quiet()** `src/a.ts:11`",
+    );
+    // The minor issues first, then the improvements.
+    expect(posted.body.indexOf("Nit")).toBeLessThan(
+      posted.body.indexOf("Query in a loop"),
+    );
+    const blocking = review([finding({}), improvement("conventions", "c")]);
+    expect(blocking.body).toContain(
+      "🛑 **Blocking**: 🔴 0 critical · 🟠 1 major · 🟡 0 minor · 💡 1 improvement\n\n",
+    );
+    expect(review([improvement("conventions", "c")]).body).toContain(
+      "✅ **Not blocking**: 💡 1 improvement, optional",
+    );
+  });
+
+  test("says when the improvements weren't reviewed", () => {
+    const posted = buildReview(
+      {
+        summary: "Adds things.",
+        findings: [],
+        improvements: { failed: "the improvements agent took too long" },
+      },
+      commentable,
+      "footer",
+    );
+    expect(posted.body).toContain(
+      "Adds things.\n\n💡 **Improvements not reviewed**: the improvements agent took too long\n\n<sub>footer</sub>",
+    );
+    expect(review([]).body).not.toContain("mprovement");
+  });
+
+  test("posted before its improvements, says they're on the way, before the minor findings; a stopped run says they won't come", () => {
+    const posted = buildReview(
+      {
+        summary: "Adds things.",
+        findings: [finding({ severity: "minor", title: "Nit" })],
+        improvements: { pending: true },
+      },
+      commentable,
+      "footer",
+    );
+    expect(posted.body).toContain(
+      `Adds things.\n\n${PENDING_IMPROVEMENTS}\n\n<details><summary>🟡 1 minor`,
+    );
+    expect(stoppedImprovements(posted.body)).toBe(
+      posted.body.replace(
+        PENDING_IMPROVEMENTS,
+        "💡 **Improvements not reviewed**: the run stopped before they were done.",
+      ),
+    );
+    expect(stoppedImprovements(review([]).body)).toBeUndefined();
+  });
+
+  test("with no improvement, says so with its agent's summary, before the minor findings", () => {
+    const posted = buildReview(
+      {
+        summary: "Adds things.",
+        findings: [finding({ severity: "minor", title: "Nit" })],
+        improvements: { summary: "Nothing worth changing." },
+      },
+      commentable,
+      "footer",
+    );
+    expect(posted.body).toContain(
+      "Adds things.\n\n💡 **No improvement**: Nothing worth changing.\n\n<details><summary>🟡 1 minor",
     );
   });
 
@@ -360,6 +467,46 @@ describe("the agent's file", () => {
         ROOT,
       ),
     ).toThrow("findings[0].evidence");
+  });
+
+  test("of improvements: a category instead of a severity, and never blocking", () => {
+    const parse = (finding: Record<string, unknown>) =>
+      parseReviewFile(
+        JSON.stringify({ summary: "s", findings: [finding] }),
+        ROOT,
+        new Set(),
+        "improvements",
+      );
+    expect(
+      parse({
+        category: "performance",
+        severity: "critical",
+        title: "t",
+        body: "b",
+      }).findings,
+    ).toEqual([
+      { severity: "minor", category: "performance", title: "t", body: "b" },
+    ]);
+    expect(() => parse({ severity: "minor", title: "t", body: "b" })).toThrow(
+      "findings[0].category must be one of performance,duplication,conventions",
+    );
+    // An issue's file has no category.
+    expect(
+      parseReviewFile(
+        JSON.stringify({
+          summary: "s",
+          findings: [
+            {
+              severity: "major",
+              category: "performance",
+              title: "t",
+              body: "b",
+            },
+          ],
+        }),
+        ROOT,
+      ).findings,
+    ).toEqual([{ severity: "major", title: "t", body: "b" }]);
   });
 
   test("takes null as absent, and an absolute path in the sandbox as relative", () => {

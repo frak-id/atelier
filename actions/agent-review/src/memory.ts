@@ -12,10 +12,11 @@
  */
 import { gunzipSync, gzipSync } from "node:zlib";
 import {
+  CATEGORIES,
+  type Category,
   type Closed,
   findingOf,
   HEADING,
-  MAX_MINORS,
   type PostedComment,
   type PostedFinding,
   type PostedReview,
@@ -24,6 +25,7 @@ import {
   type Severity,
   type Since,
 } from "./github-review.ts";
+import type { Limited, Limits } from "./limits.ts";
 import type { IssueComment } from "./progress.ts";
 
 /** An open finding, as the next review gets it: where it was at
@@ -35,6 +37,8 @@ export interface StoredFinding {
   body: string;
   path?: string;
   line?: number;
+  /** An improvement's (github-review.ts's `Finding`). */
+  category?: Category;
 }
 
 export interface ReviewState {
@@ -46,6 +50,11 @@ export interface ReviewState {
   /** Dismissed in this review or an earlier one, the most recent last: not to
    * be reported again. */
   dismissed: Closed[];
+  /** The review looked for improvements at `head` (improvements.ts), or an
+   * earlier one did and nothing changed since: the next looks for new ones in
+   * what changed since only. Without it, in the whole PR: the review before
+   * this action had the agent for improvements, or whose agent failed. */
+  improvements?: boolean;
 }
 
 /** A comment someone wrote on a finding's thread, or on the PR. */
@@ -118,8 +127,9 @@ export function decodeState(body: string | null): ReviewState | undefined {
       gunzipSync(Buffer.from(encoded, "base64")).toString(),
     );
     if (!isObject(state)) return undefined;
-    const { head, nextId, open, dismissed } = state;
+    const { head, nextId, open, dismissed, improvements } = state;
     const valid =
+      (improvements === undefined || typeof improvements === "boolean") &&
       typeof head === "string" &&
       /^[0-9a-f]{40}$/.test(head) &&
       Number.isInteger(nextId) &&
@@ -133,7 +143,9 @@ export function decodeState(body: string | null): ReviewState | undefined {
           typeof finding.title === "string" &&
           typeof finding.body === "string" &&
           (finding.path === undefined || typeof finding.path === "string") &&
-          (finding.line === undefined || Number.isInteger(finding.line)),
+          (finding.line === undefined || Number.isInteger(finding.line)) &&
+          (finding.category === undefined ||
+            CATEGORIES.includes(finding.category as Category)),
       ) &&
       Array.isArray(dismissed) &&
       dismissed.every(
@@ -276,32 +288,44 @@ export function conversationSince(
 }
 
 /**
- * The agent's review merged with the earlier one: its new findings get the next
- * ids, the ones it carries keep theirs. A first review keeps its first
- * `MAX_MINORS` new minor findings, a later one none (prompt.ts): the others are
- * `dropped`, and get no id. An earlier finding it calls open without writing it
- * again, or doesn't rule on, is posted as it was, off the diff's lines (they
- * may have moved). Returns what to post, what became of the earlier findings,
- * and the state for the next.
+ * The agents' review (both files in one) merged with the earlier one: its new
+ * findings get the next ids, the ones it carries keep theirs. Of its new minor
+ * issues and improvements, it keeps the first of each kind up to `limits`
+ * (limits.ts): the others are `dropped`, and get no id. An earlier finding it
+ * calls open without writing it again, or doesn't rule on, is posted as it was,
+ * off the diff's lines (they may have moved). Returns what to post, what became
+ * of the earlier findings, and the state for the next, which says whether
+ * `improvements` were looked for up to `head` (`ReviewState`).
  */
 export function resolve(
   result: ReviewFile,
   earlier: ReviewState | undefined,
   head: string,
+  limits: Limits,
+  improvements = false,
 ): {
   findings: PostedFinding[];
-  dropped: number;
+  /** The new findings past `limits`, per kind. */
+  dropped: Limits;
   since?: Since;
   state: ReviewState;
 } {
   let nextId = earlier?.nextId ?? 1;
-  let minorsLeft = earlier ? 0 : MAX_MINORS;
-  const kept = result.findings.filter(
-    (finding) =>
-      finding.previous !== undefined ||
-      finding.severity !== "minor" ||
-      minorsLeft-- > 0,
-  );
+  const left = { ...limits };
+  const dropped = Object.fromEntries(
+    Object.keys(limits).map((kind) => [kind, 0]),
+  ) as Limits;
+  const kept = result.findings.filter((finding) => {
+    const kind: Limited | undefined =
+      finding.category ?? (finding.severity === "minor" ? "minor" : undefined);
+    if (finding.previous !== undefined || kind === undefined) return true;
+    if (left[kind] > 0) {
+      left[kind] -= 1;
+      return true;
+    }
+    dropped[kind] += 1;
+    return false;
+  });
   const findings: PostedFinding[] = kept.map(({ previous, ...finding }) => ({
     ...finding,
     id: previous ?? `F${nextId++}`,
@@ -329,17 +353,20 @@ export function resolve(
       (verdict ? since?.open : since?.unchecked)?.push(old.id);
     }
   }
-  const stored = findings.map(({ id, severity, title, body, path, line }) => ({
-    id: id as string,
-    severity,
-    title,
-    body,
-    ...(path ? { path } : {}),
-    ...(line ? { line } : {}),
-  }));
+  const stored = findings.map(
+    ({ id, severity, title, body, path, line, category }) => ({
+      id: id as string,
+      severity,
+      title,
+      body,
+      ...(path ? { path } : {}),
+      ...(line ? { line } : {}),
+      ...(category ? { category } : {}),
+    }),
+  );
   return {
     findings,
-    dropped: result.findings.length - kept.length,
+    dropped,
     ...(since ? { since } : {}),
     state: {
       head,
@@ -349,6 +376,7 @@ export function resolve(
         ...(earlier?.dismissed ?? []),
         ...(since?.dismissed ?? []),
       ].slice(-MAX_DISMISSED),
+      ...(improvements ? { improvements } : {}),
     },
   };
 }

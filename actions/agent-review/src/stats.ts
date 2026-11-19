@@ -1,7 +1,7 @@
 /**
- * What became of the agent's findings on a repository's merged pull requests:
- * how many were fixed, dismissed, or still open at merge, per severity
- * (README.md, *Measure*). Nothing is stored for it: each review hides its state
+ * What became of the agents' findings on a repository's merged pull requests:
+ * how many were fixed, dismissed, or still open at merge, per severity of issue
+ * and per category of improvement (README.md, *Measure*). Nothing is stored for it: each review hides its state
  * (memory.ts), with the findings open at its head and the ones dismissed, and a
  * finding that left the open ones without being dismissed was fixed. *Fixed* is
  * the agent's ruling, at the review that followed the fix.
@@ -17,6 +17,8 @@ import {
   rateLimitWait,
 } from "../../shared/src/rate-limit.ts";
 import {
+  CATEGORIES,
+  type Category,
   HEADING,
   type PostedReview,
   SEVERITIES,
@@ -34,8 +36,14 @@ export interface PullFindings {
   /** Its last review saw an older head than the merged one: what that review
    * left open may have been fixed since. */
   stale: boolean;
-  /** Each finding, with its severity when first posted. */
-  findings: { id: string; severity: Severity; outcome: Outcome }[];
+  /** Each finding, with its severity when first posted, and an improvement's
+   * category. */
+  findings: {
+    id: string;
+    severity: Severity;
+    category?: Category;
+    outcome: Outcome;
+  }[];
 }
 
 /**
@@ -58,11 +66,11 @@ export function pullFindings(
     .flatMap((review) => decodeState(review.body) ?? []);
   const last = states.at(-1);
   if (!last) return undefined;
-  const severities = new Map<string, Severity>();
+  const first = new Map<string, { severity: Severity; category?: Category }>();
   for (const state of states)
-    for (const finding of state.open)
-      if (!severities.has(finding.id))
-        severities.set(finding.id, finding.severity);
+    for (const { id, severity, category } of state.open)
+      if (!first.has(id))
+        first.set(id, { severity, ...(category ? { category } : {}) });
   const open = new Set(last.open.map((finding) => finding.id));
   const dismissed = new Set(
     states.flatMap((state) => state.dismissed.map((item) => item.id)),
@@ -70,9 +78,9 @@ export function pullFindings(
   return {
     reviews: states.length,
     stale: last.head !== head,
-    findings: [...severities].map(([id, severity]) => ({
+    findings: [...first].map(([id, kind]) => ({
       id,
-      severity,
+      ...kind,
       outcome: open.has(id)
         ? "open"
         : dismissed.has(id)
@@ -113,12 +121,20 @@ export function findingsReport(
         : ""
     }`,
     "",
-    "| Severity | Found | Fixed | Dismissed | Open at merge | Fixed rate |",
+    "| Kind | Found | Fixed | Dismissed | Open at merge | Fixed rate |",
     "| --- | ---: | ---: | ---: | ---: | ---: |",
     ...SEVERITIES.map((severity) =>
       row(
         severity,
-        all.filter((finding) => finding.severity === severity),
+        all.filter(
+          (finding) => !finding.category && finding.severity === severity,
+        ),
+      ),
+    ),
+    ...CATEGORIES.map((category) =>
+      row(
+        category,
+        all.filter((finding) => finding.category === category),
       ),
     ),
     row("all", all),
