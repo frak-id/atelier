@@ -36,33 +36,19 @@ function prompt(
 describe("the prompt", () => {
   test("pins the picked version: a bare update would take a fresher one", () => {
     const text = prompt();
-    expect(text).toContain("`cargo update -p <crate> --precise <version>`");
-    expect(text).toContain(
-      "`uv lock --upgrade-package '<package>==<version>'`",
-    );
+    expect(text).toContain("lock the\n  exact version you picked");
     expect(text).toContain("Never a bare `update` or `upgrade` of everything");
     // The managers that can refuse fresh releases are told the age.
-    expect(text).toContain("date -u -d '-3 days' +%FT%TZ");
-    expect(text).toContain("--uploaded-prior-to P3D");
+    expect(text).toContain("give it the date 3 days ago");
   });
 
-  test("assumes no package manager: the repository's lockfile says which", () => {
+  test("names no package manager: the repository's own tools say how", () => {
     const text = prompt();
-    for (const lockfile of [
-      "package-lock.json",
-      "pnpm-lock.yaml",
-      "yarn.lock",
-      "bun.lock",
-      "uv.lock",
-      "poetry.lock",
-      "Cargo.lock",
-      "go.sum",
-      "Gemfile.lock",
-      "composer.lock",
-    ])
-      expect(text).toContain(`\`${lockfile}\``);
+    expect(text).toContain("the package managers its lockfiles name");
     expect(text).toContain("`mise x <tool>@<version> -- <command>`");
-    expect(text).not.toMatch(/bun run test|`bun outdated`, `npm outdated`/);
+    expect(text).not.toMatch(
+      /`(npm|pnpm|yarn|bun|uv|poetry|pip|go|cargo|bundle|composer) (add|audit|get|install|lock|outdated|update|view)/,
+    );
   });
 
   test("keeps the agent out of the workflows unless the repository lets it", () => {

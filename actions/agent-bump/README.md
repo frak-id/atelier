@@ -7,13 +7,11 @@ The job starts a sandbox from the repository's prebuild, at the base branch's
 head, as an Atelier [service account](../../docs/service-accounts.md). The
 sandbox's coding agent (pi) runs the repository's checks first, then finds
 what's outdated in every ecosystem: packages, toolchains, container images,
-GitHub Actions, versions pinned in Dockerfiles. It assumes no stack and uses
-the package manager the repository's lockfile names: npm, pnpm, Yarn, Bun,
-uv, Poetry, PDM, Pipenv, pip, Cargo, Go modules, Bundler, Composer, Maven,
-Gradle, NuGet, pub (`src/prompt.ts` lists where each keeps what the agent
-needs). For each update it reads the
-release notes between the two versions, migrates the configuration, replaces
-what the new version deprecates, runs the checks again and commits. What it
+GitHub Actions, versions pinned in Dockerfiles. It assumes no stack: it uses
+the repository's own package managers and tools, at the versions it pins.
+For each update it reads the release notes between the two versions,
+migrates the configuration, replaces what the new version deprecates, runs
+the checks again and commits. What it
 can't make pass it undoes and holds back, saying why. The job checks its
 commits, pushes the branch and opens the pull request from the sandbox, with
 the account's GitHub credential, then destroys the sandbox.
