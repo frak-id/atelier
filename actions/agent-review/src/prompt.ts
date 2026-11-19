@@ -1,7 +1,7 @@
 /**
- * What the sandbox's agents are asked. Two run at the same time, each in its
- * own task: this file's looks for issues (`reviewPrompt`), improvements.ts's for
- * improvements (performance, duplication, the repository's conventions), so
+ * What the sandbox's agents are asked. Two run one after the other, each in
+ * its own task: this file's looks for issues (`reviewPrompt`), improvements.ts's
+ * for improvements (performance, duplication, the repository's conventions), so
  * that neither has to weigh a bug against a nicer loop. Each reviews exactly
  * what the PR brings (merge base to head), alone for a small diff or with
  * sub-agents that read the diff from the files diff-files.sh wrote
@@ -145,7 +145,7 @@ export interface PromptInput {
 
 /** Text from the author and other people, in one block it can't close: no tag
  * survives escaping every `<`. */
-const authored = (text: string) => text.replaceAll("<", "&lt;");
+export const authored = (text: string) => text.replaceAll("<", "&lt;");
 
 /** The working directory, the diff and its files, and what the PR's author
  * wrote: how both prompts start, after their first line. */
@@ -281,8 +281,8 @@ const LEFT_OUT: Record<Category, string> = {
 };
 
 /** The review of issues: bugs, security, data, deploy, tests, the repository's
- * rules. Another agent looks for the `improvements` of those categories at the
- * same time, and this one leaves them out. */
+ * rules. Another agent looks for the `improvements` of those categories after
+ * it, and this one leaves them out. */
 export function reviewPrompt(
   pr: PromptInput & {
     /** The new minor findings it may report (limits.ts): 0 on a later review. */
@@ -382,7 +382,7 @@ export function reviewPrompt(
    confirm, duplicates, matters of taste, and what the tooling already enforces (formatting, lint, types).${
      improvements.length > 0
        ? `
-   Another agent, running at the same time, looks for improvements that aren't bugs: ${listed(improvements)}. Leave out
+   Another agent, after you, looks for improvements that aren't bugs: ${listed(improvements)}. Leave out
    what is only that: ${listed(improvements.map((category) => LEFT_OUT[category]))}, that breaks nothing.${subagents ? " Tell your sub-agents too." : ""}${
      stillYours.length > 0 ? ` Still yours: ${listed(stillYours)}.` : ""
    }`

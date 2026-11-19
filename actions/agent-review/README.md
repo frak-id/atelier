@@ -6,7 +6,7 @@ sandbox, on every push, and posts their findings as one review.
 The job starts a sandbox from the repository's prebuild, at the PR's head, as
 an Atelier [service account](../../docs/service-accounts.md). Two tasks of the
 sandbox's coding agent (pi) review what the PR brings, from its merge base to
-its head, at the same time, each with its own parallel sub-agents. Both read
+its head, one after the other, each with its own parallel sub-agents. Both read
 the repository's AGENTS.md rules. One looks for issues: correctness,
 security, data, deploy impact and tests. The other looks for improvements:
 performance, duplicated code, and the repository's conventions. Each writes
@@ -79,8 +79,7 @@ says why.
 | `toolboxes` | | Toolboxes on top of the org's auto-included ones, comma- or line-separated selectors (*Customise*) |
 | `instructions` | | Text added to the agents' prompts (*Customise*) |
 | `instructions-file` | `REVIEW.md` | Instructions read on the PR's target branch, when the file is there. Empty to read none |
-| `agent-timeout-minutes` | `40` | The agents' time for one review. Give the job about 20 minutes more |
-| `vcpus`, `memory-mb` | | The sandbox's size, where both agents and their sub-agents run at once. Empty: Atelier's defaults |
+| `agent-timeout-minutes` | `40` | The agents' time for one review, both together. Give the job about 20 minutes more |
 | `bun-version` | `1.4.4` | Bun version the action runs on |
 
 The review is posted with the job's own `GITHUB_TOKEN`, hence
@@ -118,9 +117,9 @@ links to the sandbox's session in the console (sign in with GitHub).
 ## How a review goes
 
 The sub-agents read files but can't run git, so the job first writes the diff
-into the sandbox, one patch per file (`src/diff-files.sh`). Then it starts two
-tasks there, at the same time, each an agent with its own context, sub-agents
-and file:
+into the sandbox, one patch per file (`src/diff-files.sh`). Then it runs two
+tasks there, one after the other, each an agent with its own context,
+sub-agents and file:
 
 - **Issues** (`src/prompt.ts`): bugs, security, data and migrations, deploy
   impact, tests, and the repository's rules. Its findings are rated critical,
@@ -130,16 +129,18 @@ and file:
   has (`duplication`), or closer to the way the repository does things
   (`conventions`), without being a bug. Its findings have a category instead
   of a severity, and never block. A performance problem that breaks something,
-  or a rule broken with real consequences, is the other agent's.
+  or a rule broken with real consequences, is the other agent's. It's told what
+  the issues' agent reported, so as not to report it again.
 
 Apart, neither weighs a bug against a nicer loop, and a failure of the
 improvements' agent leaves the issues' review whole: it's posted, saying the
 improvements weren't reviewed. Both share the sandbox, its boot and the diff
-files, and the agents' time. The improvements' agent starts 30 seconds after
-the issues': two pi processes started at once under pi-acp can take each
-other down. An agent that shows no tool call and no reply in its first 5
-minutes is taken for dead (its process can die without a word), not waited
-for until the time is up.
+files, and the agents' time: the issues' agent has up to 70% of it, the
+improvements' one what's left. They can't run at the same time: pi-acp, which
+Atelier talks to pi through, keeps one live session, and a new one closes the
+others, killing their turn. An agent that shows no tool call and no reply in
+its first 5 minutes is taken for dead (its process can die without a word),
+not waited for until the time is up.
 
 With `subagents: auto`, a diff of at most 500 changed lines, lockfiles aside,
 is reviewed by each agent alone: sub-agents start cold, and cost more than
@@ -242,8 +243,6 @@ the agent confirmed it, for whoever doubts it.
   agent keeps it then. With `performance`, `duplication` and `conventions` all
   at 0, the improvements' agent doesn't run. The next review dismisses the
   open improvements of a category turned off.
-- **The sandbox's size.** `vcpus` and `memory-mb`: both agents and their
-  sub-agents run in it at once, each a pi process.
 - **The sub-agents' model.** `reviewer-model` is given to each sub-agent of
   both agents (pi-subagents' `model`, `provider/model`). The org's secrets need that
   provider's key: a sub-agent that can't start leaves its part unreviewed, and

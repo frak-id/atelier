@@ -205,13 +205,13 @@ describe("sub-agents", () => {
   });
 });
 
-describe("with an agent for improvements at the same time", () => {
+describe("with an agent for improvements after it", () => {
   const ALL: Category[] = ["performance", "duplication", "conventions"];
 
   test("leaves improvements to it, but not a performance problem that breaks something", () => {
     const text = prompt(undefined, { improvements: ALL });
     expect(text).toContain(
-      "Another agent, running at the same time, looks for improvements that aren't bugs: performance, duplication and conventions.",
+      "Another agent, after you, looks for improvements that aren't bugs: performance, duplication and conventions.",
     );
     expect(text).toContain(
       "a slower path, code repeated and a convention not followed, that breaks nothing",

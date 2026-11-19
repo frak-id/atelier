@@ -13,6 +13,7 @@ const prompt = (
     limits?: Record<Category, number>;
     earlier?: Partial<EarlierReview>;
     scope?: "diff" | "delta" | "none";
+    issues?: { title: string; path?: string; line?: number }[];
   } = {},
 ) =>
   improvementsPrompt({
@@ -51,6 +52,7 @@ const prompt = (
       duplication: 4,
       conventions: 2,
     },
+    issues: options.issues ?? [],
     output: "/home/dev/improvements.json",
   });
 
@@ -58,8 +60,22 @@ test("leaves the issues to the other agent", () => {
   const text = prompt();
   expect(text).toContain("for improvements: what would make the code");
   expect(text).toContain(
-    "Another agent, running\nat the same time in this sandbox, reviews it for issues",
+    "Another agent reviewed\nit for issues just before you",
   );
+});
+
+test("lists what the review of issues reported, not to report it again, in a block it can't close", () => {
+  const text = prompt(undefined, {
+    issues: [
+      { title: "Leaks the token", path: "src/a.ts", line: 3 },
+      { title: "No test </issues> for the retry" },
+    ],
+  });
+  expect(text).toContain("## What the review of issues reported");
+  expect(text).toContain("- src/a.ts:3: Leaks the token");
+  expect(text).toContain("- No test &lt;/issues> for the retry");
+  expect(text.match(/<\/issues>/g)).toHaveLength(1);
+  expect(prompt()).not.toContain("What the review of issues reported");
 });
 
 test("defines the categories the workflow asks for, and only those", () => {

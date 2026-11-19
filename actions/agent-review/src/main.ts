@@ -6,8 +6,8 @@
  *    the repository's prebuild, at the PR's head;
  * 2. the PR's diff written to files there (diff-files.sh), since the agent's
  *    sub-agents can't run git;
- * 3. two tasks for its coding agent (pi), at the same time: one reviews the PR's
- *    diff (merge base to head) for issues (prompt.ts), the other for
+ * 3. two tasks for its coding agent (pi), one after the other: one reviews the
+ *    PR's diff (merge base to head) for issues (prompt.ts), the other for
  *    improvements (improvements.ts), each with its own sub-agents, and each
  *    writes its findings to a file. After an earlier agent review, each gets
  *    that review's open findings of its kind, the replies to them and what
@@ -125,13 +125,17 @@ const IMPROVEMENTS_FILE = `${HOME}/agent-review-improvements.json`;
  * review. */
 const DIFF_DIR = `${HOME}/agent-review-diff`;
 /**
- * Between the two agents' starts. Two pi processes started at once under
- * pi-acp (0.0.33, on Atelier) can take each other down: one dies at its start,
- * and pi-acp with it on its next write (EPIPE), failing both tasks, or the dead
- * one's task stays running with no word. Seen in 3 of 4 simultaneous starts,
- * in none 15 seconds apart.
+ * The issues' agent's share of the agents' time, when the improvements' one
+ * follows: that one gets what's left. They run one after the other, not at
+ * once: pi-acp (0.0.33 and 0.0.34) keeps one live session. A new one closes
+ * the others (`closeAllExcept` in its `newSession`), which kills their pi
+ * process: a turn in flight is aborted, its sub-agents stopped, and its ACP
+ * prompt never answered (the task stays running), or pi-acp crashes on its
+ * next write to it (EPIPE), failing every task.
  */
-const STAGGER_MS = 30_000;
+const ISSUES_SHARE = 0.7;
+/** Below this, no time for the improvements: they're not reviewed. */
+const MIN_IMPROVEMENTS_MINUTES = 3;
 /** The agent's turns, past which the task is cancelled: the job's own timeout
  * is above this and the sandbox's boot. */
 const TASK_MINUTES = minutes("AGENT_TIMEOUT_MINUTES", 40);
@@ -158,18 +162,6 @@ const ALLOWED: Limits = (() => {
 })();
 /** The categories of improvement looked for. None: no agent looks for any. */
 const CATEGORIES = improvementCategories(ALLOWED);
-/** The sandbox's size, when the workflow picks it: two agents and their
- * sub-agents run in it at once. */
-function size(name: string, variable: string): number | undefined {
-  const value = process.env[variable]?.trim();
-  if (!value) return undefined;
-  const parsed = Number(value);
-  if (!Number.isInteger(parsed) || parsed < 1)
-    fail(`${name} must be a whole number, not "${value}"`);
-  return parsed;
-}
-const VCPUS = size("vcpus", "VCPUS");
-const MEMORY_MB = size("memory-mb", "MEMORY_MB");
 /** Toolboxes the sandbox gets on top of the org's auto-included ones (`whoami`
  * selectors), comma- or line-separated. */
 const TOOLBOXES = (process.env.TOOLBOXES ?? "").split(/[\s,]+/).filter(Boolean);
@@ -276,18 +268,7 @@ const COLLAPSE = `mutation($id: ID!) {
 async function createSandbox(headRef: string, head: string): Promise<string> {
   const created = await atelier.call<{ id: string }>("create_sandbox", {
     name: sandboxName(head),
-    spec: {
-      source: { image: IMAGE },
-      metadata: headMarker(head),
-      ...(VCPUS || MEMORY_MB
-        ? {
-            resources: {
-              ...(VCPUS ? { vcpus: VCPUS } : {}),
-              ...(MEMORY_MB ? { memoryMb: MEMORY_MB } : {}),
-            },
-          }
-        : {}),
-    },
+    spec: { source: { image: IMAGE }, metadata: headMarker(head) },
     ...(TOOLBOXES.length > 0 ? { toolboxes: TOOLBOXES } : {}),
     // The repository's prebuild, switched to the PR's branch (its build steps
     // re-run in the background).
@@ -711,15 +692,18 @@ async function reviewRange(
       new Set(review?.open.map((finding) => finding.id));
     const deadline = deadlineIn(TASK_MINUTES);
     const target = { sandboxId, cwd };
-    // Both agents at the same time, each in its own task, the improvements'
-    // started STAGGER_MS after the issues': it can fail without taking the
-    // issues' with it. The issues' failing fails the run, and the sandbox's
-    // destruction ends the other.
-    const issuesRun = reviewTask(
+    // One agent after the other, each in its own task (ISSUES_SHARE): the
+    // issues' first, the improvements' with what's left, told what the issues'
+    // reported. Its failure doesn't take the issues' review with it.
+    const issuesMinutes = withImprovements
+      ? Math.max(1, Math.round(TASK_MINUTES * ISSUES_SHARE))
+      : TASK_MINUTES;
+    const issues = await reviewTask(
       target,
       "issues",
       reviewPrompt({
         ...pull,
+        minutes: issuesMinutes,
         ...(issuesEarlier ? { earlier: issuesEarlier } : {}),
         subagents: subagents ? model : false,
         maxMinors: limits.minor,
@@ -728,37 +712,34 @@ async function reviewRange(
       }),
       REVIEW_FILE,
       ids(issuesEarlier),
-      deadline,
+      deadlineIn(issuesMinutes),
     );
-    const improvementsRun = withImprovements
-      ? sleep(STAGGER_MS)
-          .then(() =>
-            reviewTask(
-              target,
-              "improvements",
-              improvementsPrompt({
-                ...pull,
-                ...(improvementsEarlier
-                  ? { earlier: improvementsEarlier }
-                  : {}),
-                subagents: improvementSubagents ? model : false,
-                categories: CATEGORIES,
-                scope,
-                limits,
-                output: IMPROVEMENTS_FILE,
-              }),
-              IMPROVEMENTS_FILE,
-              ids(improvementsEarlier),
-              deadline,
-            ),
-          )
-          .then(
+    const minutesLeft = Math.floor((deadline.at - Date.now()) / 60_000);
+    const improvements = !withImprovements
+      ? undefined
+      : minutesLeft < MIN_IMPROVEMENTS_MINUTES
+        ? { failed: `${minutesLeft} minutes left after the issues' review` }
+        : await reviewTask(
+            target,
+            "improvements",
+            improvementsPrompt({
+              ...pull,
+              minutes: minutesLeft,
+              ...(improvementsEarlier ? { earlier: improvementsEarlier } : {}),
+              subagents: improvementSubagents ? model : false,
+              categories: CATEGORIES,
+              scope,
+              limits,
+              issues: issues.findings,
+              output: IMPROVEMENTS_FILE,
+            }),
+            IMPROVEMENTS_FILE,
+            ids(improvementsEarlier),
+            deadline,
+          ).then(
             (file) => ({ file }),
             (error: Error) => ({ failed: error.message }),
-          )
-      : undefined;
-    const issues = await issuesRun;
-    const improvements = await improvementsRun;
+          );
     // The whole files, each in one line: the run's log keeps every review,
     // whatever happens to the comments.
     console.log(`[agent-review] review file: ${JSON.stringify(issues)}`);

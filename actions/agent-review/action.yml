@@ -47,15 +47,6 @@ inputs:
       gets more, by the square root of its size. 0 turns a kind off; with
       every category at 0, no agent looks for improvements.
     default: ""
-  vcpus:
-    description: >-
-      vCPUs of the review's sandbox, where both agents and their sub-agents
-      run at once. Empty: Atelier's default.
-    default: ""
-  memory-mb:
-    description: >-
-      Memory of the review's sandbox, in MB. Empty: Atelier's default.
-    default: ""
   reviewer-model:
     description: >-
       Model the sub-agents run on, as pi-subagents names it
@@ -81,8 +72,9 @@ inputs:
     default: REVIEW.md
   agent-timeout-minutes:
     description: >-
-      The agent's time for a review, past which it is cancelled. Give the job
-      about 20 minutes more (the sandbox's boot, then the posting).
+      The agents' time for a review, both together (the issues' agent up to
+      70% of it), past which they are cancelled. Give the job about 20
+      minutes more (the sandbox's boot, then the posting).
     default: "40"
   bun-version:
     description: Bun version the action runs on.
@@ -126,8 +118,6 @@ runs:
         AGENT_TIMEOUT_MINUTES: ${{ inputs.agent-timeout-minutes }}
         SUBAGENTS: ${{ inputs.subagents }}
         ALLOWED_FINDINGS: ${{ inputs.allowed-findings }}
-        VCPUS: ${{ inputs.vcpus }}
-        MEMORY_MB: ${{ inputs.memory-mb }}
         REVIEWER_MODEL: ${{ inputs.reviewer-model }}
         TOOLBOXES: ${{ inputs.toolboxes }}
         INSTRUCTIONS: ${{ inputs.instructions }}

@@ -1,10 +1,11 @@
 /**
- * What the second agent is asked, in its own task in the same sandbox, at the
- * same time as the review of issues (prompt.ts): what would make the code the
- * PR brings faster, less duplicated, or closer to the way the repository does
- * things, without being a bug. Apart, so that neither agent weighs a bug against
- * a nicer loop, each gets its own sub-agents and time, and a failure here
- * leaves the review of issues whole.
+ * What the second agent is asked, in its own task in the same sandbox, after
+ * the review of issues (prompt.ts): what would make the code the PR brings
+ * faster, less duplicated, or closer to the way the repository does things,
+ * without being a bug. Apart, so that neither agent weighs a bug against a
+ * nicer loop, each gets its own sub-agents and time, and a failure here leaves
+ * the review of issues whole. It's told what that review reported, so as not to
+ * report it again.
  *
  * Its findings have a category instead of a severity, and never block
  * (github-review.ts). How many it reports per category grows with the diff
@@ -12,8 +13,9 @@
  * new ones in what changed since only, when the earlier review looked for them
  * (memory.ts's `ReviewState.improvements`): the rest of the PR had its review.
  */
-import type { Category } from "./github-review.ts";
+import type { Category, Finding } from "./github-review.ts";
 import {
+  authored,
   contextSection,
   earlierSection,
   instructionsSection,
@@ -56,6 +58,8 @@ export function improvementsPrompt(
     scope: "diff" | "delta" | "none";
     /** The new findings it may report per category (limits.ts). */
     limits: Readonly<Record<Category, number>>;
+    /** What the review of issues just reported. */
+    issues: readonly Pick<Finding, "title" | "path" | "line">[];
   },
 ): string {
   const earlier = pr.earlier;
@@ -140,13 +144,26 @@ export function improvementsPrompt(
     `Change nothing: no edit, commit or push, and no comment on GitHub. The CI job posts your review from the file
    below. Leave the other agent's files alone.`,
   ];
+  const issuesSection =
+    pr.issues.length > 0
+      ? `
+## What the review of issues reported
+
+It reported these just before you. Don't report them again as improvements, and don't suggest a change that would
+undo their fix.
+
+<issues>
+${authored(pr.issues.map((issue) => `- ${issue.path ? `${issue.path}${issue.line ? `:${issue.line}` : ""}: ` : ""}${issue.title}`).join("\n"))}
+</issues>
+`
+      : "";
 
   return `You are reviewing pull request #${pr.number} of ${pr.repository} for improvements: what would make the code it brings
-faster, less duplicated, or closer to the way this repository does things, without being a bug. Another agent, running
-at the same time in this sandbox, reviews it for issues (bugs, security, data, deployment, tests, rules broken with
-real consequences): leave those to it.
+faster, less duplicated, or closer to the way this repository does things, without being a bug. Another agent reviewed
+it for issues just before you, in this sandbox (bugs, security, data, deployment, tests, rules broken with real
+consequences): leave those to it.
 
-${contextSection(pr)}${earlierSection(earlier, dir, "improvements")}${instructionsSection(pr.instructions)}
+${contextSection(pr)}${earlierSection(earlier, dir, "improvements")}${issuesSection}${instructionsSection(pr.instructions)}
 ## What to look for
 
 These categories only:
