@@ -647,6 +647,34 @@ describe("a review after an earlier one", () => {
     });
   });
 
+  test("gives the issues the same ids with the improvements after them as without: the review posted before its improvements names them", () => {
+    const earlier = state({ open: [stored("F1")], nextId: 4 });
+    const issues = [
+      { severity: "major" as const, title: "a", body: "b" },
+      { severity: "minor" as const, title: "m1", body: "b" },
+      { severity: "minor" as const, title: "m2", body: "b" },
+      { severity: "minor" as const, title: "m3", body: "b" },
+    ];
+    const limits = { ...FIRST, minor: 2 };
+    const ids = (findings: ReviewFile["findings"]) =>
+      resolve(file({ findings }), earlier, NEXT, limits)
+        .findings.filter((finding) => !finding.category)
+        .map((finding) => [finding.id, finding.title]);
+    expect(
+      ids([
+        ...issues,
+        improvement("p1", "performance"),
+        improvement("d1", "duplication"),
+      ]),
+    ).toEqual(ids(issues));
+    expect(ids(issues)).toEqual([
+      ["F4", "a"],
+      ["F5", "m1"],
+      ["F6", "m2"],
+      ["F1", "Problem F1"],
+    ]);
+  });
+
   test("keeps an improvement's category in the state, and carries an earlier improvement past its limit", () => {
     const earlier = state({
       open: [

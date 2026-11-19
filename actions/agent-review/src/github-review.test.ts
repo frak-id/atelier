@@ -6,11 +6,13 @@ import {
   findingMarker,
   findingOf,
   HEADING,
+  PENDING_IMPROVEMENTS,
   type PostedComment,
   type PostedReview,
   parseReviewFile,
   postedByRun,
   runLink,
+  stoppedImprovements,
   supersede,
 } from "./github-review.ts";
 
@@ -238,6 +240,28 @@ describe("review", () => {
       "Adds things.\n\n💡 **Improvements not reviewed**: the improvements agent took too long\n\n<sub>footer</sub>",
     );
     expect(review([]).body).not.toContain("mprovement");
+  });
+
+  test("posted before its improvements, says they're on the way, before the minor findings; a stopped run says they won't come", () => {
+    const posted = buildReview(
+      {
+        summary: "Adds things.",
+        findings: [finding({ severity: "minor", title: "Nit" })],
+        improvements: { pending: true },
+      },
+      commentable,
+      "footer",
+    );
+    expect(posted.body).toContain(
+      `Adds things.\n\n${PENDING_IMPROVEMENTS}\n\n<details><summary>🟡 1 minor`,
+    );
+    expect(stoppedImprovements(posted.body)).toBe(
+      posted.body.replace(
+        PENDING_IMPROVEMENTS,
+        "💡 **Improvements not reviewed**: the run stopped before they were done.",
+      ),
+    );
+    expect(stoppedImprovements(review([]).body)).toBeUndefined();
   });
 
   test("with no improvement, says so with its agent's summary, before the minor findings", () => {

@@ -1,7 +1,8 @@
 /**
  * The comment that stands for a review in progress (README.md): posted once the
- * review's sandbox exists, with a link to watch its agent on Atelier, and
- * deleted once the review is posted, which replaces it. A review that fails, or
+ * review's sandbox exists, with a link to watch its agents on Atelier, and
+ * deleted once the review of issues is posted, which replaces it (the
+ * improvements are added to that review after). A review that fails, or
  * stops before it's posted, leaves it saying so. One per PR: each run updates
  * the one an earlier run left.
  */
@@ -54,8 +55,9 @@ function progressText(progress: Progress, commit: string): string {
   switch (progress.state) {
     case "running":
       return (
-        `🔎 **Agent review of ${commit} in progress**: [follow the reviewers on Atelier](${progress.sandboxUrl}) ` +
-        `(sign in with GitHub). Their review replaces this comment once it's posted: a few minutes, ` +
+        `🔎 **Agent review of ${commit} in progress**: looking for issues first, then improvements. ` +
+        `[Follow the reviewers on Atelier](${progress.sandboxUrl}) (sign in with GitHub). The review of issues ` +
+        `replaces this comment once it's posted, and the improvements are added to it after: a few minutes, ` +
         `${progress.minutes} at most.`
       );
     case "failed":

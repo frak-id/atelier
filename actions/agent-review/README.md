@@ -10,8 +10,9 @@ its head, one after the other, each with its own parallel sub-agents. Both read
 the repository's AGENTS.md rules. One looks for issues: correctness,
 security, data, deploy impact and tests. The other looks for improvements:
 performance, duplicated code, and the repository's conventions. Each writes
-its findings to a file. The job checks both and posts them as one review from
-`github-actions[bot]`, then destroys the sandbox.
+its findings to a file. The job posts the issues as a review from
+`github-actions[bot]` as soon as their agent is done, adds the improvements to
+that review once theirs is, then destroys the sandbox.
 
 ## Usage
 
@@ -111,7 +112,7 @@ comment by that account, `github-actions[bot]`.
    review bakes it, which can take longer than the 10 minutes a sandbox has to
    boot. A PR's sandbox boots from it, switched to the PR's branch.
 
-People in the account's org can watch the agent work: the progress comment
+People in the account's org can watch the agents work: the progress comment
 links to the sandbox's session in the console (sign in with GitHub).
 
 ## How a review goes
@@ -132,15 +133,24 @@ sub-agents and file:
   or a rule broken with real consequences, is the other agent's. It's told what
   the issues' agent reported, so as not to report it again.
 
-Apart, neither weighs a bug against a nicer loop, and a failure of the
-improvements' agent leaves the issues' review whole: it's posted, saying the
-improvements weren't reviewed. Both share the sandbox, its boot and the diff
-files, and the agents' time: the issues' agent has up to 70% of it, the
-improvements' one what's left. They can't run at the same time: pi-acp, which
-Atelier talks to pi through, keeps one live session, and a new one closes the
-others, killing their turn. An agent that shows no tool call and no reply in
-its first 5 minutes is taken for dead (its process can die without a word),
-not waited for until the time is up.
+Apart, neither weighs a bug against a nicer loop. Both share the sandbox, its
+boot and the diff files, and the agents' time: the issues' agent has up to 70%
+of it, the improvements' one what's left. They can't run at the same time:
+pi-acp, which Atelier talks to pi through, keeps one live session, and a new
+one closes the others, killing their turn. An agent that shows no tool call
+and no reply in its first 5 minutes is taken for dead (its process can die
+without a word), not waited for until the time is up.
+
+So that no one waits for the improvements to see the issues, the PR gets the
+review in steps:
+
+1. a progress comment while the issues' agent works;
+2. the review of issues, with its comments and verdict, in place of that
+   comment, as soon as that agent is done. A line says the improvements are on
+   the way;
+3. the same review with the improvements added to its body, once their agent
+   is done; or, if it failed or the run stopped, with a line saying they
+   weren't reviewed. The next review then looks for them across the whole PR.
 
 With `subagents: auto`, a diff of at most 500 changed lines, lockfiles aside,
 is reviewed by each agent alone: sub-agents start cold, and cost more than
@@ -185,8 +195,9 @@ the agent confirmed it, for whoever doubts it.
   category, under their agent's summary, never as comments. With none, the
   review has its agent's summary in a line, or says why it didn't run.
 - **While it runs**, a comment on the PR links to the sandbox's agent sessions
-  on Atelier. The review replaces it. A review that fails, or is cancelled or
-  times out with no newer push, leaves the comment saying so, as does one
+  on Atelier. The review of issues replaces it. A review that fails, or is
+  cancelled or times out with no newer push before that, leaves the comment
+  saying so, as does one
   cancelled by a push to a PR that is a draft now (no run reviews a draft). The
   next run takes it over, and closing the PR deletes it (`src/progress.ts`).
 - **It's an agent's opinion.** It comments, never approves or requests

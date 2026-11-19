@@ -501,8 +501,27 @@ export interface ReviewToPost {
   /** memory.ts's hidden block, for the next review. */
   state?: string;
   /** The review for improvements, when one ran: its summary, or why it has
-   * none. Its findings are in `findings`, with their category. */
-  improvements?: { summary: string } | { failed: string };
+   * none. Its findings are in `findings`, with their category. `pending`: it
+   * runs after this review is posted, which is then updated with it. */
+  improvements?: { summary: string } | { failed: string } | { pending: true };
+}
+
+/** The line of a review posted before its improvements (`pending`): what
+ * replaces it if the run stops before they're added (`stoppedImprovements`). */
+export const PENDING_IMPROVEMENTS = `${IMPROVEMENT} **Improvements on the way**: another agent is looking for them now. They're added to this review once it's done.`;
+
+const notReviewed = (reason: string) =>
+  `${IMPROVEMENT} **Improvements not reviewed**: ${quiet(reason)}`;
+
+/** A posted review's `body` with its pending improvements line saying they
+ * won't come, or undefined if it has none. */
+export function stoppedImprovements(body: string): string | undefined {
+  return body.includes(PENDING_IMPROVEMENTS)
+    ? body.replace(
+        PENDING_IMPROVEMENTS,
+        notReviewed("the run stopped before they were done."),
+      )
+    : undefined;
 }
 
 function sinceSection(since: Since): string[] {
@@ -619,13 +638,13 @@ export function buildReview(
   // Before the collapsed lists, so that a cut keeps it: why there's no
   // improvement listed, when the review for improvements ran.
   const improvementsNote =
-    review.improvements && "failed" in review.improvements
-      ? [
-          `${IMPROVEMENT} **Improvements not reviewed**: ${quiet(review.improvements.failed)}`,
-        ]
-      : improvements.length === 0 && improvementsSummary.length > 0
-        ? [`${IMPROVEMENT} **No improvement**: ${improvementsSummary[0]}`]
-        : [];
+    review.improvements && "pending" in review.improvements
+      ? [PENDING_IMPROVEMENTS]
+      : review.improvements && "failed" in review.improvements
+        ? [notReviewed(review.improvements.failed)]
+        : improvements.length === 0 && improvementsSummary.length > 0
+          ? [`${IMPROVEMENT} **No improvement**: ${improvementsSummary[0]}`]
+          : [];
   const listItem = (finding: PostedFinding) => {
     // Off the diff's lines, a suggestion can't be a GitHub suggestion: the
     // change, to apply by hand.

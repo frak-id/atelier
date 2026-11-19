@@ -6,21 +6,24 @@
  *    the repository's prebuild, at the PR's head;
  * 2. the PR's diff written to files there (diff-files.sh), since the agent's
  *    sub-agents can't run git;
- * 3. two tasks for its coding agent (pi), one after the other: one reviews the
- *    PR's diff (merge base to head) for issues (prompt.ts), the other for
- *    improvements (improvements.ts), each with its own sub-agents, and each
- *    writes its findings to a file. After an earlier agent review, each gets
- *    that review's open findings of its kind, the replies to them and what
- *    changed since (memory.ts). How many minor findings and improvements a
- *    review reports grows with the diff (limits.ts);
- * 4. the files read back, checked, merged, and posted as one review on the PR
- *    with the job's token (github-review.ts), with what the next review starts
- *    from hidden in it; the earlier reviews are collapsed. Without the
- *    improvements (their agent failed), the issues are posted all the same;
- * 5. the sandbox destroyed, whatever happened.
+ * 3. two tasks for its coding agent (pi), one after the other (they can't run
+ *    at once: `ISSUES_SHARE`), each with its own sub-agents, each writing its
+ *    findings to a file. After an earlier agent review, each gets that
+ *    review's open findings of its kind, the replies to them and what changed
+ *    since (memory.ts). How many minor findings and improvements a review
+ *    reports grows with the diff (limits.ts):
+ *    a. one reviews the PR's diff (merge base to head) for issues (prompt.ts).
+ *       Its file is read back, checked, and posted as a review on the PR with
+ *       the job's token (github-review.ts), saying improvements are on the
+ *       way, with what the next review starts from hidden in it; the earlier
+ *       reviews are collapsed;
+ *    b. the other for improvements (improvements.ts), told what the first
+ *       reported. Its findings are added to that review's body, which they
+ *       never leave (no comment). If it fails, the review says so;
+ * 4. the sandbox destroyed, whatever happened.
  *
  * From the sandbox's creation to the review's posting, a comment on the PR
- * links to the sandbox on Atelier, where the agent can be watched
+ * links to the sandbox on Atelier, where the agents can be watched
  * (progress.ts). The review replaces it; a failed review leaves it saying so.
  *
  * The mode is the first argument, else `MODE`, else `cleanup` when the PR was
@@ -60,6 +63,7 @@ import {
   type ReviewFile,
   type ReviewToPost,
   runLink,
+  stoppedImprovements,
   supersede,
   withoutComments,
 } from "./github-review.ts";
@@ -126,12 +130,18 @@ const IMPROVEMENTS_FILE = `${HOME}/agent-review-improvements.json`;
 const DIFF_DIR = `${HOME}/agent-review-diff`;
 /**
  * The issues' agent's share of the agents' time, when the improvements' one
- * follows: that one gets what's left. They run one after the other, not at
- * once: pi-acp (0.0.33 and 0.0.34) keeps one live session. A new one closes
- * the others (`closeAllExcept` in its `newSession`), which kills their pi
- * process: a turn in flight is aborted, its sub-agents stopped, and its ACP
- * prompt never answered (the task stays running), or pi-acp crashes on its
- * next write to it (EPIPE), failing every task.
+ * follows: that one gets what's left.
+ *
+ * Why one after the other, not at once: pi-acp (0.0.33 and 0.0.34) keeps one
+ * live session. A new one closes the others (`closeAllExcept` in its
+ * `newSession` and `loadSession`), which kills their pi process: a turn in
+ * flight is aborted, its sub-agents stopped, and its ACP prompt never answered
+ * (the task stays running), or pi-acp crashes on its next write to it (EPIPE),
+ * failing every task. Two pi processes alone don't interfere. To run them at
+ * once, pi-acp has to keep its sessions (an option upstream, or a patched build
+ * in the pi toolbox), or Atelier run one pi-acp per task; or each agent gets
+ * its own sandbox. Till then, the review is posted in steps (`reviewRange`) so
+ * that the issues don't wait for the improvements.
  */
 const ISSUES_SHARE = 0.7;
 /** Below this, no time for the improvements: they're not reviewed. */
@@ -714,96 +724,137 @@ async function reviewRange(
       ids(issuesEarlier),
       deadlineIn(issuesMinutes),
     );
-    const minutesLeft = Math.floor((deadline.at - Date.now()) / 60_000);
-    const improvements = !withImprovements
-      ? undefined
-      : minutesLeft < MIN_IMPROVEMENTS_MINUTES
-        ? { failed: `${minutesLeft} minutes left after the issues' review` }
-        : await reviewTask(
-            target,
-            "improvements",
-            improvementsPrompt({
-              ...pull,
-              minutes: minutesLeft,
-              ...(improvementsEarlier ? { earlier: improvementsEarlier } : {}),
-              subagents: improvementSubagents ? model : false,
-              categories: CATEGORIES,
-              scope,
-              limits,
-              issues: issues.findings,
-              output: IMPROVEMENTS_FILE,
-            }),
-            IMPROVEMENTS_FILE,
-            ids(improvementsEarlier),
-            deadline,
-          ).then(
-            (file) => ({ file }),
-            (error: Error) => ({ failed: error.message }),
-          );
     // The whole files, each in one line: the run's log keeps every review,
     // whatever happens to the comments.
     console.log(`[agent-review] review file: ${JSON.stringify(issues)}`);
-    if (improvements && "file" in improvements)
-      console.log(
-        `[agent-review] improvements file: ${JSON.stringify(improvements.file)}`,
-      );
-    else if (improvements)
-      warn(`improvements not reviewed: ${improvements.failed}`);
-    const other =
-      improvements && "file" in improvements ? improvements.file : undefined;
-    const result: ReviewFile = {
-      summary: issues.summary,
-      findings: [...issues.findings, ...(other ? other.findings : [])],
-      previous: [
-        ...issues.previous,
-        ...(other ? other.previous : []),
-        ...turnedOff,
-      ],
-    };
-    // Whether improvements were looked for up to this head: by its agent now,
-    // or by an earlier one, with nothing that counts changed since.
-    const improvementsCovered = withImprovements
-      ? other !== undefined
-      : CATEGORIES.length > 0 && scope === "none";
-
-    const {
-      findings,
-      dropped,
-      since: changes,
-      state,
-    } = resolve(result, earlier?.state, head, limits, improvementsCovered);
-    // Past what this review may report (limits.ts): in the log's review files
-    // above, not on the PR.
-    const past = LIMITED.filter((kind) => dropped[kind] > 0);
-    if (past.length > 0)
-      log(
-        `dropped, past what this review reports: ${past.map((kind) => `${dropped[kind]} ${kind}`).join(", ")}`,
-      );
-    const encoded = encodeState(state);
-    // Too big, the state keeps no open finding (memory.ts): the next review
-    // starts from it all the same, not from an older review's.
-    const kept = decodeState(encoded);
-    if ((kept?.open.length ?? 0) < state.open.length) {
-      warn(
-        `the review's state is too big to keep whole: the next review gets none of its ${state.open.length} ` +
-          `open findings, and only the last ${kept?.dismissed.length ?? 0} of its ${state.dismissed.length} dismissed ones`,
-      );
-    }
-    await postReview(
-      {
-        summary: result.summary,
+    // What to post of `file`: merged with the earlier review (memory.ts), past
+    // the limits dropped, with the state for the next. `covered`: improvements
+    // were looked for up to this head (`ReviewState.improvements`).
+    const toPost = (
+      file: ReviewFile,
+      covered: boolean,
+      improvements?: ReviewToPost["improvements"],
+    ): ReviewToPost => {
+      const {
+        findings,
+        dropped,
+        since: changes,
+        state,
+      } = resolve(file, earlier?.state, head, limits, covered);
+      // Past what this review may report (limits.ts): in the log's review
+      // files above, not on the PR.
+      const past = LIMITED.filter((kind) => dropped[kind] > 0);
+      if (past.length > 0)
+        log(
+          `dropped, past what this review reports: ${past.map((kind) => `${dropped[kind]} ${kind}`).join(", ")}`,
+        );
+      const encoded = encodeState(state);
+      // Too big, the state keeps no open finding (memory.ts): the next review
+      // starts from it all the same, not from an older review's.
+      const kept = decodeState(encoded);
+      if ((kept?.open.length ?? 0) < state.open.length) {
+        warn(
+          `the review's state is too big to keep whole: the next review gets none of its ${state.open.length} ` +
+            `open findings, and only the last ${kept?.dismissed.length ?? 0} of its ${state.dismissed.length} dismissed ones`,
+        );
+      }
+      return {
+        summary: file.summary,
         findings,
         ...(changes ? { since: changes } : {}),
         state: encoded,
-        ...(improvements
+        ...(improvements ? { improvements } : {}),
+      };
+    };
+    const issuesFile: ReviewFile = {
+      ...issues,
+      previous: [...issues.previous, ...turnedOff],
+    };
+    const minutesLeft = Math.floor((deadline.at - Date.now()) / 60_000);
+    if (!withImprovements || minutesLeft < MIN_IMPROVEMENTS_MINUTES) {
+      const tooLate = `${minutesLeft} minutes left after the issues' review`;
+      if (withImprovements) warn(`improvements not reviewed: ${tooLate}`);
+      await postReview(
+        toPost(
+          issuesFile,
+          // By an earlier review, with nothing that counts changed since.
+          !withImprovements && CATEGORIES.length > 0 && scope === "none",
+          withImprovements ? { failed: tooLate } : undefined,
+        ),
+        base,
+        head,
+      );
+      return;
+    }
+
+    // The issues' review now, which replaces the progress comment; the
+    // improvements added to it once their agent is done. Till then, it shows
+    // none of the earlier ones that agent rules on: they stay in its state, for
+    // the next run if this one stops here.
+    const first = toPost(issuesFile, false, { pending: true });
+    const ruledOnLater = new Set(improvementsEarlier?.open.map((f) => f.id));
+    const posted = await postReview(
+      {
+        ...first,
+        findings: first.findings.filter((finding) => !finding.category),
+        ...(first.since
           ? {
-              improvements:
-                "file" in improvements
-                  ? { summary: improvements.file.summary }
-                  : { failed: improvements.failed },
+              since: {
+                ...first.since,
+                unchecked: first.since.unchecked.filter(
+                  (id) => !ruledOnLater.has(id),
+                ),
+              },
             }
           : {}),
       },
+      base,
+      head,
+    );
+    await removeProgress();
+
+    const improvements = await reviewTask(
+      target,
+      "improvements",
+      improvementsPrompt({
+        ...pull,
+        minutes: minutesLeft,
+        ...(improvementsEarlier ? { earlier: improvementsEarlier } : {}),
+        subagents: improvementSubagents ? model : false,
+        categories: CATEGORIES,
+        scope,
+        limits,
+        issues: issues.findings,
+        output: IMPROVEMENTS_FILE,
+      }),
+      IMPROVEMENTS_FILE,
+      ids(improvementsEarlier),
+      deadline,
+    ).then(
+      (file) => ({ file }),
+      (error: Error) => ({ failed: error.message }),
+    );
+    if ("file" in improvements)
+      console.log(
+        `[agent-review] improvements file: ${JSON.stringify(improvements.file)}`,
+      );
+    else warn(`improvements not reviewed: ${improvements.failed}`);
+    const other = "file" in improvements ? improvements.file : undefined;
+    // The issues' findings first: they get the same ids as in the review
+    // posted, whose comments name them.
+    await updateReview(
+      posted,
+      toPost(
+        {
+          summary: issues.summary,
+          findings: [...issues.findings, ...(other?.findings ?? [])],
+          previous: [...issuesFile.previous, ...(other?.previous ?? [])],
+        },
+        other !== undefined,
+        "file" in improvements
+          ? { summary: improvements.file.summary }
+          : { failed: improvements.failed },
+      ),
       base,
       head,
     );
@@ -812,25 +863,36 @@ async function reviewRange(
   }
 }
 
+/** A posted review, for `updateReview`: its id (none in a dry run), and the
+ * lines its findings could be comments on (none if GitHub refused them). */
+interface Posted {
+  id?: number;
+  commentable: Map<string, Map<number, number>>;
+}
+
+const reviewFooter = (base: string, head: string) =>
+  `Reviewed ${base.slice(0, 7)}...${head.slice(0, 7)} by a coding agent on Atelier: check a finding before ` +
+  `acting on it. <a href="${runUrl}">Run</a>`;
+
 async function postReview(
   result: ReviewToPost,
   base: string,
   head: string,
-): Promise<void> {
+): Promise<Posted> {
   const files = await githubAll<{ filename: string; patch?: string }>(
     `/pulls/${number}/files`,
   );
-  const footer =
-    `Reviewed ${base.slice(0, 7)}...${head.slice(0, 7)} by a coding agent on Atelier: check a finding before ` +
-    `acting on it. <a href="${runUrl}">Run</a>`;
+  const footer = reviewFooter(base, head);
   const post = (payload: { body: string; comments: unknown[] }) =>
     postOnce(payload, head);
-  const payload = buildReview(result, commentableLines(files), footer);
+  const commentable = commentableLines(files);
+  const payload = buildReview(result, commentable, footer);
   if (mode === "dry-run") {
     console.log(JSON.stringify(payload, null, 2));
-    return;
+    return { commentable };
   }
   let posted: PostedReview;
+  let placed = commentable;
   try {
     posted = await post(payload);
     log(
@@ -844,12 +906,44 @@ async function postReview(
       `review with comments refused (${(error as Error).message}): posting it without them`,
     );
     posted = await post(withoutComments(result, footer));
+    placed = new Map();
     log(`posted: ${result.findings.length} findings, all in the review's body`);
   }
   // The new review is up: a failure here leaves the earlier ones in view, a
   // warning rather than a red check.
   await supersedeEarlierReviews(posted).catch((error) =>
     warn(`earlier reviews left in view: ${error}`),
+  );
+  return { id: posted.id, commentable: placed };
+}
+
+/**
+ * Rewrites the body of the review `posted` as `result`'s: what its improvements
+ * add. Its comments stay: improvements are never comments, and its issues are
+ * the same, with the same ids. A failure only warns: the issues' review is up.
+ */
+async function updateReview(
+  posted: Posted,
+  result: ReviewToPost,
+  base: string,
+  head: string,
+): Promise<void> {
+  const { body } = buildReview(
+    result,
+    posted.commentable,
+    reviewFooter(base, head),
+  );
+  if (posted.id === undefined) {
+    console.log(JSON.stringify({ body }, null, 2));
+    return;
+  }
+  const improvements = result.findings.filter((f) => f.category).length;
+  await github(`/pulls/${number}/reviews/${posted.id}`, {
+    method: "PUT",
+    body: JSON.stringify({ body }),
+  }).then(
+    () => log(`review updated: ${improvements} improvements`),
+    (error) => warn(`review not updated with its improvements: ${error}`),
   );
 }
 
@@ -889,16 +983,33 @@ async function postOnce(
 }
 
 /**
- * The run was cancelled before posting its review. With a newer push, that
- * push's run takes the progress comment over, unless the PR is a draft now: the
- * workflow skips drafts (README.md), so no run does until it's ready for
- * review, and the comment says it stopped. With the PR closed, the cleanup job
- * deletes it; otherwise (cancelled by hand, or out of time), it says it
- * stopped.
+ * The run was cancelled. After posting its review of issues, before adding the
+ * improvements: the review says they won't come. Before posting it: with a
+ * newer push, that push's run takes the progress comment over, unless the PR is
+ * a draft now: the workflow skips drafts (README.md), so no run does until it's
+ * ready for review, and the comment says it stopped. With the PR closed, the
+ * cleanup job deletes it; otherwise (cancelled by hand, or out of time), it
+ * says it stopped.
  */
 async function stopped(head: string): Promise<void> {
   const pr = await github<PullRequest>(`/pulls/${number}`);
   if (pr.state !== "open") return;
+  // Posted before its improvements: they won't come.
+  const posted = postedByRun(
+    await githubAll<PostedReview>(`/pulls/${number}/reviews`),
+    JOB_ACCOUNT,
+    head,
+    runUrl,
+  );
+  if (posted) {
+    const body = stoppedImprovements(posted.body ?? "");
+    if (body)
+      await github(`/pulls/${number}/reviews/${posted.id}`, {
+        method: "PUT",
+        body: JSON.stringify({ body }),
+      }).catch((error) => warn(`review left awaiting improvements: ${error}`));
+    return;
+  }
   if (pr.draft) await showProgress({ state: "stopped", draft: true }, head);
   else if (pr.head.sha === head) await showProgress({ state: "stopped" }, head);
 }
