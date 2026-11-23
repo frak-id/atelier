@@ -146,7 +146,17 @@ RUN curl -fsSL https://bun.sh/install | BUN_INSTALL=/home/dev/.bun bash \
     && echo 'export PATH="$BUN_INSTALL/bin:$PATH"' >> /etc/profile.d/bun.sh
 
 # Layer 5: Directory structure + permissions
+# The empty home directories end up in /home/skel, the overlay's lowest
+# layer. A directory that no lower layer has when something first writes
+# into it is created opaque in the upper. A prebuild bakes with no toolset,
+# so a ~/.local it creates (mise, gh) would be opaque in the snapshot and
+# hide the ~/.local/bin of every toolset mounted over it later. Present
+# here, these directories always merge. Spelled out: /bin/sh has no brace
+# expansion.
 RUN mkdir -p /etc/sandbox/secrets /var/log/sandbox \
+    /home/dev/.local/bin /home/dev/.local/lib \
+    /home/dev/.local/share /home/dev/.local/state \
+    /home/dev/.config /home/dev/.pi/agent \
     /.atelier \
     && chown -R dev:dev /home/dev /var/log/sandbox /etc/sandbox /.atelier \
     && chmod 775 /etc/sandbox /etc/sandbox/secrets /var/log/sandbox /.atelier
