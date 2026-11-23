@@ -35,8 +35,8 @@ export interface ProvisionAgentResult {
 /**
  * Wait for the agent to come alive, then run the ordered provisioning:
  *   1. materialize toolsets (assembles `/home/dev`, even with an empty list —
- *      see BootInput.toolsets), push config, and fetch the sshd host key(s),
- *      all concurrently;
+ *      see BootInput.toolsets), then push config; the sshd host key(s) are
+ *      fetched alongside;
  *   2. write spec files last, after the overlay is assembled.
  *
  * Also the whole recovery of a guest that restarted without the runtime
@@ -56,15 +56,23 @@ export async function provisionAgent(
     throw new Error(`Sandbox ${sandboxId} agent did not become ready`);
   }
 
-  // Three independent agent calls run concurrently: materialize the toolset
-  // overlay (ALWAYS called, even empty — it's the only place `/home/dev` is
-  // assembled), push config, and fetch the sshd host key(s) for pinning.
-  // Materialize must land before files[] so spec-level files can override org
-  // toolset config (last-wins layering).
-  const [, , sshHostKeys] = await Promise.all([
-    agent.materializeToolsets(sandboxId, input.toolsets ?? []),
-    agent.putConfig(sandboxId, specToAgentConfig(sandboxId, spec)),
+  // Materialize the toolset overlay (ALWAYS called, even empty — it's the
+  // only place `/home/dev` is assembled), and only then push config. A pushed
+  // config is the agent's "provisioned" mark: `configured: true` stops
+  // `RuntimeService.recoverRestarted` from retrying, and an agent that
+  // crash-restarts with a persisted config reconciles its processes at once.
+  // Pushed before the overlay is assembled, a failed or interrupted
+  // materialize would leave processes on a bare `/home/dev` that nothing
+  // repairs. The sshd host key fetch is independent and runs alongside.
+  // Materialize must also land before files[] so spec-level files can
+  // override org toolset config (last-wins layering).
+  const [sshHostKeys] = await Promise.all([
     agent.getSshHostKeys(sandboxId),
+    agent
+      .materializeToolsets(sandboxId, input.toolsets ?? [])
+      .then(() =>
+        agent.putConfig(sandboxId, specToAgentConfig(sandboxId, spec)),
+      ),
   ]);
   if (spec.files && spec.files.length > 0) {
     await agent.writeFiles(sandboxId, toFileWrites(spec.files));

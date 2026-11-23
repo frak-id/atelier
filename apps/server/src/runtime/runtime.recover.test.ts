@@ -30,6 +30,7 @@ function restartableAgent() {
     calls: [] as string[],
     invalidated: [] as string[],
     hookFails: false,
+    materializeFails: false,
   };
   agent.health = async () => {
     if (!state.reachable) throw new Error("connect ECONNREFUSED");
@@ -45,6 +46,10 @@ function restartableAgent() {
     state.configured = true;
   };
   agent.materializeToolsets = async () => {
+    // Settles on a later tick, as the real pull does: a config push that
+    // does not wait for it would land first.
+    await Bun.sleep(1);
+    if (state.materializeFails) throw new Error("pull timed out");
     state.calls.push("materialize");
   };
   agent.writeFiles = async (_id, files) => {
@@ -96,15 +101,15 @@ describe("recoverRestarted", () => {
     agent.getSshHostKeys = async () => [NEW_HOST_KEY];
 
     expect(await runtime.recoverRestarted()).toEqual(["sb"]);
-    // Resume's order: files/env, then onResume, then processes. No
-    // postCreate: the disk is the sandbox's own.
-    expect(state.calls.filter((c) => c !== "materialize")).toEqual([
+    // Resume's order: home overlay, then config, files/env, onResume, then
+    // processes. No postCreate: the disk is the sandbox's own.
+    expect(state.calls).toEqual([
+      "materialize",
       "config",
       "files",
       "onResume",
       "reconcile",
     ]);
-    expect(state.calls).toContain("materialize");
     const record = sandboxes.get("sb");
     expect(record?.status).toBe("running");
     expect(record?.generated.sshHostKeys).toEqual([NEW_HOST_KEY]);
@@ -142,6 +147,21 @@ describe("recoverRestarted", () => {
     expect(await runtime.recoverRestarted()).toEqual([]);
     expect(state.calls).toEqual([]);
     expect(sandboxes.get("sb")?.status).toBe("paused");
+  });
+
+  test("a failing materialize pushes no config, so the next pass retries", async () => {
+    const { runtime, sandboxes, state } = await setup();
+    state.configured = false;
+    state.materializeFails = true;
+
+    expect(await runtime.recoverRestarted()).toEqual([]);
+    expect(state.calls).toEqual([]);
+    expect(state.configured).toBe(false);
+    expect(sandboxes.get("sb")?.status).toBe("running");
+
+    state.materializeFails = false;
+    expect(await runtime.recoverRestarted()).toEqual(["sb"]);
+    expect(state.calls.slice(0, 2)).toEqual(["materialize", "config"]);
   });
 
   test("a failing onResume hook keeps the sandbox running, new host key pinned", async () => {
