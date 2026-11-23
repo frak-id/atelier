@@ -94,13 +94,28 @@ EOF
 # creates a short-lived buildctl Job in the SANDBOX namespace whose pod mTLS's
 # to buildkitd. Secrets are namespace-scoped, so that namespace needs its own
 # copy of the client-cert secret. Replicate it from $NS_BUILD (idempotent).
+#
+# Only the type and the data are copied. cert-manager owns the source and
+# (enableCertificateOwnerRef) gives it an ownerReference to its Certificate
+# in $NS_BUILD. Copied along, that reference either has no uid (the API
+# rejects the create, after the delete) or points across namespaces (the
+# garbage collector deletes the copy). The manifest is rendered before the
+# delete, so a failed read leaves the old copy in place.
 sync_build_tls() {
   say "Syncing buildkit-client-tls into $NS_SANDBOX"
+  local manifest
+  # shellcheck disable=SC2016 # $k and $v are go-template variables
+  manifest="$(K -n "$NS_BUILD" get secret buildkit-client-tls -o go-template='apiVersion: v1
+kind: Secret
+metadata:
+  name: buildkit-client-tls
+type: {{.type}}
+data:
+{{range $k, $v := .data}}  {{$k}}: {{$v}}
+{{end}}')"
   K -n "$NS_SANDBOX" delete secret buildkit-client-tls \
     --ignore-not-found >/dev/null 2>&1 || true
-  K -n "$NS_BUILD" get secret buildkit-client-tls -o yaml \
-    | sed -E '/^[[:space:]]*(namespace|resourceVersion|uid|creationTimestamp):/d' \
-    | K -n "$NS_SANDBOX" create -f - >/dev/null
+  printf '%s\n' "$manifest" | K -n "$NS_SANDBOX" create -f - >/dev/null
 }
 
 # buildctl invocation (mTLS to the shared buildkitd). $1 = extra buildctl args.
