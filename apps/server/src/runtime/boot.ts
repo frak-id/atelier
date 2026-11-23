@@ -55,6 +55,14 @@ export interface BootInput {
    * never touch.
    */
   toolsets?: string[];
+  /**
+   * The home paths those toolsets provide (their records' declared
+   * `paths`). Before materialize, the boot clears the overlay opaque flag on
+   * each of them and on every directory above them in the upper, so a
+   * snapshot taken under other lowers does not hide them
+   * (`unhide-toolset-dirs.ts`).
+   */
+  toolsetPaths?: string[];
 }
 
 export interface BootOutput {

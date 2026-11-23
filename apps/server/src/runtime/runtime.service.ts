@@ -289,6 +289,15 @@ export class RuntimeService {
     return bootSpec;
   }
 
+  /** The home paths a spec's toolsets provide, from their records (empty
+   * for a toolset with no record). A boot clears the opaque flag on them
+   * before mounting (`BootInput.toolsetPaths`). */
+  private toolsetPaths(spec: SandboxSpec): string[] {
+    return (spec.toolsets ?? []).flatMap(
+      (t) => this.toolsets.getEntry(t.ref)?.paths ?? [],
+    );
+  }
+
   /** Insert the `creating` record — the sandbox is visible from here on. */
   private registerCreating(id: string, spec: SandboxSpec): void {
     const now = new Date().toISOString();
@@ -332,6 +341,7 @@ export class RuntimeService {
           snapshotName,
           preserveDisk: keepDisk,
           toolsets,
+          toolsetPaths: this.toolsetPaths(spec),
         },
         this.agent,
       );
@@ -612,6 +622,7 @@ export class RuntimeService {
             ? undefined
             : (record.pauseSnapshotRef ?? fromSource.snapshotName),
           toolsets,
+          toolsetPaths: this.toolsetPaths(spec),
         },
         this.agent,
       );
@@ -866,7 +877,10 @@ export class RuntimeService {
       const { podIp, sshHostKeys } = await provisionAgent(
         id,
         await this.toBootSpec(record.spec),
-        { toolsets: resolveSpecToolsets(record.spec) },
+        {
+          toolsets: resolveSpecToolsets(record.spec),
+          toolsetPaths: this.toolsetPaths(record.spec),
+        },
         this.agent,
       );
       // Pin the regenerated sshd host key now, so SSH works again even if a

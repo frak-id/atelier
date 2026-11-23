@@ -233,6 +233,14 @@ process starts (see [Constraints](constraints.md#toolsets-are-content-addressed-
 Org toolboxes build to `toolsets/tb/<toolboxId>`; see
 [toolbox-versions.md](toolbox-versions.md).
 
+A snapshot's upper layer can hide a toolset. overlayfs marks a directory
+opaque when it is created in the upper while no lower has it, and a
+prebuild bakes with no toolset. Two guards: dev-base ships the usual
+toolset parents (`~/.local/{bin,lib,share,state}`, `~/.config`,
+`~/.pi/agent`) empty in `/home/skel`, so they always merge. Before each
+materialize, the server also clears the flag on every declared toolset path
+and the directories above it (`runtime/unhide-toolset-dirs.ts`).
+
 ### Orgs, roles and secrets
 
 - **Roles.** An org member is an `owner` or a `member`. Any member can create

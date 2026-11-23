@@ -10,6 +10,7 @@ import { customAlphabet } from "nanoid";
 import { type AgentClient, toFileWrites } from "./agent/index.ts";
 import { specToAgentConfig } from "./agent-config.ts";
 import type { BootInput } from "./boot.ts";
+import { unhideToolsetDirs } from "./unhide-toolset-dirs.ts";
 
 /** A fresh per-sandbox agent bearer token (the agent refuses calls without
  * it). */
@@ -34,9 +35,10 @@ export interface ProvisionAgentResult {
 
 /**
  * Wait for the agent to come alive, then run the ordered provisioning:
- *   1. materialize toolsets (assembles `/home/dev`, even with an empty list —
- *      see BootInput.toolsets), then push config; the sshd host key(s) are
- *      fetched alongside;
+ *   1. clear the opaque flag on the toolsets' directories in the upper
+ *      (see BootInput.toolsetPaths), materialize toolsets (assembles
+ *      `/home/dev`, even with an empty list — see BootInput.toolsets), then
+ *      push config; the sshd host key(s) are fetched alongside;
  *   2. write spec files last, after the overlay is assembled.
  *
  * Also the whole recovery of a guest that restarted without the runtime
@@ -46,7 +48,7 @@ export interface ProvisionAgentResult {
 export async function provisionAgent(
   sandboxId: string,
   spec: SandboxSpec,
-  input: Pick<BootInput, "toolsets">,
+  input: Pick<BootInput, "toolsets" | "toolsetPaths">,
   agent: AgentClient,
 ): Promise<ProvisionAgentResult> {
   const { ready, podIp } = await agent.waitForAgent(sandboxId, {
@@ -65,11 +67,12 @@ export async function provisionAgent(
   // materialize would leave processes on a bare `/home/dev` that nothing
   // repairs. The sshd host key fetch is independent and runs alongside.
   // Materialize must also land before files[] so spec-level files can
-  // override org toolset config (last-wins layering).
+  // override org toolset config (last-wins layering). The opaque flags are
+  // cleared first: the upper must not change once the overlay is mounted.
   const [sshHostKeys] = await Promise.all([
     agent.getSshHostKeys(sandboxId),
-    agent
-      .materializeToolsets(sandboxId, input.toolsets ?? [])
+    unhideToolsetDirs(agent, sandboxId, input.toolsetPaths ?? [])
+      .then(() => agent.materializeToolsets(sandboxId, input.toolsets ?? []))
       .then(() =>
         agent.putConfig(sandboxId, specToAgentConfig(sandboxId, spec)),
       ),
