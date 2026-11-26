@@ -20,7 +20,8 @@ Two artifacts, on two sides of the runtime seam:
   Fields: `{ slug, description, source?, build[], paths[], harness?, processes?,
   ports?, files?, autoInject }`. It is the editable **recipe**: `source` = git/image,
   `build[]` = shell steps (e.g. `npm install -g --prefix ~/.local
-  @earendil-works/pi-coding-agent pi-acp @jmfederico/pi-web`), `paths[]` =
+  @earendil-works/pi-coding-agent @konfeature/pi-acp @jmfederico/pi-web`),
+  `paths[]` =
   home-relative paths to capture into the artifact.
 
 - **Toolset** — the built, **immutable** OCI artifact in the Zot registry.

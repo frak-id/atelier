@@ -4,10 +4,13 @@
  * declares ONLY how the server talks to pi: the primary `acp` process
  * (stdio-bridged) plus display annotations. Everything else pi needs — the
  * `pi-acp` binary and the pi-web UI (session daemon + web server, its port and
- * processes) — is delivered by a toolbox/toolset that installs `pi`/`pi-acp`
- * (and, for the web UI, `@jmfederico/pi-web`) under `~/.local` and contributes
- * the pi-web processes/ports itself. The harness never assumes those binaries
- * exist, so it declares no pi-web process or port.
+ * processes) — is delivered by a toolbox/toolset that installs `pi` and
+ * `@konfeature/pi-acp` (and, for the web UI, `@jmfederico/pi-web`) under
+ * `~/.local` and contributes the pi-web processes/ports itself. The harness
+ * never assumes those binaries exist, so it declares no pi-web process or port.
+ * `@konfeature/pi-acp` is a fork of `pi-acp` with the same binary that runs
+ * several sessions at once; upstream `pi-acp` also works, but a new session
+ * closes the others.
  *
  * `pi` itself may live in either of two places: pi's managed install
  * (`curl pi.dev/install.sh | sh`, also what `pi update` migrates to), whose

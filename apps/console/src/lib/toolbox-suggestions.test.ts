@@ -58,8 +58,17 @@ describe("toolbox suggestions", () => {
     ]) {
       expect(pi?.input.build).toContain(`pi install npm:${name}`);
     }
-    // The harness runs ~/.local/bin/pi-acp.
+    // The harness runs ~/.local/bin/pi-acp, the bin of the @konfeature/pi-acp
+    // fork, not of upstream pi-acp, which closes a session's siblings.
     expect(pi?.input.paths).toContain("~/.local/bin/pi-acp");
+    const install = pi?.input.build[0] ?? "";
+    expect(install).toContain(" @konfeature/pi-acp");
+    expect(install).not.toMatch(/\spi-acp(\s|@|$)/);
+    // Upstream owns the same bin: a refresh over it must remove it first.
+    expect(pi?.input.refresh?.[0]).toBe(
+      "npm uninstall -g --prefix ~/.local pi-acp",
+    );
+    expect(pi?.input.refresh?.[1]).toContain("@konfeature/pi-acp@latest");
 
     const files = pi?.input.files ?? [];
     const keyFile = files.find((file) => isSecretRef(file.content));

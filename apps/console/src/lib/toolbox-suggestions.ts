@@ -58,10 +58,15 @@ const OPENCODE: ToolboxSuggestion = {
 
 // ── pi + CLIProxyAPI ────────────────────────────────────────────────────────
 
-/** pi itself plus `pi-acp`, the ACP bridge the pi harness runs: npm globals
- * under `~/.local` (the harness runs `~/.local/bin/pi-acp`). */
-const PI_CORE = ["@earendil-works/pi-coding-agent", "pi-acp"];
+/** pi itself plus `@konfeature/pi-acp`, the ACP bridge the pi harness runs: a
+ * fork of `pi-acp` that runs several sessions at once on one connection.
+ * npm globals under `~/.local` (the harness runs `~/.local/bin/pi-acp`). */
+const PI_CORE = ["@earendil-works/pi-coding-agent", "@konfeature/pi-acp"];
 const INSTALL_PI = "npm install -g --prefix ~/.local";
+/** Upstream `pi-acp` owns the same `~/.local/bin/pi-acp`, so installing the
+ * fork over a version built with it fails (EEXIST): a refresh removes it
+ * first, a no-op once it's gone. */
+const UNINSTALL_UPSTREAM_PI_ACP = "npm uninstall -g --prefix ~/.local pi-acp";
 
 /** pi packages, installed into `~/.pi/agent/npm` and listed in
  * `~/.pi/agent/settings.json` by `pi install`. */
@@ -138,6 +143,7 @@ const PI_CLIPROXY: ToolboxSuggestion = {
       },
     ],
     refresh: [
+      UNINSTALL_UPSTREAM_PI_ACP,
       `${INSTALL_PI} ${PI_CORE.map((name) => `${name}@latest`).join(" ")}`,
       "pi update --extensions",
     ],
