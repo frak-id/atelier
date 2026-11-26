@@ -119,7 +119,7 @@ re-applies it.
 | Key | Env var (locks the key) | Default |
 |-----|-------------------------|---------|
 | `sandbox.defaultImage` | `ATELIER_DEFAULT_IMAGE` | `dev-base` |
-| `sandbox.agentImage` | `ATELIER_AGENT_IMAGE` | `ghcr.io/frak-id/sandbox-agent:<release>` |
+| `sandbox.agentImage` | `ATELIER_AGENT_IMAGE` | `ghcr.io/konfeature/sandbox-agent:<release>` |
 | `sandbox.defaultVcpus` | `ATELIER_DEFAULT_VCPUS` | `2` |
 | `sandbox.defaultMemoryMb` | `ATELIER_DEFAULT_MEMORY_MB` | `4096` |
 | `kubernetes.defaultVolumeSize` | `ATELIER_K8S_DEFAULT_VOLUME_SIZE` | `10Gi` |

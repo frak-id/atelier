@@ -22,7 +22,7 @@ const PACKAGE_JSON_PATHS = [
 
 /**
  * Files that pin the default in-pod agent image to the release version
- * (`ghcr.io/frak-id/sandbox-agent:<version>`, published by release.yml next to
+ * (`ghcr.io/konfeature/sandbox-agent:<version>`, published by release.yml next to
  * `:latest`). The server and the agent it bakes into base images move
  * together, so a rebuilt base never pulls an agent from another release.
  */
@@ -32,7 +32,8 @@ const AGENT_IMAGE_PIN_PATHS = [
   "apps/server/schemas/sandbox.config.full-example.json",
   "apps/server/src/runtime/registry/seeds/dev-base/Dockerfile",
 ];
-const AGENT_IMAGE_PIN_RE = /(ghcr\.io\/frak-id\/sandbox-agent:)\d+\.\d+\.\d+/g;
+const AGENT_IMAGE_PIN_RE =
+  /(ghcr\.io\/konfeature\/sandbox-agent:)\d+\.\d+\.\d+/g;
 
 const CARGO_TOML_PATH = "apps/agent/Cargo.toml";
 const CARGO_LOCK_PATH = "apps/agent/Cargo.lock";

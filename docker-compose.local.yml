@@ -19,7 +19,7 @@
 # --------------------------------------------------------------------------
 services:
   server:
-    image: ghcr.io/frak-id/atelier-server:${ATELIER_TAG:-latest}
+    image: ghcr.io/konfeature/atelier-server:${ATELIER_TAG:-latest}
     network_mode: host
     restart: unless-stopped
     volumes:
@@ -29,13 +29,13 @@ services:
       DATA_DIR: /data
       ATELIER_SERVER_MODE: local
       ATELIER_RUNTIME_BACKEND: docker
-      ATELIER_DEFAULT_IMAGE: ghcr.io/frak-id/atelier-dev-base:${ATELIER_TAG:-latest}
+      ATELIER_DEFAULT_IMAGE: ghcr.io/konfeature/atelier-dev-base:${ATELIER_TAG:-latest}
       ATELIER_SERVER_HOST: 0.0.0.0
       ATELIER_SERVER_PORT: "4000"
       ATELIER_GITHUB_TOKEN: ${GITHUB_TOKEN:-}
 
   console:
-    image: ghcr.io/frak-id/atelier-console:${ATELIER_TAG:-latest}
+    image: ghcr.io/konfeature/atelier-console:${ATELIER_TAG:-latest}
     network_mode: host
     restart: unless-stopped
     depends_on:

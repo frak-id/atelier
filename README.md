@@ -81,7 +81,7 @@ sub-agents, and posts its findings as one review. It drives `/mcp` as a
 service account:
 
 ```yaml
-- uses: frak-id/atelier/actions/agent-review@main
+- uses: KONFeature/atelier/actions/agent-review@main
   with:
     atelier-url: https://atelier.example.com
     api-key: ${{ secrets.ATELIER_REVIEWER_API_KEY }}
@@ -93,7 +93,7 @@ release notes, migrates the configuration, replaces what the new versions
 deprecate, runs the checks, and its service account opens one pull request:
 
 ```yaml
-- uses: frak-id/atelier/actions/agent-bump@main
+- uses: KONFeature/atelier/actions/agent-bump@main
   with:
     atelier-url: https://atelier.example.com
     api-key: ${{ secrets.ATELIER_BUMP_API_KEY }}

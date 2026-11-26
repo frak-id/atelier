@@ -3,8 +3,8 @@
 #
 # Produces TWO images from one Dockerfile:
 #
-#   server   — Bun API server, apps/server        (ghcr.io/frak-id/atelier-server)
-#   console  — nginx serving apps/console SPA +    (ghcr.io/frak-id/atelier-console)
+#   server   — Bun API server, apps/server        (ghcr.io/konfeature/atelier-server)
+#   console  — nginx serving apps/console SPA +    (ghcr.io/konfeature/atelier-console)
 #              reverse-proxying to the server
 #
 # Build:

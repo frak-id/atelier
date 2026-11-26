@@ -44,14 +44,14 @@ jobs:
       contents: read
       pull-requests: read
     steps:
-      - uses: frak-id/atelier/actions/agent-bump@main
+      - uses: KONFeature/atelier/actions/agent-bump@main
         with:
           atelier-url: https://atelier.example.com
           api-key: ${{ secrets.ATELIER_BUMP_API_KEY }}
       # Cancelled mid-update (by hand, the timeout): the step above could not
       # destroy its sandbox. This one does.
       - if: cancelled()
-        uses: frak-id/atelier/actions/agent-bump@main
+        uses: KONFeature/atelier/actions/agent-bump@main
         with:
           atelier-url: https://atelier.example.com
           api-key: ${{ secrets.ATELIER_BUMP_API_KEY }}

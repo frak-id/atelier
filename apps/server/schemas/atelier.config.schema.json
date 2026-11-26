@@ -227,7 +227,7 @@
           "type": "string"
         },
         "agentImage": {
-          "default": "ghcr.io/frak-id/sandbox-agent:3.0.2",
+          "default": "ghcr.io/konfeature/sandbox-agent:3.0.2",
           "type": "string"
         },
         "defaultVcpus": {

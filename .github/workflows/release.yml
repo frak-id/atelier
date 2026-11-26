@@ -15,11 +15,11 @@ permissions:
 
 env:
   REGISTRY: ghcr.io
-  SERVER_IMAGE: ghcr.io/frak-id/atelier-server
-  CONSOLE_IMAGE: ghcr.io/frak-id/atelier-console
-  AGENT_IMAGE: ghcr.io/frak-id/sandbox-agent
-  DEV_BASE_IMAGE: ghcr.io/frak-id/atelier-dev-base
-  DEV_BROWSER_IMAGE: ghcr.io/frak-id/atelier-dev-browser
+  SERVER_IMAGE: ghcr.io/konfeature/atelier-server
+  CONSOLE_IMAGE: ghcr.io/konfeature/atelier-console
+  AGENT_IMAGE: ghcr.io/konfeature/sandbox-agent
+  DEV_BASE_IMAGE: ghcr.io/konfeature/atelier-dev-base
+  DEV_BROWSER_IMAGE: ghcr.io/konfeature/atelier-dev-browser
 
 jobs:
   check:
@@ -277,9 +277,9 @@ jobs:
             ## Docker Images
 
             ```bash
-            docker pull ghcr.io/frak-id/atelier-server:${{ steps.version.outputs.version }}
-            docker pull ghcr.io/frak-id/atelier-console:${{ steps.version.outputs.version }}
-            docker pull ghcr.io/frak-id/sandbox-agent:${{ steps.version.outputs.version }}
-            docker pull ghcr.io/frak-id/atelier-dev-base:${{ steps.version.outputs.version }}
-            docker pull ghcr.io/frak-id/atelier-dev-browser:${{ steps.version.outputs.version }}
+            docker pull ghcr.io/konfeature/atelier-server:${{ steps.version.outputs.version }}
+            docker pull ghcr.io/konfeature/atelier-console:${{ steps.version.outputs.version }}
+            docker pull ghcr.io/konfeature/sandbox-agent:${{ steps.version.outputs.version }}
+            docker pull ghcr.io/konfeature/atelier-dev-base:${{ steps.version.outputs.version }}
+            docker pull ghcr.io/konfeature/atelier-dev-browser:${{ steps.version.outputs.version }}
             ```

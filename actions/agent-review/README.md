@@ -43,14 +43,14 @@ jobs:
       contents: read
       pull-requests: write
     steps:
-      - uses: frak-id/atelier/actions/agent-review@main
+      - uses: KONFeature/atelier/actions/agent-review@main
         with:
           atelier-url: https://atelier.example.com
           api-key: ${{ secrets.ATELIER_REVIEWER_API_KEY }}
       # Cancelled mid-review (a newer push, the timeout): the step above could
       # not destroy its sandbox. This one does.
       - if: cancelled()
-        uses: frak-id/atelier/actions/agent-review@main
+        uses: KONFeature/atelier/actions/agent-review@main
         with:
           atelier-url: https://atelier.example.com
           api-key: ${{ secrets.ATELIER_REVIEWER_API_KEY }}
