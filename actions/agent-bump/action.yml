@@ -3,7 +3,7 @@ description: >-
   A coding agent updates the repository's dependencies in an Atelier sandbox:
   it reads the release notes, migrates the configuration, replaces what the
   new versions deprecate, runs the checks, and opens one pull request.
-author: Frak
+author: KONFeature
 branding:
   icon: package
   color: purple

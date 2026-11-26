@@ -9,7 +9,7 @@
 # we walk the manifest of every kept version and protect each child digest.
 #
 # Env:
-#   PACKAGE        package name under the frak-id org (required)
+#   PACKAGE        package name under the konfeature user account (required)
 #   GH_TOKEN       token with packages access (required)
 #   GITHUB_ACTOR   user for the registry token request (required)
 #   DRY_RUN        "true" to only print what would be deleted (default false)
@@ -20,7 +20,8 @@
 
 set -euo pipefail
 
-ORG="frak-id"
+# A user account, not an org: the REST paths below are /users/$OWNER/...
+OWNER="konfeature"
 REGISTRY="https://ghcr.io"
 ACCEPT_MANIFESTS="application/vnd.oci.image.index.v1+json,application/vnd.oci.image.manifest.v1+json,application/vnd.docker.distribution.manifest.list.v2+json,application/vnd.docker.distribution.manifest.v2+json"
 
@@ -50,7 +51,7 @@ deletable_versions() {
 
 registry_token() {
   curl -fsS -u "$GITHUB_ACTOR:$GH_TOKEN" \
-    "$REGISTRY/token?scope=repository:$ORG/$PACKAGE:pull" | jq -er '.token'
+    "$REGISTRY/token?scope=repository:$OWNER/$PACKAGE:pull" | jq -er '.token'
 }
 
 # Prints the manifest JSON for a digest. Refreshes the token once on 401.
@@ -61,7 +62,7 @@ fetch_manifest() {
     code=$(curl -sS -o "$out" -w '%{http_code}' \
       -H "Authorization: Bearer $REGISTRY_TOKEN" \
       -H "Accept: $ACCEPT_MANIFESTS" \
-      "$REGISTRY/v2/$ORG/$PACKAGE/manifests/$digest") || code=000
+      "$REGISTRY/v2/$OWNER/$PACKAGE/manifests/$digest") || code=000
     if [ "$code" = 401 ] && [ "$attempt" = 1 ]; then
       REGISTRY_TOKEN=$(registry_token) || return 1
       continue
@@ -118,7 +119,7 @@ main() {
 
   # 1. List every version before deleting anything. A listing failure aborts
   #    the job (set -e on the redirected command), never a silent partial list.
-  gh api --paginate "/orgs/$ORG/packages/container/$PACKAGE/versions?per_page=100" \
+  gh api --paginate "/users/$OWNER/packages/container/$PACKAGE/versions?per_page=100" \
     >"$tmp/pages.json"
   jq -s 'add // []' "$tmp/pages.json" >"$versions_file"
 
@@ -162,7 +163,7 @@ main() {
       echo "  Would delete version $id ($digest)"
     else
       echo "  Deleting version $id ($digest)"
-      gh api --method DELETE "/orgs/$ORG/packages/container/$PACKAGE/versions/$id" --silent
+      gh api --method DELETE "/users/$OWNER/packages/container/$PACKAGE/versions/$id" --silent
     fi
     deleted=$((deleted + 1))
   done < <(deletable_versions "$cutoff" "$protected_json" <"$versions_file")

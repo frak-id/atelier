@@ -217,7 +217,7 @@ const SandboxDefaultsSchema = Type.Object(
      * private/mirrored ref for air-gapped clusters that can't reach GHCR.
      */
     agentImage: Type.String({
-      default: "ghcr.io/frak-id/sandbox-agent:3.0.2",
+      default: "ghcr.io/konfeature/sandbox-agent:3.0.2",
     }),
     /**
      * vCPUs a sandbox gets when its create request omits `resources.vcpus`

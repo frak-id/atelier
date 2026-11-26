@@ -373,7 +373,7 @@ the MCP surface. Follow this order.
    selectors in `85-network-policy.yaml` or tool URLs time out.
 5. **Roll the server and the agent image together.** Build the server and
    console, and rebuild the seed images so they bake the new agent
-   (`sandbox.agentImage` pins `ghcr.io/frak-id/sandbox-agent:<release>`; the
+   (`sandbox.agentImage` pins `ghcr.io/konfeature/sandbox-agent:<release>`; the
    release workflow publishes that tag):
 
    ```bash

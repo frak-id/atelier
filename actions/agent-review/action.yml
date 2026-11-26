@@ -3,7 +3,7 @@ description: >-
   Coding agents review the pull request in an Atelier sandbox, one for issues
   and one for improvements, with sub-agents, and their findings are posted as
   one review.
-author: Frak
+author: KONFeature
 branding:
   icon: eye
   color: purple

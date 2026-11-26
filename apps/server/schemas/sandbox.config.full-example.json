@@ -52,7 +52,7 @@
   },
   "sandbox": {
     "defaultImage": "dev-base",
-    "agentImage": "ghcr.io/frak-id/sandbox-agent:3.0.2",
+    "agentImage": "ghcr.io/konfeature/sandbox-agent:3.0.2",
     "defaultVcpus": 2,
     "defaultMemoryMb": 4096,
     "idle": {

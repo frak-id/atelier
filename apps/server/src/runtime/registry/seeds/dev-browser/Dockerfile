@@ -10,7 +10,7 @@
 # `FROM ${BASE_IMAGE}`: in-cluster the server rewrites the `atelier/dev-base:
 # latest` token (the ARG default) to the operator registry's digest-pinned
 # dev-base via the seed `substitutions`. CI overrides it with a
-# `--build-arg BASE_IMAGE=ghcr.io/frak-id/atelier-dev-base:<tag>` to layer on
+# `--build-arg BASE_IMAGE=ghcr.io/konfeature/atelier-dev-base:<tag>` to layer on
 # the published base instead.
 ARG BASE_IMAGE=atelier/dev-base:latest
 FROM ${BASE_IMAGE}
