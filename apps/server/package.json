@@ -1,7 +1,7 @@
 {
   "name": "@atelier/server",
   "description": "The Atelier server — one deployable, internal modules (runtime, control, sessions, harnesses, api).",
-  "version": "3.0.2",
+  "version": "3.1.0",
   "private": true,
   "type": "module",
   "scripts": {
