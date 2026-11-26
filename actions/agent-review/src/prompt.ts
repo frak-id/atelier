@@ -282,12 +282,14 @@ const LEFT_OUT: Record<Category, string> = {
 
 /** The review of issues: bugs, security, data, deploy, tests, the repository's
  * rules. Another agent looks for the `improvements` of those categories after
- * it, and this one leaves them out. */
+ * it, or at the same time (`concurrent`), and this one leaves them out. */
 export function reviewPrompt(
   pr: PromptInput & {
     /** The new minor findings it may report (limits.ts): 0 on a later review. */
     maxMinors: number;
     improvements: readonly Category[];
+    /** The improvements' agent runs at the same time, not after. */
+    concurrent?: boolean;
   },
 ): string {
   const earlier = pr.earlier;
@@ -384,7 +386,7 @@ export function reviewPrompt(
    confirm, duplicates, matters of taste, and what the tooling already enforces (formatting, lint, types).${
      improvements.length > 0
        ? `
-   Another agent, after you, looks for improvements that aren't bugs: ${listed(improvements)}. Leave out
+   Another agent, ${pr.concurrent ? "at the same time" : "after you"}, looks for improvements that aren't bugs: ${listed(improvements)}. Leave out
    what is only that: ${listed(improvements.map((category) => LEFT_OUT[category]))}, that breaks nothing.${subagents ? " Tell your sub-agents too." : ""}${
      stillYours.length > 0 ? ` Still yours: ${listed(stillYours)}.` : ""
    }`

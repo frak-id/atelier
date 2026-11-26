@@ -6,20 +6,22 @@
  *    the repository's prebuild, at the PR's head;
  * 2. the PR's diff written to files there (diff-files.sh), since the agent's
  *    sub-agents can't run git;
- * 3. two tasks for its coding agent (pi), one after the other (they can't run
- *    at once: `ISSUES_SHARE`), each with its own sub-agents, each writing its
- *    findings to a file. After an earlier agent review, each gets that
- *    review's open findings of its kind, the replies to them and what changed
- *    since (memory.ts). How many minor findings and improvements a review
- *    reports grows with the diff (limits.ts):
+ * 3. two tasks for its coding agent (pi), at the same time when the sandbox's
+ *    pi-acp can (`PARALLEL`), else one after the other (`ISSUES_SHARE`), each
+ *    with its own sub-agents, each writing its findings to a file. After an
+ *    earlier agent review, each gets that review's open findings of its kind,
+ *    the replies to them and what changed since (memory.ts). How many minor
+ *    findings and improvements a review reports grows with the diff
+ *    (limits.ts):
  *    a. one reviews the PR's diff (merge base to head) for issues (prompt.ts).
  *       Its file is read back, checked, and posted as a review on the PR with
  *       the job's token (github-review.ts), saying improvements are on the
  *       way, with what the next review starts from hidden in it; the earlier
  *       reviews are collapsed;
  *    b. the other for improvements (improvements.ts), told what the first
- *       reported. Its findings are added to that review's body, which they
- *       never leave (no comment). If it fails, the review says so;
+ *       reported when it runs after it. Its findings are added to that
+ *       review's body, which they never leave (no comment), or posted with it
+ *       when done first. If it fails, the review says so;
  * 4. the sandbox destroyed, whatever happened.
  *
  * From the sandbox's creation to the review's posting, a comment on the PR
@@ -130,22 +132,29 @@ const IMPROVEMENTS_FILE = `${HOME}/agent-review-improvements.json`;
 const DIFF_DIR = `${HOME}/agent-review-diff`;
 /**
  * The issues' agent's share of the agents' time, when the improvements' one
- * follows: that one gets what's left.
+ * follows it: that one gets what's left.
  *
- * Why one after the other, not at once: pi-acp (0.0.33 and 0.0.34) keeps one
- * live session. A new one closes the others (`closeAllExcept` in its
+ * They follow each other with `PARALLEL` off, or when the sandbox's pi-acp
+ * can't run both (`runsSessionsAtOnce`): upstream pi-acp (0.0.33 to 0.0.35)
+ * keeps one live session. A new one closes the others (`closeAllExcept` in its
  * `newSession` and `loadSession`), which kills their pi process: a turn in
  * flight is aborted, its sub-agents stopped, and its ACP prompt never answered
  * (the task stays running), or pi-acp crashes on its next write to it (EPIPE),
- * failing every task. Two pi processes alone don't interfere. To run them at
- * once, pi-acp has to keep its sessions (an option upstream, or a patched build
- * in the pi toolbox), or Atelier run one pi-acp per task; or each agent gets
- * its own sandbox. Till then, the review is posted in steps (`reviewRange`) so
- * that the issues don't wait for the improvements.
+ * failing every task. The `@konfeature/pi-acp` fork, which the console's pi
+ * toolbox template installs, keeps them. Either way the review is posted in
+ * steps (`reviewRange`), so that the issues don't wait for the improvements.
  */
 const ISSUES_SHARE = 0.7;
 /** Below this, no time for the improvements: they're not reviewed. */
 const MIN_IMPROVEMENTS_MINUTES = 3;
+/** The workflow's `parallel`: both agents at once, each with the whole time,
+ * when the sandbox's pi-acp can (ISSUES_SHARE). */
+const PARALLEL = (() => {
+  const value = (process.env.PARALLEL || "true").trim();
+  if (value !== "true" && value !== "false")
+    fail(`parallel must be true or false, not "${value}"`);
+  return value === "true";
+})();
 /** The agent's turns, past which the task is cancelled: the job's own timeout
  * is above this and the sandbox's boot. */
 const TASK_MINUTES = minutes("AGENT_TIMEOUT_MINUTES", 40);
@@ -317,6 +326,20 @@ async function readReviewFile(
     earlier,
     lane,
   );
+}
+
+/**
+ * Whether the pi-acp the pi harness runs in sandbox `id` keeps concurrent
+ * sessions: the `@konfeature/pi-acp` fork does, upstream pi-acp closes the
+ * others (ISSUES_SHARE). Anything else (no pi-acp, another harness): no.
+ */
+async function runsSessionsAtOnce(id: string, cwd: string): Promise<boolean> {
+  const bin = await exec(
+    id,
+    `readlink -f ${HOME}/.local/bin/pi-acp`,
+    cwd,
+  ).catch(() => "");
+  return bin.includes("/node_modules/@konfeature/pi-acp/");
 }
 
 /** The files diff-files.sh listed in `name` (files.tsv, delta-files.tsv), with
@@ -702,12 +725,57 @@ async function reviewRange(
       new Set(review?.open.map((finding) => finding.id));
     const deadline = deadlineIn(TASK_MINUTES);
     const target = { sandboxId, cwd };
-    // One agent after the other, each in its own task (ISSUES_SHARE): the
-    // issues' first, the improvements' with what's left, told what the issues'
-    // reported. Its failure doesn't take the issues' review with it.
-    const issuesMinutes = withImprovements
-      ? Math.max(1, Math.round(TASK_MINUTES * ISSUES_SHARE))
-      : TASK_MINUTES;
+    // Each agent in its own task. At once, each with the whole time, when the
+    // sandbox's pi-acp can (PARALLEL); else one after the other
+    // (ISSUES_SHARE): the issues' first, the improvements' with what's left,
+    // told what the issues' reported. The improvements' failure doesn't take
+    // the issues' review with it.
+    const parallel =
+      withImprovements &&
+      PARALLEL &&
+      (await runsSessionsAtOnce(sandboxId, cwd));
+    if (withImprovements && PARALLEL && !parallel)
+      log(
+        "the sandbox's pi-acp runs one session at a time (not @konfeature/pi-acp): the agents run one after the other",
+      );
+    else if (parallel) log("the agents run at the same time");
+    const issuesMinutes =
+      withImprovements && !parallel
+        ? Math.max(1, Math.round(TASK_MINUTES * ISSUES_SHARE))
+        : TASK_MINUTES;
+    const runImprovements = (
+      minutes: number,
+      reported: ReviewFile["findings"],
+    ): Promise<{ file: ReviewFile } | { failed: string }> =>
+      reviewTask(
+        target,
+        "improvements",
+        improvementsPrompt({
+          ...pull,
+          minutes,
+          ...(improvementsEarlier ? { earlier: improvementsEarlier } : {}),
+          subagents: improvementSubagents ? model : false,
+          categories: CATEGORIES,
+          scope,
+          limits,
+          issues: reported,
+          concurrent: parallel,
+          output: IMPROVEMENTS_FILE,
+        }),
+        IMPROVEMENTS_FILE,
+        ids(improvementsEarlier),
+        deadline,
+      ).then(
+        (file) => ({ file }),
+        (error: Error) => ({ failed: error.message }),
+      );
+    // Never rejects: an issues' failure leaves it to the sandbox's destroy.
+    let improvementsDone = false;
+    const alongside = parallel
+      ? runImprovements(TASK_MINUTES, []).finally(() => {
+          improvementsDone = true;
+        })
+      : undefined;
     const issues = await reviewTask(
       target,
       "issues",
@@ -718,6 +786,7 @@ async function reviewRange(
         subagents: subagents ? model : false,
         maxMinors: limits.minor,
         improvements: CATEGORIES,
+        concurrent: parallel,
         output: REVIEW_FILE,
       }),
       REVIEW_FILE,
@@ -771,7 +840,10 @@ async function reviewRange(
       previous: [...issues.previous, ...turnedOff],
     };
     const minutesLeft = Math.floor((deadline.at - Date.now()) / 60_000);
-    if (!withImprovements || minutesLeft < MIN_IMPROVEMENTS_MINUTES) {
+    if (
+      !withImprovements ||
+      (!alongside && minutesLeft < MIN_IMPROVEMENTS_MINUTES)
+    ) {
       const tooLate = `${minutesLeft} minutes left after the issues' review`;
       if (withImprovements) warn(`improvements not reviewed: ${tooLate}`);
       await postReview(
@@ -788,52 +860,37 @@ async function reviewRange(
     }
 
     // The issues' review now, which replaces the progress comment; the
-    // improvements added to it once their agent is done. Till then, it shows
-    // none of the earlier ones that agent rules on: they stay in its state, for
-    // the next run if this one stops here.
-    const first = toPost(issuesFile, false, { pending: true });
-    const ruledOnLater = new Set(improvementsEarlier?.open.map((f) => f.id));
-    const posted = await postReview(
-      {
-        ...first,
-        findings: first.findings.filter((finding) => !finding.category),
-        ...(first.since
-          ? {
-              since: {
-                ...first.since,
-                unchecked: first.since.unchecked.filter(
-                  (id) => !ruledOnLater.has(id),
-                ),
-              },
-            }
-          : {}),
-      },
-      base,
-      head,
-    );
-    await removeProgress();
+    // improvements added to it once their agent is done, unless it is already:
+    // then one review with both. Till then, it shows none of the earlier ones
+    // that agent rules on: they stay in its state, for the next run if this one
+    // stops here.
+    let posted: Posted | undefined;
+    if (!improvementsDone) {
+      const first = toPost(issuesFile, false, { pending: true });
+      const ruledOnLater = new Set(improvementsEarlier?.open.map((f) => f.id));
+      posted = await postReview(
+        {
+          ...first,
+          findings: first.findings.filter((finding) => !finding.category),
+          ...(first.since
+            ? {
+                since: {
+                  ...first.since,
+                  unchecked: first.since.unchecked.filter(
+                    (id) => !ruledOnLater.has(id),
+                  ),
+                },
+              }
+            : {}),
+        },
+        base,
+        head,
+      );
+      await removeProgress();
+    }
 
-    const improvements = await reviewTask(
-      target,
-      "improvements",
-      improvementsPrompt({
-        ...pull,
-        minutes: minutesLeft,
-        ...(improvementsEarlier ? { earlier: improvementsEarlier } : {}),
-        subagents: improvementSubagents ? model : false,
-        categories: CATEGORIES,
-        scope,
-        limits,
-        issues: issues.findings,
-        output: IMPROVEMENTS_FILE,
-      }),
-      IMPROVEMENTS_FILE,
-      ids(improvementsEarlier),
-      deadline,
-    ).then(
-      (file) => ({ file }),
-      (error: Error) => ({ failed: error.message }),
-    );
+    const improvements = await (alongside ??
+      runImprovements(minutesLeft, issues.findings));
     if ("file" in improvements)
       console.log(
         `[agent-review] improvements file: ${JSON.stringify(improvements.file)}`,
@@ -842,22 +899,19 @@ async function reviewRange(
     const other = "file" in improvements ? improvements.file : undefined;
     // The issues' findings first: they get the same ids as in the review
     // posted, whose comments name them.
-    await updateReview(
-      posted,
-      toPost(
-        {
-          summary: issues.summary,
-          findings: [...issues.findings, ...(other?.findings ?? [])],
-          previous: [...issuesFile.previous, ...(other?.previous ?? [])],
-        },
-        other !== undefined,
-        "file" in improvements
-          ? { summary: improvements.file.summary }
-          : { failed: improvements.failed },
-      ),
-      base,
-      head,
+    const whole = toPost(
+      {
+        summary: issues.summary,
+        findings: [...issues.findings, ...(other?.findings ?? [])],
+        previous: [...issuesFile.previous, ...(other?.previous ?? [])],
+      },
+      other !== undefined,
+      "file" in improvements
+        ? { summary: improvements.file.summary }
+        : { failed: improvements.failed },
     );
+    if (posted) await updateReview(posted, whole, base, head);
+    else await postReview(whole, base, head);
   } finally {
     await destroySandbox(sandboxId);
   }

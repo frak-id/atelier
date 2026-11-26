@@ -72,10 +72,20 @@ inputs:
       branch (a PR can't change its own). Skipped when missing; empty to read
       none.
     default: REVIEW.md
+  parallel:
+    description: >-
+      `true` (the default): the two agents run at the same time, each with
+      the whole `agent-timeout-minutes`, when the sandbox's pi-acp keeps
+      several sessions (`@konfeature/pi-acp`, which the console's pi toolbox
+      installs); with upstream pi-acp, one after the other anyway. `false`:
+      one after the other, the improvements' agent told what the issues' one
+      reported.
+    default: "true"
   agent-timeout-minutes:
     description: >-
-      The agents' time for a review, both together (the issues' agent up to
-      70% of it), past which they are cancelled. Give the job about 20
+      The agents' time for a review, past which they are cancelled: each
+      has all of it when they run at the same time (`parallel`), else both
+      together (the issues' agent up to 70% of it). Give the job about 20
       minutes more (the sandbox's boot, then the posting).
     default: "40"
   bun-version:
@@ -118,6 +128,7 @@ runs:
         MODE: ${{ inputs.mode }}
         IMAGE: ${{ inputs.image }}
         AGENT_TIMEOUT_MINUTES: ${{ inputs.agent-timeout-minutes }}
+        PARALLEL: ${{ inputs.parallel }}
         SUBAGENTS: ${{ inputs.subagents }}
         ALLOWED_FINDINGS: ${{ inputs.allowed-findings }}
         REVIEWER_MODEL: ${{ inputs.reviewer-model }}

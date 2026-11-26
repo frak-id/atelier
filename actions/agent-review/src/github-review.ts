@@ -502,7 +502,7 @@ export interface ReviewToPost {
   state?: string;
   /** The review for improvements, when one ran: its summary, or why it has
    * none. Its findings are in `findings`, with their category. `pending`: it
-   * runs after this review is posted, which is then updated with it. */
+   * still runs when this review is posted, which is then updated with it. */
   improvements?: { summary: string } | { failed: string } | { pending: true };
 }
 

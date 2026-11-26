@@ -1,11 +1,11 @@
 /**
- * What the second agent is asked, in its own task in the same sandbox, after
- * the review of issues (prompt.ts): what would make the code the PR brings
- * faster, less duplicated, or closer to the way the repository does things,
- * without being a bug. Apart, so that neither agent weighs a bug against a
- * nicer loop, each gets its own sub-agents and time, and a failure here leaves
- * the review of issues whole. It's told what that review reported, so as not to
- * report it again.
+ * What the second agent is asked, in its own task in the same sandbox, at the
+ * same time as the review of issues (prompt.ts) or after it: what would make
+ * the code the PR brings faster, less duplicated, or closer to the way the
+ * repository does things, without being a bug. Apart, so that neither agent
+ * weighs a bug against a nicer loop, each gets its own sub-agents and time, and
+ * a failure here leaves the review of issues whole. After it, it's told what
+ * that review reported, so as not to report it again.
  *
  * Its findings have a category instead of a severity, and never block
  * (github-review.ts). How many it reports per category grows with the diff
@@ -58,8 +58,11 @@ export function improvementsPrompt(
     scope: "diff" | "delta" | "none";
     /** The new findings it may report per category (limits.ts). */
     limits: Readonly<Record<Category, number>>;
-    /** What the review of issues just reported. */
+    /** What the review of issues just reported: none while it runs at the
+     * same time (`concurrent`). */
     issues: readonly Pick<Finding, "title" | "path" | "line">[];
+    /** The review of issues runs at the same time, not before. */
+    concurrent?: boolean;
   },
 ): string {
   const earlier = pr.earlier;
@@ -161,8 +164,7 @@ ${authored(pr.issues.map((issue) => `- ${issue.path ? `${issue.path}${issue.line
       : "";
 
   return `You are reviewing pull request #${pr.number} of ${pr.repository} for improvements: what would make the code it brings
-faster, less duplicated, or closer to the way this repository does things, without being a bug. Another agent reviewed
-it for issues just before you, in this sandbox (bugs, security, data, deployment, tests, rules broken with real
+faster, less duplicated, or closer to the way this repository does things, without being a bug. ${pr.concurrent ? "Another agent reviews\nit for issues at the same time" : "Another agent reviewed\nit for issues just before you"}, in this sandbox (bugs, security, data, deployment, tests, rules broken with real
 consequences): leave those to it.
 
 ${contextSection(pr)}${earlierSection(earlier, dir, "improvements")}${issuesSection}${instructionsSection(pr.instructions)}

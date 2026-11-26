@@ -6,7 +6,8 @@ sandbox, on every push, and posts their findings as one review.
 The job starts a sandbox from the repository's prebuild, at the PR's head, as
 an Atelier [service account](../../docs/service-accounts.md). Two tasks of the
 sandbox's coding agent (pi) review what the PR brings, from its merge base to
-its head, one after the other, each with its own parallel sub-agents. Both read
+its head, at the same time (or one after the other: `parallel`), each with its
+own parallel sub-agents. Both read
 the repository's AGENTS.md rules. One looks for issues: correctness,
 security, data, deploy impact and tests. The other looks for improvements:
 performance, duplicated code, and the repository's conventions. Each writes
@@ -80,7 +81,8 @@ says why.
 | `toolboxes` | | Toolboxes on top of the org's auto-included ones, comma- or line-separated selectors (*Customise*) |
 | `instructions` | | Text added to the agents' prompts (*Customise*) |
 | `instructions-file` | `REVIEW.md` | Instructions read on the PR's target branch, when the file is there. Empty to read none |
-| `agent-timeout-minutes` | `40` | The agents' time for one review, both together. Give the job about 20 minutes more |
+| `parallel` | `true` | The two agents at the same time, each with the whole `agent-timeout-minutes`, when the sandbox's pi-acp allows it (*How a review goes*). `false`: one after the other |
+| `agent-timeout-minutes` | `40` | The agents' time for one review: each agent's at the same time, both together one after the other. Give the job about 20 minutes more |
 | `bun-version` | `1.4.4` | Bun version the action runs on |
 
 The review is posted with the job's own `GITHUB_TOKEN`, hence
@@ -97,8 +99,11 @@ comment by that account, `github-actions[bot]`.
    `reviewer` sub-agent (pi-subagents' built-in one), so the org's sandboxes
    need pi with [pi-subagents](https://github.com/nicobailon/pi-subagents),
    unless `subagents` is `never`. The two agents are two ACP sessions of the
-   same pi install. The console's Library suggests a pi toolbox
-   that has it. Make it auto-included in the org.
+   same pi install. To run them at the same time, its ACP bridge must be
+   [`@konfeature/pi-acp`](https://github.com/KONFeature/pi-acp), a fork of
+   pi-acp that keeps several sessions; with upstream pi-acp they run one
+   after the other. The console's Library suggests a pi toolbox that has both.
+   Make it auto-included in the org.
 3. **A service account** in that org, with a read-only GitHub credential.
    For a GitHub App, narrow its token with
    `"permissions": { "contents": "read", "pull_requests": "read", "metadata": "read" }`:
@@ -119,8 +124,8 @@ links to the sandbox's session in the console (sign in with GitHub).
 
 The sub-agents read files but can't run git, so the job first writes the diff
 into the sandbox, one patch per file (`src/diff-files.sh`). Then it runs two
-tasks there, one after the other, each an agent with its own context,
-sub-agents and file:
+tasks there, at the same time or one after the other (below), each an agent
+with its own context, sub-agents and file:
 
 - **Issues** (`src/prompt.ts`): bugs, security, data and migrations, deploy
   impact, tests, and the repository's rules. Its findings are rated critical,
@@ -130,16 +135,22 @@ sub-agents and file:
   has (`duplication`), or closer to the way the repository does things
   (`conventions`), without being a bug. Its findings have a category instead
   of a severity, and never block. A performance problem that breaks something,
-  or a rule broken with real consequences, is the other agent's. It's told what
-  the issues' agent reported, so as not to report it again.
+  or a rule broken with real consequences, is the other agent's. After the
+  issues' agent, it's told what that one reported, so as not to report it
+  again.
 
 Apart, neither weighs a bug against a nicer loop. Both share the sandbox, its
-boot and the diff files, and the agents' time: the issues' agent has up to 70%
-of it, the improvements' one what's left. They can't run at the same time:
-pi-acp, which Atelier talks to pi through, keeps one live session, and a new
-one closes the others, killing their turn. An agent that shows no tool call
-and no reply in its first 5 minutes is taken for dead (its process can die
-without a word), not waited for until the time is up.
+boot and the diff files. With `parallel` (the default), they run at the same
+time, each with the whole `agent-timeout-minutes`, when the sandbox's pi-acp,
+which Atelier talks to pi through, keeps several sessions: the job checks
+that `~/.local/bin/pi-acp` is `@konfeature/pi-acp`'s. Upstream pi-acp keeps
+one live session, and a new one closes the others, killing their turn. With
+it, or with `parallel: false`, the agents run one after the other: the
+issues' agent has up to 70% of the time, the improvements' one what's left,
+and is told what the issues' agent reported. Running at the same time, it
+isn't, so the two can now and then report the same thing. An agent that shows no tool
+call and no reply in its first 5 minutes is taken for dead (its process can
+die without a word), not waited for until the time is up.
 
 So that no one waits for the improvements to see the issues, the PR gets the
 review in steps:
@@ -151,6 +162,9 @@ review in steps:
 3. the same review with the improvements added to its body, once their agent
    is done; or, if it failed or the run stopped, with a line saying they
    weren't reviewed. The next review then looks for them across the whole PR.
+
+At the same time, when the improvements' agent is done first, the review is
+posted once, with both.
 
 With `subagents: auto`, a diff of at most 500 changed lines, lockfiles aside,
 is reviewed by each agent alone: sub-agents start cold, and cost more than

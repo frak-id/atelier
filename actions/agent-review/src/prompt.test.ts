@@ -19,6 +19,7 @@ const prompt = (
     instructions?: Instructions[];
     maxMinors?: number;
     improvements?: Category[];
+    concurrent?: boolean;
   } = {},
 ) =>
   reviewPrompt({
@@ -49,6 +50,7 @@ const prompt = (
     instructions: options.instructions ?? [],
     maxMinors: options.maxMinors ?? 5,
     improvements: options.improvements ?? [],
+    ...(options.concurrent ? { concurrent: true } : {}),
     output: "/home/dev/review.json",
   });
 
@@ -254,6 +256,14 @@ describe("with an agent for improvements after it", () => {
 
   test("without one, says nothing of it", () => {
     expect(prompt()).not.toContain("Another agent");
+  });
+
+  test("running at the same time, says so", () => {
+    const text = prompt(undefined, { improvements: ALL, concurrent: true });
+    expect(text).toContain(
+      "Another agent, at the same time, looks for improvements that aren't bugs",
+    );
+    expect(text).not.toContain("after you");
   });
 });
 

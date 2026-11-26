@@ -14,6 +14,7 @@ const prompt = (
     earlier?: Partial<EarlierReview>;
     scope?: "diff" | "delta" | "none";
     issues?: { title: string; path?: string; line?: number }[];
+    concurrent?: boolean;
   } = {},
 ) =>
   improvementsPrompt({
@@ -53,6 +54,7 @@ const prompt = (
       conventions: 2,
     },
     issues: options.issues ?? [],
+    ...(options.concurrent ? { concurrent: true } : {}),
     output: "/home/dev/improvements.json",
   });
 
@@ -62,6 +64,15 @@ test("leaves the issues to the other agent", () => {
   expect(text).toContain(
     "Another agent reviewed\nit for issues just before you",
   );
+});
+
+test("says when the review of issues runs at the same time", () => {
+  const text = prompt(undefined, { concurrent: true });
+  expect(text).toContain(
+    "Another agent reviews\nit for issues at the same time, in this sandbox",
+  );
+  expect(text).not.toContain("just before you");
+  expect(text).not.toContain("What the review of issues reported");
 });
 
 test("lists what the review of issues reported, not to report it again, in a block it can't close", () => {
